@@ -587,24 +587,6 @@ def render_live_tab():
 def render_sales_dashboard():
     st.markdown("### 📊 Sales Performance Dashboard")
 
-    st.markdown("#### Feedback & Logs")
-    comment = st.text_area("Found an error? Report it here:", placeholder="e.g. 'Polo' items are misclassified...")
-    if st.button("Submit Report", key="feedback_submit"):
-        if save_user_feedback(comment):
-            st.success("Thank you! Feedback saved.")
-        else:
-            st.error("Submission failed.")
-
-    with st.expander("View Debug Logs"):
-        log_path = os.path.join(FEEDBACK_DIR, "system_logs.json")
-        if os.path.exists(log_path):
-            with open(log_path, "r", encoding="utf-8") as f:
-                st.json(json.load(f)[-10:])
-        else:
-            st.write("No logs yet.")
-
-    st.divider()
-
     live_tab, manual_tab = st.tabs(["Live Dashboard (Main)", "Manual Upload Dashboard"])
 
     with live_tab:
