@@ -134,7 +134,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- Tabs ---
-t_dash, t_sales, t_order, t_inv, t_pick, t_wp, t_logs = st.tabs(["📊 Executive Dashboard", "💰 Sales Reporter", "📦 Pathao Processor", "🏢 Distribution Matrix", "📋 Picking Manifest", "💬 WP Verification", "🛠️ System Logs"])
+t_sales, t_dash, t_order, t_inv, t_pick, t_wp, t_logs = st.tabs(["💰 Live Dashboard", "📊 Executive Dashboard", "📦 Pathao Processor", "🏢 Distribution Matrix", "📋 Picking Manifest", "💬 WP Verification", "🛠️ System Logs"])
 
 # ---------------------------------------------------------
 # TAB 0: EXECUTIVE DASHBOARD
