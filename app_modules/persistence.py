@@ -2,8 +2,12 @@ import json
 import os
 import streamlit as st
 import pandas as pd
+import tempfile
+import logging
 
-STATE_FILE = "session_state.json"
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+STATE_FILE = os.path.join(DATA_DIR, "session_state.json")
 
 def save_state():
     """Saves relevant session state keys to a local file."""
@@ -25,10 +29,17 @@ def save_state():
                 state_to_save[key] = val
             
     try:
-        with open(STATE_FILE, "w", encoding="utf-8") as f:
+        fd, temp_path = tempfile.mkstemp(dir=DATA_DIR)
+        with os.fdopen(fd, 'w', encoding="utf-8") as f:
             json.dump(state_to_save, f, indent=4)
-    except:
-        pass
+        os.replace(temp_path, STATE_FILE)
+    except Exception as e:
+        default_logger = logging.getLogger(__name__)
+        default_logger.error(f"Failed to save state: {e}")
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
 
 def load_state():
     """Loads session state from local file."""
@@ -42,11 +53,25 @@ def load_state():
                         st.session_state[orig_key] = pd.DataFrame(v)
                     else:
                         st.session_state[k] = v
-        except:
+        except FileNotFoundError:
             pass
+        except json.JSONDecodeError as e:
+            default_logger = logging.getLogger(__name__)
+            default_logger.error(f"Failed to parse state file: {e}")
+        except Exception as e:
+            default_logger = logging.getLogger(__name__)
+            default_logger.error(f"Unexpected error loading state: {e}")
 
 def init_state():
     """Initialize defaults if not present."""
     if 'low_stock_threshold' not in st.session_state:
         st.session_state.low_stock_threshold = 5
     load_state()
+
+
+def clear_state_keys(keys):
+    """Clear selected session state keys and persist."""
+    for key in keys:
+        if key in st.session_state:
+            del st.session_state[key]
+    save_state()

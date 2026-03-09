@@ -1,0 +1,102 @@
+﻿import pandas as pd
+import streamlit as st
+
+from app_modules.error_handler import log_error
+from app_modules.persistence import clear_state_keys, save_state
+from app_modules.processor import process_orders_dataframe
+from app_modules.ui_components import (
+    render_action_bar,
+    render_file_summary,
+    render_reset_confirm,
+    render_steps,
+    section_card,
+    to_excel_bytes,
+)
+
+
+REQUIRED_COLUMNS = ["Phone (Billing)"]
+
+
+def _read_uploaded(uploaded_file):
+    if not uploaded_file:
+        return None
+    uploaded_file.seek(0)
+    if uploaded_file.name.lower().endswith(".csv"):
+        return pd.read_csv(uploaded_file)
+    return pd.read_excel(uploaded_file)
+
+
+def _reset_pathao_state():
+    clear_state_keys(["pathao_res_df", "pathao_preview_df", "pathao_uploaded_name"])
+
+
+def render_pathao_tab(guided: bool = True):
+    section_card(
+        "Pathao Order Processor",
+        "Upload order file, validate required columns, generate repaired export.",
+    )
+
+    if guided:
+        step = 0
+        if st.session_state.get("pathao_preview_df") is not None:
+            step = 1
+        if st.session_state.get("pathao_res_df") is not None:
+            step = 2
+        render_steps(["Upload", "Validate", "Preview", "Export"], min(step + 1, 3))
+
+    up_pathao = st.file_uploader("Upload Orders (CSV/XLSX)", type=["xlsx", "csv"], key="pathao_up")
+
+    preview_df = None
+    valid_file = False
+    if up_pathao:
+        try:
+            preview_df = _read_uploaded(up_pathao)
+            st.session_state.pathao_preview_df = preview_df
+            st.session_state.pathao_uploaded_name = up_pathao.name
+            valid_file = render_file_summary(up_pathao, preview_df, REQUIRED_COLUMNS)
+        except Exception as exc:
+            log_error(exc, context="Pathao Upload")
+            st.error("Failed to read uploaded file.")
+
+    run_clicked, clear_clicked = render_action_bar(
+        primary_label="Process orders",
+        primary_key="pathao_process_btn",
+        secondary_label="Clear upload",
+        secondary_key="pathao_clear_btn",
+    )
+
+    if clear_clicked:
+        _reset_pathao_state()
+        st.rerun()
+
+    if run_clicked:
+        if not up_pathao or not valid_file:
+            st.warning("Upload a valid file before processing.")
+        else:
+            try:
+                with st.status("Processing orders...", expanded=True) as status:
+                    st.write("Applying standard cleanup and address formatting...")
+                    result_df = process_orders_dataframe(preview_df)
+                    st.session_state.pathao_res_df = result_df
+                    save_state()
+                    status.update(label="Processing complete", state="complete", expanded=False)
+                st.success(f"Processed {len(result_df)} grouped orders.")
+            except Exception as exc:
+                log_error(exc, context="Pathao Processor")
+                st.error("Pathao processing failed. Check System Logs for details.")
+
+    result_df = st.session_state.get("pathao_res_df")
+    if result_df is not None:
+        with st.expander("Preview output", expanded=True):
+            st.dataframe(result_df, use_container_width=True, hide_index=True)
+
+        st.download_button(
+            "Download repaired Pathao file",
+            to_excel_bytes(result_df, sheet_name="Pathao"),
+            "Pathao_Final.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+            use_container_width=True,
+        )
+
+    render_reset_confirm("pathao", _reset_pathao_state)

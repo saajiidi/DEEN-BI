@@ -1,61 +1,37 @@
-# 🚀 Automation Hub Pro v7.0
+﻿# Automation Hub Pro v8.1
 
-**Automation Hub Pro** is an enterprise-grade, multi-tool logistics and order management dashboard built with Streamlit. It modernizes e-commerce operations by providing side-by-side access to order processing, inventory mapping, and customer verification tools with intelligent automation and analytics.
+Automation Hub Pro is a Streamlit workspace for order processing, inventory distribution, and WhatsApp verification.
 
-## ✨ New in v7.0
+## Main Navigation
 
-### 📊 1. Executive Analytics Dashboard
-*   **Stock Health Heatmap**: Visualizes stock levels across all locations (Ecom, Mirpur, Wari, Cumilla, Sylhet) using Plotly density heatmaps.
-*   **Distribution Balance**: Real-time pie charts showing global stock composition.
-*   **Safety Thresholds**: Instant alerts for items falling below your custom safety stock level.
+- Dashboard: live and manual sales dashboards
+- Orders: Pathao order processor and delivery text parser
+- Inventory: matrix analyzer, insights, and pick manifest
+- Messaging: WhatsApp verification link generation
+- More Tools: system logs and developer lab
 
-### 📦 2. Pathao Processor & Address Auto-Repair
-*   **Fuzzy Zone Matching**: Automatically identifies and suggests fixes for unrecognized or vague addresses (e.g., automatically suggesting "Mirpur-10" for "Mirpur block c").
-*   **One-Click Repair**: Preview suggested fixes and apply them instantly before generating the Pathao bulk file.
+## UX Improvements Included
 
-### 🏢 3. Distribution Matrix & Low Stock Alerts
-*   **Intelligent Sorting**: Automatically sorts your master list to show critical low-stock items at the top.
-*   **Visual Pulse Alerts**: Rows with critically low stock are highlighted in red to prevent fulfillment delays.
+- Guided workflow steps for major modules
+- Upload -> validate -> preview -> export pattern
+- Shared action bar and reset confirmation controls
+- Unified labels and status messaging
+- Optional motion effects toggle
+- Sidebar sample template downloads
 
-### 💬 4. WhatsApp Verification & Bulk Export
-*   **Bulk Message Export**: Generate a single `.txt` file containing all verification links and messages for easy handover or bulk sending.
-*   **Fuzzy Column Mapping**: Handles any spreadsheet header variation automatically.
+## Run
 
-### 💾 5. Smart Session Persistence
-*   **Resume Work**: Automatically saves your analysis results and uploaded data configurations.
-*   **Safe Refresh**: Your dashboard stats, inventory mappings, and processed orders stay intact even if the browser is refreshed.
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
 
----
+## Project Structure
 
-## 🛠️ Installation & Setup
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/saajiidi/Order-Process-Automation.git
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Run the application**:
-   ```bash
-   streamlit run app.py
-   ```
-
----
-
-## 📂 Project Structure
-*   `app.py`: Main entry point and multi-tab dashboard.
-*   `app_modules/persistence.py`: State saving logic.
-*   `app_modules/error_handler.py`: Error logging system.
-*   `app_modules/wp_processor.py`: WhatsApp link logic.
-*   `inventory_modules/`: Core backend for stock mapping.
-
----
-
-## 👨‍💻 Developed By
-**Sajid Islam**
-*Powering Digital Commerce Logistics*
-© 2026
+- `app.py`: application shell and navigation
+- `app_modules/ui_config.py`: UI constants and labels
+- `app_modules/ui_components.py`: reusable UI components
+- `app_modules/pathao_tab.py`: Pathao workflow
+- `app_modules/distribution_tab.py`: inventory workflow
+- `app_modules/wp_tab.py`: WhatsApp workflow
+- `app_modules/fuzzy_parser_tab.py`: text parser workflow

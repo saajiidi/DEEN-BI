@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
@@ -12,49 +12,6 @@ from urllib.parse import parse_qs, urlparse
 from app_modules.ui_components import section_card, render_action_bar
 
 
-def _hex_to_rgb(hex_color):
-    if not hex_color:
-        return None
-    h = hex_color.strip().lstrip("#")
-    if len(h) == 3:
-        h = "".join(ch * 2 for ch in h)
-    if len(h) != 6:
-        return None
-    try:
-        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-    except ValueError:
-        return None
-
-
-def _is_dark_theme():
-    base = st.get_option("theme.base")
-    if base == "dark":
-        return True
-    if base == "light":
-        return False
-
-    # Prefer text color when available because it reflects actual theme contrast.
-    text_rgb = _hex_to_rgb(st.get_option("theme.textColor"))
-    if text_rgb:
-        luminance = (0.2126 * text_rgb[0] + 0.7152 * text_rgb[1] + 0.0722 * text_rgb[2]) / 255
-        return luminance > 0.6
-
-    bg = _hex_to_rgb(st.get_option("theme.backgroundColor"))
-    if bg:
-        luminance = (0.2126 * bg[0] + 0.7152 * bg[1] + 0.0722 * bg[2]) / 255
-        return luminance < 0.45
-
-    return False
-
-
-def _chart_theme():
-    dark = _is_dark_theme()
-    return {
-        "template": "plotly_dark" if dark else "plotly_white",
-        "legend_bg": "rgba(2,6,23,0.88)" if dark else "rgba(255,255,255,0.88)",
-        "legend_border": "#334155" if dark else "#cbd5e1",
-        "font_color": "#e5e7eb" if dark else "#0f172a",
-    }
 
 
 def render_snapshot_button(marker_id="snapshot-target"):
@@ -545,7 +502,6 @@ def load_live_source(source_mode):
 def _render_welcome_popup_content(summ, basket, last_updated="N/A", focus="all"):
     t_qty = summ["Total Qty"].sum()
     t_rev = summ["Total Amount"].sum()
-    chart_style = _chart_theme()
     with st.container():
         st.markdown('<div id="snapshot-target-popup"></div>', unsafe_allow_html=True)
         st.caption(f"Last update: {last_updated}")
@@ -584,20 +540,15 @@ def _render_welcome_popup_content(summ, basket, last_updated="N/A", focus="all")
                     color_discrete_sequence=px.colors.qualitative.Pastel
                 )
                 fig_pie.update_layout(
-                    template=chart_style["template"],
                     margin=dict(l=12, r=170, t=50, b=12),
                     uniformtext_minsize=10,
                     uniformtext_mode="hide",
-                    font=dict(color=chart_style["font_color"]),
-                    title_font=dict(color=chart_style["font_color"]),
                     legend=dict(
                         orientation="v",
                         yanchor="top",
                         y=1,
                         xanchor="left",
                         x=1.02,
-                        bgcolor=chart_style["legend_bg"],
-                        bordercolor=chart_style["legend_border"],
                         borderwidth=1,
                         font=dict(size=11),
                     ),
@@ -605,7 +556,6 @@ def _render_welcome_popup_content(summ, basket, last_updated="N/A", focus="all")
                 fig_pie.update_traces(
                     textposition="outside",
                     textinfo="label+percent",
-                    textfont=dict(size=12, color=chart_style["font_color"]),
                     pull=0.01,
                 )
                 st.plotly_chart(fig_pie, use_container_width=True)
@@ -621,31 +571,19 @@ def _render_welcome_popup_content(summ, basket, last_updated="N/A", focus="all")
                     color_discrete_sequence=px.colors.qualitative.Bold
                 )
                 fig_bar.update_layout(
-                    template=chart_style["template"],
                     margin=dict(l=12, r=12, t=50, b=12),
                     xaxis_title="",
                     yaxis_title="Quantity Sold",
                     showlegend=True,
-                    font=dict(color=chart_style["font_color"]),
-                    title_font=dict(color=chart_style["font_color"]),
-                    xaxis=dict(tickfont=dict(color=chart_style["font_color"])),
-                    yaxis=dict(
-                        tickfont=dict(color=chart_style["font_color"]),
-                        title=dict(font=dict(color=chart_style["font_color"])),
-                    ),
                 legend=dict(
                         orientation="v",
                         yanchor="top",
                         y=1,
                         xanchor="left",
                         x=1.02,
-                        bgcolor=chart_style["legend_bg"],
-                        bordercolor=chart_style["legend_border"],
                         borderwidth=1,
-                        font=dict(color=chart_style["font_color"]),
                     ),
                 )
-                fig_bar.update_traces(textfont=dict(color=chart_style["font_color"]))
                 st.plotly_chart(fig_bar, use_container_width=True)
 
     render_snapshot_button("snapshot-target-popup")
@@ -668,7 +606,6 @@ else:
 
 def render_dashboard_output(drill, summ, top, timeframe, basket, source_name, last_updated="N/A"):
     """Renders common dashboard widgets/charts/tables/export."""
-    chart_style = _chart_theme()
     today_key = datetime.now().strftime("%Y-%m-%d")
     source_key = os.path.basename(str(source_name))
     popup_key = f"popup_seen::{today_key}::{source_key}"
@@ -727,20 +664,15 @@ def render_dashboard_output(drill, summ, top, timeframe, basket, source_name, la
                 color_discrete_sequence=px.colors.qualitative.Pastel
             )
             fig_pie.update_layout(
-                template=chart_style["template"],
                 margin=dict(l=12, r=170, t=50, b=12),
                 uniformtext_minsize=10,
                 uniformtext_mode="hide",
-                font=dict(color=chart_style["font_color"]),
-                title_font=dict(color=chart_style["font_color"]),
                 legend=dict(
                     orientation="v",
                     yanchor="top",
                     y=1,
                     xanchor="left",
                     x=1.02,
-                    bgcolor=chart_style["legend_bg"],
-                    bordercolor=chart_style["legend_border"],
                     borderwidth=1,
                     font=dict(size=11),
                 ),
@@ -748,7 +680,6 @@ def render_dashboard_output(drill, summ, top, timeframe, basket, source_name, la
             fig_pie.update_traces(
                 textposition="outside",
                 textinfo="label+percent",
-                textfont=dict(size=12, color=chart_style["font_color"]),
                 pull=0.01,
             )
             st.plotly_chart(fig_pie, use_container_width=True)
@@ -764,31 +695,19 @@ def render_dashboard_output(drill, summ, top, timeframe, basket, source_name, la
                 color_discrete_sequence=px.colors.qualitative.Bold
             )
             fig_bar.update_layout(
-                template=chart_style["template"],
                 margin=dict(l=12, r=12, t=50, b=12),
                 xaxis_title="",
                 yaxis_title="Quantity Sold",
                 showlegend=True,
-                font=dict(color=chart_style["font_color"]),
-                title_font=dict(color=chart_style["font_color"]),
-                xaxis=dict(tickfont=dict(color=chart_style["font_color"])),
-                yaxis=dict(
-                    tickfont=dict(color=chart_style["font_color"]),
-                    title=dict(font=dict(color=chart_style["font_color"])),
-                ),
                 legend=dict(
                     orientation="v",
                     yanchor="top",
                     y=1,
                     xanchor="left",
                     x=1.02,
-                    bgcolor=chart_style["legend_bg"],
-                    bordercolor=chart_style["legend_border"],
                     borderwidth=1,
-                    font=dict(color=chart_style["font_color"]),
                 ),
             )
-            fig_bar.update_traces(textfont=dict(color=chart_style["font_color"]))
             st.plotly_chart(fig_bar, use_container_width=True)
 
     render_snapshot_button("snapshot-target-main")
@@ -806,20 +725,11 @@ def render_dashboard_output(drill, summ, top, timeframe, basket, source_name, la
         text_auto=".2s",
     )
     fig_top.update_layout(
-        template=chart_style["template"],
         margin=dict(l=12, r=12, t=50, b=12),
         yaxis_title="",
         xaxis_title="Revenue (TK)",
         legend_title="Category",
-        font=dict(color=chart_style["font_color"]),
-        title_font=dict(color=chart_style["font_color"]),
-        xaxis=dict(
-            tickfont=dict(color=chart_style["font_color"]),
-            title=dict(font=dict(color=chart_style["font_color"])),
-        ),
-        yaxis=dict(tickfont=dict(color=chart_style["font_color"])),
     )
-    fig_top.update_traces(textfont=dict(color=chart_style["font_color"]))
     st.plotly_chart(fig_top, use_container_width=True)
     
     st.subheader("Deep Dive Data")

@@ -1,505 +1,155 @@
-
 import streamlit as st
-import pandas as pd
-import datetime
-import io
-import time
-import os
-import sys
-import plotly.express as px
-import plotly.graph_objects as go
 
-# Add directories to sys.path
-INVENTORY_MOD_DIR = os.path.join(os.path.dirname(__file__), "inventory_modules")
-if INVENTORY_MOD_DIR not in sys.path:
-    sys.path.append(INVENTORY_MOD_DIR)
-
-# --- Import modular logic ---
-from app_modules.processor import process_orders_dataframe
-from app_modules.wp_processor import WhatsAppOrderProcessor
-from app_modules.error_handler import log_error, get_logs
+from app_modules.ai_chat import render_ai_chat_tab
+from app_modules.bike_animation import render_bike_animation
+from app_modules.distribution_tab import render_distribution_tab
+from app_modules.error_handler import get_logs
+from app_modules.fuzzy_parser_tab import render_fuzzy_parser_tab
+from app_modules.pathao_tab import render_pathao_tab
 from app_modules.persistence import init_state, save_state
 from app_modules.sales_dashboard import render_live_tab, render_manual_tab
-from app_modules.ai_chat import render_ai_chat_tab
+from app_modules.more_tools import (
+    render_daily_summary_export_tab,
+    render_data_quality_monitor_tab,
+)
+from app_modules.ui_components import (
+    inject_base_styles,
+    render_header,
+    sample_file_download,
+    section_card,
+)
+from app_modules.ui_config import PRIMARY_NAV
 from app_modules.whatsapp_api import render_whatsapp_api_tab
-import core as inv_core
+from app_modules.wp_tab import render_wp_tab
 
-# --- Page Configuration ---
+
 st.set_page_config(
     page_title="Automation Hub Pro",
-    page_icon="🚀",
+    page_icon="AH",
     layout="wide",
-    initial_sidebar_state="collapsed" 
+    initial_sidebar_state="expanded",
 )
 
-# --- Initialize State & Persistence ---
 init_state()
+inject_base_styles()
 
-# --- Premium native CSS for Dark/Light Mode ---
-st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
-    :root {
-        --primary: #4e73df;
-        --secondary: #1e3a8a;
-        --accent: #10b981;
-    }
-    * { font-family: 'Outfit', sans-serif; }
-    
-    /* Animations */
-    @keyframes moveFullScreen {
-        0%   { transform: translateX(250px) scale(1); opacity: 0; }
-        10%  { opacity: 1; }
-        90%  { opacity: 1; }
-        100% { transform: translateX(-115vw) scale(1); opacity: 0; }
-    }
-    @keyframes smoke-puff {
-        0% { transform: scale(0.4); opacity: 0.8; }
-        100% { transform: scale(2) translate(15px, -10px); opacity: 0; }
-    }
-    @keyframes pulse-red {
-        0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-        70% { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-        100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-    }
-
-    .full-screen-bike {
-        position: fixed;
-        top: 100px;
-        right: 0;
-        z-index: 9999;
-        pointer-events: none;
-        display: flex;
-        align-items: center;
-        animation: moveFullScreen 18s linear infinite;
-        filter: drop-shadow(0 5px 15px rgba(0,0,0,0.3));
-    }
-    .bike-img { width: 55px; z-index: 10000; display: block; }
-    .smoke-trail { display: flex; margin-left: -5px; }
-    .smoke {
-        width: 12px; height: 12px; background: #64748b; border-radius: 50%;
-        animation: smoke-puff 0.8s ease-out infinite; margin-left: -6px;
-    }
-    .smoke:nth-child(2) { animation-delay: 0.2s; }
-    .smoke:nth-child(3) { animation-delay: 0.4s; }
-
-    .glass-card {
-        background: var(--card-bg, rgba(255,255,255,0.05));
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 16px;
-        padding: 24px;
-        margin-bottom: 20px;
-    }
-
-    .low-stock-pulse {
-        animation: pulse-red 2s infinite;
-        border: 2px solid #ef4444 !important;
-    }
-
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] {
-        height: 48px;
-        border-radius: 8px 8px 0 0;
-        padding: 0 16px;
-        font-weight: 600;
-    }
-    .stTabs [aria-selected="true"] { background: var(--primary) !important; color: white !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- Global Header & Animation ---
-st.markdown("""
-    <div class="full-screen-bike">
-        <img src="https://cdn-icons-png.flaticon.com/512/2830/2830305.png" class="bike-img">
-        <div class="smoke-trail">
-            <div class="smoke"></div>
-            <div class="smoke"></div>
-            <div class="smoke"></div>
-        </div>
-    </div>
-    <div style="display:flex; align-items:center; justify-content:space-between; padding:15px 0; border-bottom:2px solid rgba(78,115,223,0.3);">
-        <h1 style="margin:0; font-weight:700;"><span style="color:var(--primary);">Automation Hub</span> Pro v8</h1>
-    </div>
-    """, unsafe_allow_html=True)
-
-# --- Global Sidebar Configuration ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2830/2830305.png", width=60)
-    st.markdown("### ⚙️ Global Settings")
-    st.session_state.low_stock_threshold = st.number_input("Safety Stock Level", value=st.session_state.get('low_stock_threshold', 5))
-    search_q = st.text_input("🔍 Matrix SKU / Name Filter", key="inv_matrix_search")
-    
-    st.divider()
-    if st.button("💾 Force Save State", use_container_width=True):
+    st.subheader("Global Settings")
+    st.session_state.low_stock_threshold = st.number_input(
+        "Safety stock level",
+        min_value=0,
+        value=int(st.session_state.get("low_stock_threshold", 5)),
+        step=1,
+    )
+    st.session_state.inv_matrix_search = st.text_input(
+        "Inventory search (SKU/Name)",
+        value=st.session_state.get("inv_matrix_search", ""),
+    )
+    st.session_state.guided_mode = st.toggle(
+        "Guided workflow mode",
+        value=st.session_state.get("guided_mode", True),
+        help="Show step-by-step indicators in each workflow.",
+    )
+    st.session_state.show_animation = st.toggle(
+        "Show motion effects",
+        value=st.session_state.get("show_animation", True),
+    )
+
+    if st.button("Save session state", use_container_width=True):
         save_state()
-        st.toast("✅ State manually saved to browser storage!")
+        st.success("Session state saved.")
 
-# --- Tabs ---
-t_sales_live, t_sales_manual, t_order, t_inv, t_wp, t_logs, t_dev_lab = st.tabs([
-    "💰 Live Dashboard", 
-    "📁 Manual Dashboard", 
-    "📦 Pathao Processor", 
-    "🏢 Distribution Hub", 
-    "💬 WP Verification", 
-    "🛠️ System Logs",
-    "🧪 Dev Lab"
-])
+    with st.expander("Sample Templates", expanded=False):
+        sample_file_download(
+            "Download Pathao sample (CSV)",
+            [
+                {
+                    "Order Number": "1001",
+                    "Phone (Billing)": "01700000000",
+                    "First Name (Shipping)": "Customer One",
+                    "Item Name": "Oxford Shirt",
+                    "SKU": "OXF-M-BLU",
+                    "Quantity": 1,
+                    "State Name (Billing)": "Dhaka",
+                    "Address 1&2 (Shipping)": "Mirpur 10",
+                    "Payment Method Title": "Cash on delivery",
+                    "Order Total Amount": 1200,
+                }
+            ],
+            "pathao_template.csv",
+        )
+        sample_file_download(
+            "Download Inventory sample (CSV)",
+            [{"Item Name": "Oxford Shirt", "Size": "M", "Quantity": 5, "SKU": "OXF-M-BLU"}],
+            "inventory_template.csv",
+        )
+        sample_file_download(
+            "Download WhatsApp sample (CSV)",
+            [
+                {
+                    "Phone (Billing)": "01700000000",
+                    "Full Name (Billing)": "Customer One",
+                    "Order ID": "1001",
+                    "Product Name (main)": "Oxford Shirt",
+                    "SKU": "OXF-M-BLU",
+                    "Quantity": 1,
+                    "Item cost": 1200,
+                    "Order Total Amount": 1200,
+                }
+            ],
+            "whatsapp_template.csv",
+        )
 
+if st.session_state.get("show_animation"):
+    render_bike_animation()
 
-# ---------------------------------------------------------
-# TAB 1: LIVE DASHBOARD
-# ---------------------------------------------------------
-with t_sales_live:
-    st.markdown("### 📊 Live Sales Dashboard")
-    render_live_tab()
+render_header()
+section_card(
+    "How to use",
+    "Follow each module workflow: Upload -> Validate -> Preview -> Export.",
+)
 
-# ---------------------------------------------------------
-# TAB 1.5: MANUAL DASHBOARD
-# ---------------------------------------------------------
-with t_sales_manual:
-    st.markdown("### 📁 Manual Upload Dashboard")
-    render_manual_tab()
+nav_tabs = st.tabs(PRIMARY_NAV)
 
-# ---------------------------------------------------------
-# TAB 2: PATHAO ORDER PROCESSOR (With Auto-Repair)
-# ---------------------------------------------------------
-with t_order:
-    st.markdown("### ✨ Pathao Order Processor")
-    up_pathao = st.file_uploader("📂 Drop Orders File", type=['xlsx', 'csv'], key="pathao_up")
-    
-    if up_pathao:
-        try:
-            with st.status("🚀 Processing Pathao Orders...", expanded=True) as status:
-                st.write("📂 Reading input file...")
-                df = pd.read_csv(up_pathao) if up_pathao.name.endswith('.csv') else pd.read_excel(up_pathao)
-                time.sleep(0.5) # smooth animation pacing
-                
-                st.write("🔍 Formatting fuzzy addresses...")
-                res_df = process_orders_dataframe(df)
-                st.session_state.pathao_res_df = res_df
-                save_state()
-                
-                status.update(label="✅ Success! Processing complete.", state="complete", expanded=False)
+with nav_tabs[0]:
+    dashboard_tabs = st.tabs(["Live", "Manual Upload"])
+    with dashboard_tabs[0]:
+        render_live_tab()
+    with dashboard_tabs[1]:
+        render_manual_tab()
 
-            with st.expander("👀 View Raw Output Data", expanded=False):
-                st.dataframe(res_df, use_container_width=True)
-            
-            buf = io.BytesIO()
-            with pd.ExcelWriter(buf, engine='openpyxl') as wr:
-                res_df.to_excel(wr, index=False)
-                
-            st.download_button("📥 Download Repaired Pathao Data", buf.getvalue(), "Pathao_Final.xlsx", type="primary")
-            st.toast("✅ Finished Pathao processing")
-            
-        except Exception as e:
-            log_error(e, context="Pathao Processor")
-            st.toast("❌ Error in Pathao processing.")
+with nav_tabs[1]:
+    orders_tabs = st.tabs(["Pathao Processor", "Delivery Text Parser"])
+    with orders_tabs[0]:
+        render_pathao_tab(guided=st.session_state.get("guided_mode", True))
+    with orders_tabs[1]:
+        render_fuzzy_parser_tab(guided=st.session_state.get("guided_mode", True))
 
-# ---------------------------------------------------------
-# TAB 2: DISTRIBUTION MATRIX (With Low Stock Alerts)
-# ---------------------------------------------------------
-with t_inv:
-    st.markdown("### 🏢 Distribution Hub")
-    st.info("💡 Manage stock distribution, review actionable insights, and generate daily picking manifests.")
+with nav_tabs[2]:
+    render_distribution_tab(
+        search_q=st.session_state.get("inv_matrix_search", ""),
+        guided=st.session_state.get("guided_mode", True),
+    )
 
-    inv_matrix_tab, inv_dash_tab, inv_pick_tab = st.tabs(["📊 Matrix Analyzer", "📈 Distribution Insights", "📋 Actionable Pick List"])
+with nav_tabs[3]:
+    render_wp_tab(guided=st.session_state.get("guided_mode", True))
 
-    with inv_matrix_tab:
-        st.markdown("### 🏢 Active Stock Matrix & Thresholds")
-    
-        # 🏪 Global Outlet Configuration
-        locs = ["Ecom", "Mirpur", "Wari", "Cumilla", "Sylhet"]
-
-        st.markdown("#### 📤 Step 1: Upload Master List")
-        m_file = st.file_uploader("Master Stock List (Required)", type=["xlsx", "csv"], key="inv_up")
-    
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("#### 🏪 Step 2: Upload Outlet Stocks (Optional)")
-        loc_files = {}
-        
-        # Grid layout for outlets with explicit labels
-        lc = st.columns(len(locs))
-        for i, l in enumerate(locs):
-            with lc[i]:
-                # Visual label for each outlet
-                st.markdown(f"""
-                    <div style='background: var(--primary); color: white; padding: 4px 10px; border-radius: 8px 8px 0 0; text-align: center; font-size: 0.85rem; font-weight: 600;'>
-                        {l}
-                    </div>
-                """, unsafe_allow_html=True)
-                u = st.file_uploader(f"Upload {l}", key=f"inv_l_{l}", label_visibility="collapsed")
-                if u: loc_files[l] = u
-
-        if m_file and st.button("🚀 Analyze Distribution"):
-            try:
-                m_df = pd.read_csv(m_file) if m_file.name.endswith(".csv") else pd.read_excel(m_file)
-                i_map, _, _, s_map = inv_core.load_inventory_from_uploads(loc_files)
-                _, _, t_col, s_col = inv_core.identify_columns(m_df)
-            
-                # Use ALL configured locations for the matrix, not just active ones
-                # This ensures all outlet names show up in the results UI and reports
-                res, _ = inv_core.add_stock_columns_from_inventory(m_df, t_col, i_map, locs, s_col, s_map)
-            
-                st.session_state.inv_res_data = res
-                st.session_state.inv_active_l = locs
-                st.session_state.inv_t_col = t_col
-                save_state()
-                st.toast("✅ Distribution analyzed & saved!")
-                st.rerun()
-            except Exception as e: 
-                log_error(e, context="Inv Matrix")
-                st.toast("❌ Error rendering Matrix!")
-
-        if st.session_state.get('inv_res_data') is not None:
-            df = st.session_state.inv_res_data.copy()
-            a_l = st.session_state.inv_active_l
-            t_c = st.session_state.inv_t_col
-        
-            if search_q: df = df[df[t_c].astype(str).str.lower().str.contains(search_q.lower())]
-
-            # Order Grouping for Colors
-            g_col = inv_core.get_group_by_column(df)
-            if g_col:
-                # Sort by group to keep items together
-                df = df.sort_values(g_col).reset_index(drop=True)
-                u_ids = df[g_col].unique()
-                id_map = {uid: i for i, uid in enumerate(u_ids)}
-                df['_group_idx'] = df[g_col].map(id_map)
-            else:
-                # Fallback to Low Stock sorting if no order group found
-                df['_total'] = df[a_l].apply(pd.to_numeric, errors='coerce').fillna(0).sum(axis=1)
-                df = df.sort_values('_total').reset_index(drop=True)
-                df['_group_idx'] = range(len(df))
-
-            def style_matrix(row):
-                styles = [""] * len(row)
-                # Zebra Group Coloring
-                bg = "#ffffff" if int(row.get('_group_idx', 0)) % 2 == 0 else "#f8fafc"
-                styles = [f"background-color: {bg};"] * len(row)
-            
-                # Stock Logic & Fulfillment Colors
-                for l in a_l:
-                    if l in row:
-                        i = row.index.get_loc(l)
-                        try:
-                            v = float(row[l])
-                            if v == 0: styles[i] += "color: #ef4444; font-weight: bold;"
-                            elif v > 0: styles[i] += "color: #10b981;"
-                        except: pass
-            
-                if "Fulfillment" in row:
-                    fi = row.index.get_loc("Fulfillment")
-                    fv = str(row["Fulfillment"])
-                    if "Available" in fv: styles[fi] += "background-color: #d1fae5 !important; color: #065f46; font-weight: bold;"
-                    elif "OOS" in fv: styles[fi] += "background-color: #fee2e2 !important; color: #991b1b;"
-                return styles
-
-            st.markdown(f"#### Viewing {len(df)} Records")
-            with st.expander("👀 View Stock Matrix Detail", expanded=False):
-                st.dataframe(df.style.apply(style_matrix, axis=1), use_container_width=True)
-        
-            # --- EXCEL EXPORT ---
-            buf_inv = io.BytesIO()
-            with pd.ExcelWriter(buf_inv, engine="xlsxwriter") as writer:
-                # Clean internal columns for export
-                export_df = df.drop(['_group_idx', '_total'], axis=1, errors='ignore')
-                export_df.to_excel(writer, index=False, sheet_name="Distribution")
-            
-                wb = writer.book
-                ws = writer.sheets["Distribution"]
-                fmt_zebra = wb.add_format({'bg_color': '#F1F5F9'}) # Slate-White
-            
-                # Apply Zebra Styles to Excel
-                for i, (idx, row) in enumerate(df.iterrows()):
-                    if int(row.get('_group_idx', 0)) % 2 != 0:
-                        ws.set_row(i + 1, None, fmt_zebra)
-            
-                # Conditional Stock Formatting (Red for 0, Green for >0)
-                fmt_red = wb.add_format({'font_color': '#ef4444', 'bold': True})
-                fmt_green = wb.add_format({'font_color': '#10b981'})
-            
-                for col_idx, col_name in enumerate(export_df.columns):
-                    if col_name in a_l:
-                        ws.conditional_format(1, col_idx, len(export_df), col_idx, {'type': 'cell', 'criteria': 'equal to', 'value': 0, 'format': fmt_red})
-                        ws.conditional_format(1, col_idx, len(export_df), col_idx, {'type': 'cell', 'criteria': 'greater than', 'value': 0, 'format': fmt_green})
-
-            st.download_button("📥 Download Distribution Report", buf_inv.getvalue(), "Stock_Distribution.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
-
-
-
-    # ---------------------------------------------------------
-    # TAB 0: EXECUTIVE DASHBOARD
-    # ---------------------------------------------------------
-    with inv_dash_tab:
-        st.markdown("### 📈 Business Performance Insights")
-    
-        if st.session_state.get('inv_res_data') is not None:
-            df_inv = st.session_state.inv_res_data
-            locs = st.session_state.inv_active_l
-        
-            c1, c2 = st.columns(2)
-        
-            with c1:
-                st.markdown("#### 🏥 Stock Health Heatmap")
-                # Melt for heatmap
-                melted = df_inv.melt(id_vars=[st.session_state.inv_t_col], value_vars=locs, var_name='Location', value_name='Stock')
-                fig = px.density_heatmap(melted, x='Location', y=st.session_state.inv_t_col, z='Stock', 
-                                         color_continuous_scale='RdYlGn', title="Stock Level by Item & Location")
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with c2:
-                st.markdown("#### 📉 Distribution Balance")
-                # Inventory composition
-                loc_totals = df_inv[locs].sum()
-                fig_pie = px.pie(values=loc_totals.values, names=loc_totals.index, title="Global Stock Distribution", hole=0.4)
-                st.plotly_chart(fig_pie, use_container_width=True)
-            
-            # Low Stock Alerts
-            st.markdown("#### ⚠️ Immediate Replenishment Required")
-            threshold = st.session_state.low_stock_threshold
-            # Calculate sum properly filtering only numeric columns
-            sum_stock = df_inv[locs].apply(pd.to_numeric, errors='coerce').fillna(0).sum(axis=1)
-            low_stock_items = df_inv[sum_stock < threshold]
-        
-            if not low_stock_items.empty:
-                st.warning(f"Found {len(low_stock_items)} items with total stock below {threshold}!")
-                st.dataframe(low_stock_items[[st.session_state.inv_t_col] + locs], use_container_width=True)
-            else:
-                st.success("All stock levels are above the safety threshold. Excellent! ✅")
+with st.expander("More Tools", expanded=False):
+    more_tabs = st.tabs(["System Logs", "Data Quality", "Daily Summary Export", "Dev Lab"])
+    with more_tabs[0]:
+        logs = get_logs()
+        if logs:
+            for entry in reversed(logs):
+                st.error(f"[{entry['timestamp']}] {entry['context']}: {entry['error']}")
         else:
-            st.info("💡 Run a distribution analysis in the 'Matrix Analyzer' tab to populate this dashboard.")
-
-
-
-    # ---------------------------------------------------------
-    # TAB 3: PICKING MANIFEST (Actionable Summary)
-    # ---------------------------------------------------------
-    with inv_pick_tab:
-        st.markdown("### 📋 Daily Picking Manifest")
-        if st.session_state.get('inv_res_data') is not None:
-            df_inv = st.session_state.inv_res_data
-            locs = st.session_state.inv_active_l
-            t_col = st.session_state.inv_t_col
-        
-            # We need "Dispatch Suggestion" to know where to pick from
-            if "Dispatch Suggestion" in df_inv.columns:
-                manifest_data = []
-            
-                for loc in locs:
-                    # Filter items suggested for this location
-                    loc_df = df_inv[df_inv["Dispatch Suggestion"] == loc]
-                    if not loc_df.empty:
-                        # Get counts per item
-                        # Try to find quantity column, default to 1 per row if not found
-                        _, qty_col, _, _ = inv_core.identify_columns(loc_df)
-                    
-                        if qty_col and qty_col in loc_df.columns:
-                            summary = loc_df.groupby(t_col)[qty_col].sum().reset_index()
-                        else:
-                            summary = loc_df.groupby(t_col).size().reset_index(name='Quantity')
-                            qty_col = 'Quantity'
-                    
-                        summary.columns = ['Item Name', 'Pick Quantity']
-                    
-                        st.markdown(f"#### 📦 {loc} Pick List")
-                        st.dataframe(summary, use_container_width=True)
-                    
-                        # Add to master manifest for export
-                        for _, row in summary.iterrows():
-                            manifest_data.append({
-                                'Location': loc,
-                                'Item Name': row['Item Name'],
-                                'Quantity': row['Pick Quantity']
-                            })
-            
-                if manifest_data:
-                    manifest_df = pd.DataFrame(manifest_data)
-                
-                    # Export options
-                    m_buf = io.BytesIO()
-                    with pd.ExcelWriter(m_buf, engine='xlsxwriter') as writer:
-                        manifest_df.to_excel(writer, index=False, sheet_name="Picking_Manifest")
-                    
-                    st.download_button("📥 Download Picking Manifest", m_buf.getvalue(), "Picking_Manifest.xlsx")
-                
-                    # Simple text version for copy-paste
-                    text_manifest = "📋 PICKING MANIFEST\n" + "="*20 + "\n"
-                    for loc in locs:
-                        loc_summ = [d for d in manifest_data if d['Location'] == loc]
-                        if loc_summ:
-                            text_manifest += f"\n📍 {loc.upper()}:\n"
-                            for item in loc_summ:
-                                text_manifest += f"- {item['Item Name']}: {item['Quantity']} pcs\n"
-                
-                    st.text_area("Copyable Manifest Text", text_manifest, height=300)
-                else:
-                    st.info("No items have been assigned to locations yet. Ensure 'Dispatch Suggestion' is generated.")
-            else:
-                st.warning("Dispatch suggestions not found in data. Please run 'Analyze Distribution' in the Matrix Analyzer tab.")
-        else:
-            st.info("💡 Run a distribution analysis to generate the picking manifest.")
-
-
-# ---------------------------------------------------------
-# TAB 3: WP VERIFICATION (With Bulk Export)
-# ---------------------------------------------------------
-with t_wp:
-    st.markdown("### 💬 Verification Center")
-    
-    with st.expander("✏️ Customize Message Template"):
-        st.caption("Available variables: `{name}`, `{salutation}`, `{order_id}`")
-        custom_intro = st.text_area("Custom Header/Intro", value="", placeholder="*Order Verification From DEEN Commerce*\n\nAssalamu Alaikum, {salutation}!\n\nDear {name},\nPlease verify your order details:\n*Order ID:* {order_id}", height=150)
-        custom_footer = st.text_area("Custom Footer/Outro", value="", placeholder="Please confirm the order and address.\nIf any correction is needed, please let us know the possible adjustment.\n\n*Delivery fees apply for returns.*\n\nThank you for shopping with DEEN Commerce! https://deencommerce.com/", height=130)
-
-    wp_f = st.file_uploader("📂 Verification List", key="wp_up_2")
-    
-    if wp_f:
-        try:
-            w_proc = WhatsAppOrderProcessor()
-            processed_data = w_proc.process_orders(pd.read_excel(wp_f) if wp_f.name.endswith('xlsx') else pd.read_csv(wp_f))
-            w_links = w_proc.create_whatsapp_links(
-                processed_data,
-                custom_intro=custom_intro if custom_intro.strip() else None,
-                custom_footer=custom_footer if custom_footer.strip() else None
-            )
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                st.success(f"Generated {len(w_links)} links.")
-            with c2:
-                # --- NEW: BULK MESSAGE EXPORT ---
-                bulk_text = "\n\n" + "="*50 + "\n\n".join([f"TO: {row.get(w_proc.config['name_col'])} ({row.get(w_proc.config['phone_col'])})\n{row['whatsapp_link']}" for _, row in w_links.iterrows()])
-                st.download_button("📥 Export Bulk Message Text", bulk_text, "Bulk_WhatsApp_Messages.txt")
-
-            for _, r in w_links.head(10).iterrows():
-                with st.expander(f"{r.get(w_proc.config['name_col'])} ({r.get(w_proc.config['phone_col'])})"):
-                    st.link_button("Send Link", r['whatsapp_link'])
-        except Exception as e: log_error(e, context="WP Bulk")
-
-# ---------------------------------------------------------
-# TAB 4: SYSTEM LOGS
-# ---------------------------------------------------------
-with t_logs:
-    st.markdown("### 🛠️ Developer Control")
-    logs = get_logs()
-    if logs:
-        for l in reversed(logs):
-            st.error(f"[{l['timestamp']}] {l['context']}: {l['error']}")
-    else: st.success("No errors recorded.")
-
-# ---------------------------------------------------------
-# TAB 5: DEV LAB
-# ---------------------------------------------------------
-with t_dev_lab:
-    st.markdown("### 🧪 Experimental Developer Features")
-    st.info("These are mockup prototypes for Version 8.0.")
-    
-    dev_ai_tab, dev_wa_tab = st.tabs(["🤖 AI Data Chat", "📲 Whatsapp API Broadcast"])
-    
-    with dev_ai_tab:
-        render_ai_chat_tab()
-        
-    with dev_wa_tab:
-        render_whatsapp_api_tab()
-
-save_state()
+            st.success("No errors recorded.")
+    with more_tabs[1]:
+        render_data_quality_monitor_tab()
+    with more_tabs[2]:
+        render_daily_summary_export_tab()
+    with more_tabs[3]:
+        dev_tabs = st.tabs(["AI Data Chat", "WhatsApp API Broadcast"])
+        with dev_tabs[0]:
+            render_ai_chat_tab()
+        with dev_tabs[1]:
+            render_whatsapp_api_tab()
