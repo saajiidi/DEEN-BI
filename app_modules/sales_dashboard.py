@@ -540,22 +540,21 @@ def _render_welcome_popup_content(summ, basket, last_updated="N/A", focus="all")
                     color_discrete_sequence=px.colors.qualitative.Pastel
                 )
                 fig_pie.update_layout(
-                    margin=dict(l=12, r=170, t=50, b=12),
+                    margin=dict(l=20, r=20, t=40, b=20),
                     uniformtext_minsize=10,
                     uniformtext_mode="hide",
                     legend=dict(
-                        orientation="v",
-                        yanchor="top",
-                        y=1,
-                        xanchor="left",
-                        x=1.02,
-                        borderwidth=1,
-                        font=dict(size=11),
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.3,
+                        xanchor="center",
+                        x=0.5
                     ),
                 )
                 fig_pie.update_traces(
-                    textposition="outside",
-                    textinfo="label+percent",
+                    textposition="inside",
+                    textinfo="percent",
+                    insidetextorientation="radial",
                     pull=0.01,
                 )
                 st.plotly_chart(fig_pie, use_container_width=True)
@@ -664,22 +663,21 @@ def render_dashboard_output(drill, summ, top, timeframe, basket, source_name, la
                 color_discrete_sequence=px.colors.qualitative.Pastel
             )
             fig_pie.update_layout(
-                margin=dict(l=12, r=170, t=50, b=12),
+                margin=dict(l=20, r=20, t=40, b=20),
                 uniformtext_minsize=10,
                 uniformtext_mode="hide",
                 legend=dict(
-                    orientation="v",
-                    yanchor="top",
-                    y=1,
-                    xanchor="left",
-                    x=1.02,
-                    borderwidth=1,
-                    font=dict(size=11),
+                    orientation="h",
+                    yanchor="bottom",
+                    y=-0.3,
+                    xanchor="center",
+                    x=0.5
                 ),
             )
             fig_pie.update_traces(
-                textposition="outside",
-                textinfo="label+percent",
+                textposition="inside",
+                textinfo="percent",
+                insidetextorientation="radial",
                 pull=0.01,
             )
             st.plotly_chart(fig_pie, use_container_width=True)
