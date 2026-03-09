@@ -540,14 +540,13 @@ def _render_welcome_popup_content(summ, basket, last_updated="N/A", focus="all")
                     color_discrete_sequence=px.colors.qualitative.Pastel
                 )
                 fig_pie.update_layout(
-                    margin=dict(l=40, r=40, t=40, b=20),
-                    uniformtext_minsize=10,
-                    uniformtext_mode="hide",
+                    margin=dict(l=120, r=120, t=50, b=50),
                     showlegend=False
                 )
                 fig_pie.update_traces(
                     textposition="outside",
                     textinfo="label+percent",
+                    textfont_size=11,
                     pull=0.01,
                 )
                 st.plotly_chart(fig_pie, use_container_width=True)
@@ -656,14 +655,13 @@ def render_dashboard_output(drill, summ, top, timeframe, basket, source_name, la
                 color_discrete_sequence=px.colors.qualitative.Pastel
             )
             fig_pie.update_layout(
-                margin=dict(l=40, r=40, t=40, b=20),
-                uniformtext_minsize=10,
-                uniformtext_mode="hide",
+                margin=dict(l=120, r=120, t=50, b=50),
                 showlegend=False
             )
             fig_pie.update_traces(
                 textposition="outside",
                 textinfo="label+percent",
+                textfont_size=11,
                 pull=0.01,
             )
             st.plotly_chart(fig_pie, use_container_width=True)
