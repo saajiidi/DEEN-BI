@@ -1,16 +1,14 @@
-# Python
+# Core App
 streamlit
 pandas
+plotly
+openpyxl
+xlsxwriter
 pillow
-openpyxl==3.1.2
-xlsxwriter==3.1.9
-plotly==5.19.0
-fuzzywuzzy==0.18.0
-python-Levenshtein==0.23.0
-google-api-python-client==2.118.0
-google-auth==2.28.0
 
-# Developer Tools
-pytest==8.0.0
-ruff==0.3.0
-black==24.2.0
+# Fuzzy Matching (better than fuzzywuzzy)
+rapidfuzz
+
+# Google API
+google-api-python-client
+google-auth
