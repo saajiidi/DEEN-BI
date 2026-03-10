@@ -608,9 +608,7 @@ def _render_welcome_popup_content(summ, basket, last_updated="N/A", focus="all")
 
 if hasattr(st, "dialog"):
     def show_welcome_popup(summ, basket, last_updated="N/A", focus="all"):
-        popup_datetime = datetime.now().strftime("%B %d, %Y %I:%M %p")
-        
-        @st.dialog(f"Welcome! Today's Actionable Insights ({popup_datetime})", width="large")
+        @st.dialog("Welcome! Today's Actionable Insights", width="large")
         def _popup():
             st.session_state.has_seen_dashboard_popup = True
             _render_welcome_popup_content(summ, basket, last_updated, focus)
