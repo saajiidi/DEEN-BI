@@ -121,7 +121,8 @@ def inject_base_styles():
     [data-testid="stMetricValue"] {
         font-family: 'JetBrains Mono', monospace !important;
         color: var(--neon-blue) !important;
-        font-size: 2.4rem !important;
+        font-size: 2.0rem !important;
+        white-space: nowrap !important;
     }
 
     /* TABS STYLING */
@@ -130,14 +131,15 @@ def inject_base_styles():
         background-color: transparent;
     }
     .stTabs [data-baseweb="tab"] {
-        height: 50px;
+        height: 48px;
         background-color: var(--glass-bg);
-        border-radius: 12px 12px 0 0;
+        border-radius: 8px 8px 0 0;
         color: var(--text-secondary);
         border: 1px solid var(--glass-border);
         border-bottom: none;
-        padding: 0 24px;
+        padding: 0 16px;
         transition: all 0.2s ease;
+        margin-top: 4px;
     }
     .stTabs [aria-selected="true"] {
         background-color: rgba(59, 130, 246, 0.15) !important;
@@ -277,6 +279,24 @@ def render_header():
 def section_card(title: str, help_text: str = ""):
     card_html = f'''<div class="hub-card"><div style="font-size:1.4rem; font-weight:700; color:var(--text-primary); margin-bottom:0.5rem;">{title}</div><div style="color:var(--text-secondary); font-size:1rem; line-height:1.6;">{help_text}</div></div>'''
     st.markdown(card_html, unsafe_allow_html=True)
+
+
+def render_metric_hud(label: str, value: str, icon: str = "📈"):
+    """
+    Renders a premium, non-truncating metric card using HTML.
+    Prevents the Streamlit '...' truncation for large revenue figures.
+    """
+    html = f'''
+    <div style="background: var(--glass-bg); border: 1px solid var(--glass-border); padding: 1rem; border-radius: 16px; margin: 0.5rem 0;">
+        <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 8px;">
+            <span>{icon}</span> {label}
+        </div>
+        <div style="font-family: 'JetBrains Mono', monospace; color: var(--neon-blue); font-size: 1.5rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{value}">
+            {value}
+        </div>
+    </div>
+    '''
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def render_steps(steps: list[str], current_step: int):

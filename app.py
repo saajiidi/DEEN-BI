@@ -68,12 +68,12 @@ def run_app():
 
     render_header()
 
-    # Consolidated Command Center Navigation
+    # Consolidated Command Center Navigation with Static Identifiers
     primary_nav = [
         "📡 Live",
-        get_custom_report_tab_label(),
+        "📂 Sales Hub",
         "👥 Pulse",
-        "🚛 Operations Hub",
+        "🚛 Operations",
         "🛠️ System Tools",
     ]
     tabs = st.tabs(primary_nav)
@@ -87,19 +87,20 @@ def run_app():
         render_custom_period_tab()
 
     # 3. 👥 CUSTOMER PULSE
+    # 3. CUSTOMER PULSE
     with tabs[2]:
         from src.modules.sales import render_customer_pulse_tab
 
         render_customer_pulse_tab()
 
-    # 4. 🚛 OPERATIONS HUB (NESTED)
+    # 4. OPERATIONS HUB (NESTED)
     with tabs[3]:
         sub_nav = [
-            "🚚 Pathao",
-            "🔍 Text Parser",
-            "🏠 Inventory",
-            "💬 WhatsApp Links",
-            get_wp_api_orders_tab_label(),
+            "Pathao",
+            "Parser",
+            "Inventory",
+            "WhatsApp Hub",
+            "WP Orders",
         ]
         sub_tabs = st.tabs(sub_nav)
 

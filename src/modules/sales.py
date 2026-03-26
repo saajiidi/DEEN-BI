@@ -133,11 +133,12 @@ def render_story_summary(summ, tp, timeframe, bk):
 def render_dashboard_output(drill, summ, top, timeframe, basket, source, updated):
     render_story_summary(summ, top, timeframe, basket)
     st.markdown(f"### ⚡ Statement: {timeframe or 'All Records'}")
+    from src.ui.components import render_metric_hud
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Items", f"{summ['Total Qty'].sum():,.0f}")
-    c2.metric("Orders", f"{basket['total_orders']:,}")
-    c3.metric("Revenue", f"TK {summ['Total Amount'].sum():,.0f}")
-    c4.metric("Avg Basket", f"TK {basket['avg_basket_value']:,.0f}")
+    with c1: render_metric_hud("Items Sold", f"{summ['Total Qty'].sum():,.0f}", "📦")
+    with c2: render_metric_hud("Total Orders", f"{basket['total_orders']:,}", "🛒")
+    with c3: render_metric_hud("Total Revenue", f"TK {summ['Total Amount'].sum():,.0f}", "💰")
+    with c4: render_metric_hud("Avg Basket", f"TK {basket['avg_basket_value']:,.0f}", "🛍️")
     
     is_dark = st.session_state.get("app_theme", "Dark Mode") == "Dark Mode"
     color_scale = "Blues_r" if is_dark else "Plasma"
@@ -388,11 +389,12 @@ def render_customer_pulse_core(master, full_hist):
     st.markdown(story, unsafe_allow_html=True)
 
     # Metrics HUD
+    from src.ui.components import render_metric_hud
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Unique Pulse", f"{unique_customers:,}")
-    m2.metric("Retention Rate", f"{retention_rate:.1f}%")
-    m3.metric("Avg CLV", f"TK {avg_clv:,.0f}")
-    m4.metric("Loyalists", f"{returning_count:,}")
+    with m1: render_metric_hud("Unique Pulse", f"{unique_customers:,}", "👥")
+    with m2: render_metric_hud("Retention Rate", f"{retention_rate:.1f}%", "🔄")
+    with m3: render_metric_hud("Avg CLV", f"TK {avg_clv:,.0f}", "💎")
+    with m4: render_metric_hud("Loyalists", f"{returning_count:,}", "🏆")
 
     # Visual Insights
     theme_template = "plotly_dark" if is_dark else "plotly_white"
