@@ -890,10 +890,10 @@ def render_cache_health_panel():
     if st.button("💾 Export Current Pivot to Local CSVs", use_container_width=True, help="Dumps all cached data into Excel-readable files in your 'incoming' folder"):
         from src.core.paths import INCOMING_DIR
         try:
-            # Export the master snapshot
-            if not master_df.empty:
+            m_df, msg = get_all_statements_master(full_history=False)
+            if m_df is not None and not m_df.empty:
                 csv_path = INCOMING_DIR / f"pivot_snapshot_{datetime.now().strftime('%Y%m%d')}.csv"
-                master_df.to_csv(csv_path, index=False)
+                m_df.to_csv(csv_path, index=False)
                 st.success(f"Pivot snapshot secured: {csv_path.name}")
             else:
                 st.warning("Database is currently empty. Sync first.")
