@@ -161,7 +161,7 @@ def inject_base_styles():
         display: flex;
         justify-content: space-between;
         gap: 1rem;
-        align-items: stretch;
+        align-items: center;
         background: var(--panel-bg-strong);
         border: 1px solid var(--panel-border);
         border-radius: 28px;
