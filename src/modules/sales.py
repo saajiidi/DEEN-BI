@@ -196,7 +196,7 @@ def render_dashboard_output(
     render_status_strip(
         source=src or "Local",
         rows=len(df),
-        last_refresh=upd or "N/A",
+        last_refresh="N/A",
         status="Active Dataset",
     )
     st.caption(f"Charts and KPIs reflect {display_period or tf or 'the selected period'}.")
@@ -204,21 +204,21 @@ def render_dashboard_output(
     top_row = st.columns(4)
     with top_row[0]:
         render_ops_kpi(
-            "Items Sold",
-            f"{sm['Total Qty'].sum():,.0f}",
-            f"{len(df):,} sales rows in the selected period",
+            "Items Sold", f"{sm['Total Qty'].sum():,.0f}", "Units shipped", delta=deltas.get("qty")
         )
     with top_row[1]:
         render_ops_kpi(
-            "Total Orders",
+            "Unique Orders",
             f"{bk['total_orders']:,}",
-            f"{len(top_prod):,} products sold in the selected period",
+            f"From {bk['total_orders']:,} checkouts",
+            delta=deltas.get("orders")
         )
     with top_row[2]:
         render_ops_kpi(
-            "Revenue",
+            "Grand Gross",
             f"TK {sm['Total Amount'].sum():,.0f}",
-            "Gross line revenue across the selected range",
+            "Gross line revenue",
+            delta=deltas.get("rev")
         )
     with top_row[3]:
         render_ops_kpi(
@@ -230,7 +230,7 @@ def render_dashboard_output(
     chart_a, chart_b = st.columns(2)
     with chart_a:
         fig_pie = px.pie(
-            sorted_summ,
+            sm.sort_values("Total Amount", ascending=False),
             values="Total Amount",
             names="Category",
             hole=0.55,
@@ -241,7 +241,7 @@ def render_dashboard_output(
 
     with chart_b:
         fig_bar = px.bar(
-            sorted_summ.sort_values("Total Qty", ascending=True),
+            sm.sort_values("Total Qty", ascending=True),
             x="Total Qty",
             y="Category",
             orientation="h",
@@ -266,7 +266,7 @@ def render_dashboard_output(
                 ("Avg basket TK", f"TK {bk['avg_basket_value']:,.0f}"),
                 ("Total Item", f"{sm['Total Qty'].sum():,.0f}"),
                 ("Total Unique Order", f"{bk['total_orders']:,}"),
-                ("Total Unique Customer", f"{unique_customers:,}"),
+                ("Total Unique Customer", f"{compute_unique_customer_count(df):,}"),
             ]
         )
 
@@ -486,8 +486,7 @@ def _render_live_tab_legacy():
                 tp,
                 tf,
                 bk,
-                src,
-                upd,
+                src=src,
                 top_cust=tc,
                 show_full_raw=True,
             )
@@ -606,8 +605,7 @@ def _render_live_tab_transition():
                 tp,
                 tf,
                 bk,
-                src,
-                upd,
+                src=src,
                 top_cust=tc,
                 show_full_raw=True,
             )
@@ -917,6 +915,21 @@ def render_custom_period_tab():
             "phone": "_p_phone",
             "email": "_p_email",
         }
+        # PREVIOUS PERIOD ANALYSIS
+        diff = (cur_end - cur_start).days + 1
+        prev_end = cur_start - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=diff - 1)
+        
+        prev_metrics = None
+        prev_df = master[
+            (master["_p_date"].dt.date >= prev_start) & (master["_p_date"].dt.date <= prev_end)
+        ].copy()
+        
+        if not prev_df.empty:
+            p_dr, p_sm, p_tp, p_tf, p_bk, _, p_tc = process_data(prev_df, mc)
+            if p_sm is not None:
+                prev_metrics = {"sm": p_sm, "bk": p_bk, "tc": p_tc}
+
         dr, sm, tp, tf, bk, filtered_df, tc = process_data(filtered, mc)
         if filtered_df is not None:
             render_dashboard_output(
@@ -930,6 +943,7 @@ def render_custom_period_tab():
                 "2026 Delta Sync",
                 top_cust=tc,
                 display_period=selected_period,
+                prev_metrics=prev_metrics,
             )
     else:
         st.error("Time-series column missing in current dataset.")
