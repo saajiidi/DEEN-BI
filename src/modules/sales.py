@@ -22,6 +22,11 @@ from src.services.live_ops import (
     run_archive_if_requested,
 )
 from src.services.master_sales import load_master_sales_dataset
+from src.data.normalized_sales import (
+    CANONICAL_COLUMNS,
+    compute_sales_analytics,
+    normalize_sales_dataframe,
+)
 from src.ui.components import (
     render_ops_hero,
     render_ops_kpi,
@@ -71,112 +76,51 @@ def get_custom_report_tab_label():
 
 @st.cache_data(show_spinner=False, max_entries=20)
 def process_data(df, selected_cols):
+    """
+    Legacy wrapper that now leverages src.data.normalized_sales logic 
+    for consistency across the application.
+    """
     try:
         df = df.copy()
-        df["Internal_Name"] = (
-            df[selected_cols["name"]].fillna("Unknown Product").astype(str)
-        )
-        df["Internal_Cost"] = pd.to_numeric(
-            df[selected_cols["cost"]], errors="coerce"
-        ).fillna(0)
-        df["Internal_Qty"] = pd.to_numeric(
-            df[selected_cols["qty"]], errors="coerce"
-        ).fillna(0)
-
-        # New: Customer Name support
+        
+        # Map internal names for analytics if needed
+        # Mapping logic to convert selected_cols format to normalize_sales_dataframe expectations
+        # However, for simplicity and to maintain current behavior, we ensure Internal columns exist
+        df["item_name"] = df[selected_cols["name"]].fillna("Unknown Product").astype(str)
+        df["unit_price"] = pd.to_numeric(df[selected_cols["cost"]], errors="coerce").fillna(0)
+        df["qty"] = pd.to_numeric(df[selected_cols["qty"]], errors="coerce").fillna(0)
+        
         c_col = selected_cols.get("customer_name")
-        df["Internal_Customer"] = (
+        df["customer_name"] = (
             df[c_col].fillna("Unknown Customer").astype(str)
             if c_col and c_col in df.columns
             else "N/A"
         )
+        
+        # Internal aliases for backward compatibility in the rest of the script
+        df["Internal_Name"] = df["item_name"]
+        df["Internal_Cost"] = df["unit_price"]
+        df["Internal_Qty"] = df["qty"]
+        df["Internal_Customer"] = df["customer_name"]
+        df["Total Amount"] = df["unit_price"] * df["qty"]
+        df["line_amount"] = df["Total Amount"]
+        
+        # Ensure category is set
+        df["Category"] = df["item_name"].apply(get_category_for_sales)
+        df["category"] = df["Category"]
 
-        tf = ""
-        if "date" in selected_cols:
-            ds = pd.to_datetime(df[selected_cols["date"]], errors="coerce").dropna()
-            if not ds.empty:
-                tf = f"{ds.min().strftime('%d%b')}_to_{ds.max().strftime('%d%b_%y')}"
-
-        df["Category"] = df["Internal_Name"].apply(get_category_for_sales)
-        df["Total Amount"] = df["Internal_Cost"] * df["Internal_Qty"]
-
-        summ = (
-            df.groupby("Category")
-            .agg({"Internal_Qty": "sum", "Total Amount": "sum"})
-            .reset_index()
+        # Use the centralized analytics engine
+        analytics = compute_sales_analytics(df)
+        
+        return (
+            analytics["drilldown"], 
+            analytics["summary"], 
+            analytics["top_products"], 
+            analytics["timeframe"], 
+            analytics["basket"], 
+            df, 
+            analytics["top_customers"]
         )
-        summ.columns = ["Category", "Total Qty", "Total Amount"]
-        total_rev = summ["Total Amount"].sum()
-        total_qty = summ["Total Qty"].sum()
-        if total_rev > 0:
-            summ["Revenue Share (%)"] = (
-                (summ["Total Amount"] / total_rev) * 100
-            ).round(2)
-        if total_qty > 0:
-            summ["Quantity Share (%)"] = (
-                (summ["Total Qty"] / total_qty) * 100
-            ).round(2)
-
-        drill = (
-            df.groupby(["Category", "Internal_Cost"])
-            .agg({"Internal_Qty": "sum", "Total Amount": "sum"})
-            .reset_index()
-        )
-        drill.columns = ["Category", "Price (TK)", "Total Qty", "Total Amount"]
-
-        # Product rankings
-        top_products = (
-            df.groupby("Internal_Name")
-            .agg({"Internal_Qty": "sum", "Total Amount": "sum", "Category": "first"})
-            .reset_index()
-        )
-        top_products.columns = [
-            "Product Name",
-            "Total Qty",
-            "Total Amount",
-            "Category",
-        ]
-        top_products = top_products.sort_values("Total Amount", ascending=False)
-
-        # Customer highlights
-        top_customers = None
-        if (
-            "Internal_Customer" in df.columns
-            and (df["Internal_Customer"] != "N/A").any()
-        ):
-            top_customers = (
-                df.groupby("Internal_Customer")
-                .agg({"Total Amount": "sum", "Internal_Qty": "sum"})
-                .reset_index()
-            )
-            top_customers.columns = [
-                "Customer Name",
-                "Total Spent",
-                "Items Purchased",
-            ]
-            top_customers = top_customers.sort_values("Total Spent", ascending=False)
-
-        bk = {"avg_basket_qty": 0, "avg_basket_value": 0, "total_orders": 0}
-        order_group_col = None
-        for key in ("order_id", "phone", "email"):
-            candidate = selected_cols.get(key)
-            if candidate and candidate in df.columns:
-                order_group_col = candidate
-                break
-
-        if order_group_col:
-            order_df = df[df[order_group_col].notna()].copy()
-            if not order_df.empty:
-                og = order_df.groupby(order_group_col).agg(
-                    {"Internal_Qty": "sum", "Total Amount": "sum"}
-                )
-                bk = {
-                    "avg_basket_qty": og["Internal_Qty"].mean(),
-                    "avg_basket_value": og["Total Amount"].mean(),
-                    "total_orders": len(og),
-                }
-
-        return drill, summ, top_products, tf, bk, df, top_customers
     except Exception as e:
         log_system_event("CALC_ERROR", str(e))
         return None, None, None, "", {}, None, None
@@ -320,10 +264,38 @@ def render_dashboard_output(
             [
                 ("Avg Basket Qty", f"{bk['avg_basket_qty']:.1f}"),
                 ("Avg basket TK", f"TK {bk['avg_basket_value']:,.0f}"),
+                ("Total Item", f"{sm['Total Qty'].sum():,.0f}"),
                 ("Total Unique Order", f"{bk['total_orders']:,}"),
                 ("Total Unique Customer", f"{unique_customers:,}"),
             ]
         )
+
+    if display_period:
+        date_col = "_p_date" if "_p_date" in df.columns else None
+        if date_col is None and "order_date" in df.columns:
+            date_col = "order_date"
+        if date_col is not None:
+            trend_df = df.copy()
+            trend_df[date_col] = pd.to_datetime(trend_df[date_col], errors="coerce")
+            trend_df = trend_df.dropna(subset=[date_col])
+            if not trend_df.empty and "Total Amount" in trend_df.columns:
+                bucket = "D"
+                if trend_df[date_col].dt.date.nunique() > 62:
+                    bucket = "M"
+                revenue_trend = (
+                    trend_df.groupby(trend_df[date_col].dt.to_period(bucket))["Total Amount"]
+                    .sum()
+                    .reset_index()
+                )
+                revenue_trend[date_col] = revenue_trend[date_col].astype(str)
+                fig_trend = px.line(
+                    revenue_trend,
+                    x=date_col,
+                    y="Total Amount",
+                    title="Revenue Over Selected Range",
+                    markers=True,
+                )
+                render_plotly_chart(fig_trend, key=f"sales_trend_{src or 'default'}")
 
     try:
         buf = BytesIO()
@@ -350,7 +322,7 @@ def render_dashboard_output(
     except Exception as e:
         st.info(f"Export is unavailable right now. ({e})")
 
-    detail_tabs = st.tabs(["Category Summary", "Products", "Raw Data"])
+    detail_tabs = st.tabs(["Category Summary", "Products", "Normalized Detail", "Source Data"])
 
     with detail_tabs[0]:
         st.dataframe(
@@ -367,8 +339,56 @@ def render_dashboard_output(
         )
 
     with detail_tabs[2]:
+        # Extract normalized view using CANONICAL_COLUMNS
+        # Need to check if columns exist or have _p_ prefixes
+        disp = df.copy()
+        
+        # Mapping from _p_ prefix (master dataset) or Internal prefix to canonical
+        mapping = {
+            "_p_order": "order_id",
+            "_p_date": "order_date",
+            "_p_cust_name": "customer_name",
+            "_p_phone": "phone",
+            "_p_email": "email",
+            "_p_state": "state",
+            "_p_sku": "sku",
+            "_p_name": "item_name",
+            "_p_cost": "unit_price",
+            "_p_qty": "qty",
+            "_p_order_total": "order_total",
+            "_p_status": "order_status",
+            "_p_archive_status": "archive_status",
+            "Category": "category",
+            "Total Amount": "line_amount",
+        }
+        
+        for k, v in mapping.items():
+            if k in disp.columns and v not in disp.columns:
+                disp[v] = disp[k]
+        
+        cols_present = [c for c in CANONICAL_COLUMNS if c in disp.columns]
+        if not cols_present:
+             # Fallback to some basic columns if canonicals not found
+             cols_present = [c for c in disp.columns if not str(c).startswith('_')]
+        
+        search_norm = st.text_input(
+            "Filter normalized records",
+            key=f"search_norm_{src}_{tf}",
+            placeholder="Search by any field...",
+        ).lower()
+        
+        if search_norm:
+            mask = disp[cols_present].astype(str).apply(
+                lambda x: x.str.contains(search_norm, case=False, na=False)
+            ).any(axis=1)
+            disp = disp[mask]
+        
+        st.caption(f"Showing {len(disp):,} canonical records.")
+        st.dataframe(disp[cols_present], use_container_width=True, hide_index=True)
+
+    with detail_tabs[3]:
         search_query = st.text_input(
-            "Search analysis data",
+            "Search full source records",
             key=f"search_{src}_{tf}",
             placeholder="Product, category, customer, order...",
         ).lower()
@@ -742,6 +762,7 @@ def render_live_tab():
                 [
                     ("Avg Basket Qty", f"{analytics['basket']['avg_basket_qty']:.1f}"),
                     ("Avg Basket TK", f"TK {analytics['basket']['avg_basket_value']:,.0f}"),
+                    ("Total Item", f"{metrics['units']:,}"),
                     ("Total Unique Order", f"{metrics['unique_orders']:,}"),
                     ("Total Unique Customer", f"{compute_unique_customer_count(package.normalized_df):,}"),
                 ]
@@ -986,6 +1007,9 @@ def render_customer_pulse_core(db, display_period: str | None = None):
         (returning_count / unique_customers * 100) if unique_customers > 0 else 0
     )
     avg_clv = total_revenue / unique_customers if unique_customers > 0 else 0
+    avg_orders = db.groupby("UID")["_p_order"].nunique().mean() if unique_customers > 0 else 0
+    last_orders = db.groupby("UID")["_p_date"].max()
+    avg_recency = (pd.Timestamp.now() - last_orders).dt.days.mean() if not last_orders.empty else 0
     one_time_count = max(unique_customers - returning_count, 0)
 
     # Key customer KPIs
@@ -1080,10 +1104,10 @@ def render_customer_pulse_core(db, display_period: str | None = None):
     with lower_b:
         render_ops_list(
             [
-                ("Avg Basket Qty", f"{db['_p_qty'].sum() / max(db['_p_order'].nunique(), 1):.1f}"),
-                ("Avg Basket TK", f"TK {total_revenue / max(db['_p_order'].nunique(), 1):,.0f}"),
-                ("Total Unique Order", f"{db['_p_order'].nunique():,}"),
-                ("Total Unique Customer", f"{unique_customers:,}"),
+                ("Avg Orders / Customer", f"{avg_orders:.1f}x"),
+                ("Avg Days Since Last Order", f"{int(avg_recency or 0)} days"),
+                ("One-Time Customers", f"{one_time_count:,}"),
+                ("Unique Orders", f"{db['_p_order'].nunique():,}"),
             ]
         )
 
