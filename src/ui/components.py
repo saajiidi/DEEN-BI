@@ -666,10 +666,121 @@ def render_action_bar(
         )
     with col2:
         s_click = False
+        if secondary_label and secondary_key:
+            s_click = st.button(
+                secondary_label, use_container_width=True, key=secondary_key
+            )
+
+    if sticky:
+        st.markdown("</div>", unsafe_allow_html=True)
+    return p_click, s_click
+
+
+def render_ops_hero(title: str, subtitle: str, chips: list[str]):
+    chips_html = "".join(f"<div class='app-shell-chip'>{chip}</div>" for chip in chips)
+    st.markdown(
+        f"""
+        <div class="ops-hero fade-in">
+            <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+                <div>
+                    <div class="app-shell-label">Operational View</div>
+                    <div class="app-shell-title" style="font-size:1.28rem;">{title}</div>
+                    <div class="app-shell-subtitle">{subtitle}</div>
+                </div>
+                <div class="app-shell-chip-row">{chips_html}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_ops_kpi(label: str, value: str, note: str = "", delta: float = None, invert_delta: bool = False):
+    """
+    Render a KPI card with an optional delta percentage.
+    delta: Float indicating percentage change (e.g. 5.2 or -10.1)
+    invert_delta: If True, positive delta is red and negative is green (e.g. for churn/errors)
+    """
+    delta_html = ""
+    if delta is not None:
+        is_pos = delta >= 0
+        # Determine color based on delta and inversion
+        if invert_delta:
+            color = "var(--danger)" if is_pos else "var(--success)"
+        else:
+            color = "var(--success)" if is_pos else "var(--danger)"
+        
+        icon = "&uarr;" if is_pos else "&darr;"
+        prefix = "+" if is_pos else ""
+        delta_html = f"<span style='color:{color}; font-weight:700; font-size:0.85rem; margin-left:8px;'>{icon} {prefix}{delta:.1f}%</span>"
+
+    st.markdown(
+        f"""
+        <div class="ops-kpi-card">
+            <div class="ops-kpi-label">{label}</div>
+            <div class="ops-kpi-value">{value}{delta_html}</div>
+            <div class="ops-kpi-note">{note}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_ops_list(items: list[tuple[str, str]]):
+    rows = "".join(
+        f"<div class='ops-mini-item'><span>{label}</span><strong>{value}</strong></div>"
+        for label, value in items
+    )
+    st.markdown(
+        f"<div class='glass-panel'><div class='ops-mini-list'>{rows}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_steps(steps: list[str], current_step: int):
+    cols = st.columns(len(steps))
+    for idx, step in enumerate(steps):
+        is_active = idx == current_step
+        color = "#2563eb" if is_active else "#94a3b8"
+        weight = "700" if is_active else "500"
+        opacity = "1" if is_active else "0.72"
+        cols[idx].markdown(
+            f"""
+            <div style="text-align:center; padding-bottom:4px; border-bottom: 2px solid {color if is_active else 'transparent'}; opacity:{opacity};">
+                <div style="font-size:0.7rem; text-transform:uppercase; color:var(--text-dim);">Step {idx+1}</div>
+                <div style="font-size:0.86rem; font-weight:{weight}; color:var(--text-strong);">{step}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 def render_mini_uploader(label: str, key: str):
     return st.file_uploader(label, key=key, type=["xlsx", "csv"])
+
+
+def render_file_summary(uploaded_file, df: pd.DataFrame | None, required_columns: list[str]):
+    if not uploaded_file or df is None:
+        return False
+
+    st.markdown(
+        f"""
+        <div class="glass-panel" style="margin:1rem 0;">
+            <div style="font-size:0.8rem; font-weight:700;">FILE {uploaded_file.name.upper()}</div>
+            <div style="display:flex; gap:20px; margin-top:8px;">
+                <div style="font-size:0.75rem;">ROWS: <b class="mono">{len(df):,}</b></div>
+                <div style="font-size:0.75rem;">COLS: <b class="mono">{len(df.columns)}</b></div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    missing = [col for col in required_columns if col not in df.columns]
+    if missing:
+        st.error(f"Missing Columns: {', '.join(missing)}")
+        return False
+    return True
 
 
 def to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Sheet1") -> bytes:
@@ -747,7 +858,7 @@ def render_reset_confirm(state_key: str, reset_fn):
             st.success("Workflow reset complete.")
             st.rerun()
         if c2.button("Cancel", key=f"confirm_no_{state_key}"):
-            st.session_state[f"confirm_reset_{state_key}"] = False
+            st.session_state[f"confirm_reset_{state_key}") = False
 
 
 def sample_file_download(label: str, data: list[dict], file_name: str):
