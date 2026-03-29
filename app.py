@@ -1,6 +1,12 @@
+import os
+import sys
 from datetime import date
 
 import streamlit as st
+
+# Ensure the app root is in the python path for module discovery
+# especially important for remote environments like Streamlit Cloud
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 st.set_page_config(
     page_title="DEEN Commerce | Ops Command",
