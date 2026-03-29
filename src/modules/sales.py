@@ -284,7 +284,7 @@ def render_dashboard_output(
         )
     with top_row[3]:
         render_ops_kpi(
-            "Basket Analysis",
+            "Avg Basket Value",
             f"TK {bk['avg_basket_value']:,.0f}",
             f"Avg {bk['avg_basket_qty']:.1f} items per basket",
         )
