@@ -223,8 +223,8 @@ def render_dashboard_output(
     with top_row[3]:
         render_ops_kpi(
             "Basket Analysis",
-            f"{bk['avg_basket_qty']:.1f} qty",
-            f"Avg basket TK {bk['avg_basket_value']:,.0f}",
+            f"{bk['avg_basket_qty']:.1f}",
+            f"Avg basket <b>TK {bk['avg_basket_value']:,.0f}</b>",
         )
 
     chart_a, chart_b = st.columns(2)
