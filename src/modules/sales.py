@@ -31,6 +31,7 @@ from src.ui.components import (
     render_ops_hero,
     render_ops_kpi,
     render_ops_list,
+    render_reset_confirm,
     section_card,
 )
 from src.utils.data import find_columns, parse_dates
@@ -316,6 +317,8 @@ def render_dashboard_output(
             f"TK {bk['avg_basket_value']:,.0f}",
             f"Avg {bk['avg_basket_qty']:.1f} items per basket",
         )
+
+    render_reset_confirm("Sales Analytics", "sales_ana", clear_sync_cache)
 
     chart_a, chart_b = st.columns(2)
     with chart_a:
@@ -956,6 +959,8 @@ def render_live_tab():
             )
     except Exception as e:
         st.error(f"Live queue failed to load: {e}")
+
+    render_reset_confirm("Live Queue", "sales_live", clear_sync_cache)
 
 
 def parse_date_from_tab_name(name):
