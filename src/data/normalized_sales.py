@@ -236,11 +236,24 @@ def compute_sales_analytics(df: pd.DataFrame) -> dict:
     else:
         customers = pd.DataFrame()
     
+    # Top products metrics
+    if "item_name" in df.columns and df["item_name"].notna().any():
+        top_products = df.groupby("item_name").agg({
+            "line_amount": "sum",
+            "qty": "sum",
+            "order_key": "nunique"
+        }).reset_index()
+        top_products.columns = ["Product Name", "Total Amount", "Total Qty", "Orders"]
+        top_products = top_products.sort_values("Total Amount", ascending=False)
+    else:
+        top_products = pd.DataFrame()
+    
     return {
         "summary": summary,
         "basket": basket,
         "trends": trends,
         "customers": customers,
+        "top_products": top_products,
     }
 
 

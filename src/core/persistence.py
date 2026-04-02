@@ -33,6 +33,7 @@ def save_state():
             else:
                 state_to_save[key] = val
 
+    temp_path = None
     try:
         fd, temp_path = tempfile.mkstemp(dir=str(DATA_DIR))
         with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -41,10 +42,11 @@ def save_state():
     except Exception as e:
         default_logger = logging.getLogger(__name__)
         default_logger.error(f"Failed to save state: {e}")
-        try:
-            os.unlink(temp_path)
-        except OSError:
-            pass
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
 
 
 def load_state():

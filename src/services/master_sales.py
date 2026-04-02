@@ -39,7 +39,7 @@ def load_master_sales_dataset(force_refresh: bool = False) -> tuple[pd.DataFrame
         return None, f"Failed to load core workbook: {exc}"
 
     delta_df = _load_2026_delta(base_df, force_refresh=force_refresh)
-    final_df = pd.concat([base_df, delta_df], ignore_index=True) if not delta_df.empty else base_df
+    final_df = pd.concat([base_df, delta_df], ignore_index=True, copy=False) if not delta_df.empty else base_df
 
     try:
         final_df.to_parquet(MASTER_CACHE_FILE, index=False)

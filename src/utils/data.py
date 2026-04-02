@@ -229,7 +229,7 @@ def extract_best_zone(address, KNOWN_ZONES):
 def format_address_logic(raw_addr, city_norm, extracted_zone, raw_city_val):
     addr = " ".join(raw_addr.split()).title()
     if raw_city_val and city_norm and raw_city_val.lower() != city_norm.lower():
-        addr = re.compile(re.escape(raw_city_val), re.IGNORECASE).sub(city_norm, addr)
+        addr = re.compile(re.escape(str(raw_city_val)), re.IGNORECASE).sub(city_norm, addr)
     parts = [p.strip() for p in re.split(r"[,;]\s*", addr) if p.strip()]
     cleaned = []
     seen = set()

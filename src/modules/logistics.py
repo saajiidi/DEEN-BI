@@ -67,8 +67,9 @@ def render_pathao_tab(guided: bool = True):
     if preview_df is not None:
         # Check if we can auto-map required Phone column if it's not exact match
         cols = find_columns(preview_df)
-        if "phone" in cols:
-            preview_df = preview_df.rename(columns={cols["phone"]: "Phone (Billing)"})
+        phone_col = cols.get("phone")
+        if phone_col:
+            preview_df = preview_df.rename(columns={phone_col: "Phone (Billing)"})
 
         from collections import namedtuple
 

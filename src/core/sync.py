@@ -78,6 +78,8 @@ def save_manifest(manifest):
 
 
 def get_cache_key(gid, sheet_id=None):
+    if sheet_id:
+        return f"{sheet_id}_gid_{gid}"
     return f"gid_{gid}"
 
 
@@ -93,6 +95,9 @@ def load_published_sheet_tabs(sheet_url, force_refresh=False):
     if not force_refresh and cache_key in manifest:
         cached = manifest[cache_key]
         cached_at = datetime.fromisoformat(cached["fetched_at"])
+        # Ensure cached_at has timezone info for comparison
+        if cached_at.tzinfo is None:
+            cached_at = cached_at.replace(tzinfo=timezone.utc)
         if (datetime.now(timezone.utc) - cached_at).total_seconds() < 3600:
             return cached["tabs"]
 
@@ -119,9 +124,11 @@ def load_published_sheet_tabs(sheet_url, force_refresh=False):
 
 def is_volatile(tab_name: str) -> bool:
     """Identify if a sheet is likely to change frequently."""
+    from datetime import datetime
     name = str(tab_name).lower().strip()
+    current_year = str(datetime.now().year)
     # Current year and special 'Live' sheets are volatile
-    if "2026" in name or "last" in name or "live" in name:
+    if current_year in name or "last" in name or "live" in name:
         return True
     return False
 
@@ -143,6 +150,9 @@ def load_sheet_with_cache(sheet_url, gid, tab_name, force_refresh=False):
     if cache_key in manifest and not force_refresh:
         cached = manifest[cache_key]
         fetched_at = datetime.fromisoformat(cached["fetched_at"])
+        # Ensure fetched_at has timezone info for comparison
+        if fetched_at.tzinfo is None:
+            fetched_at = fetched_at.replace(tzinfo=timezone.utc)
         if (datetime.now(timezone.utc) - fetched_at).total_seconds() < ttl_seconds:
             if norm_path.exists():
                 try:

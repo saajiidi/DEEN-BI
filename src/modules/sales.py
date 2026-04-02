@@ -25,6 +25,7 @@ from src.services.master_sales import load_master_sales_dataset
 from src.data.normalized_sales import (
     CANONICAL_COLUMNS,
     compute_sales_analytics,
+    compute_unique_customer_count,
     normalize_sales_dataframe,
 )
 from src.ui.components import (
@@ -928,11 +929,15 @@ def render_live_tab():
         side_a, side_b = st.columns([1.3, 1])
         with side_a:
             st.markdown("#### Product View")
-            st.dataframe(
-                analytics["top_products"].head(25),
-                use_container_width=True,
-                hide_index=True,
-            )
+            top_products_df = analytics.get("top_products", pd.DataFrame())
+            if not top_products_df.empty:
+                st.dataframe(
+                    top_products_df.head(25),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.info("No product data available.")
         with side_b:
             render_ops_list(
                 [
@@ -1043,15 +1048,25 @@ def render_live_tab():
 
 def parse_date_from_tab_name(name):
     """Helper to extract date from tab names for sorting."""
-    import dateparser
+    try:
+        import dateparser
+        has_dateparser = True
+    except ImportError:
+        has_dateparser = False
 
     try:
         # Try cleaning the name for better parsing (remove 'Statement', 'Sync', etc)
         clean_name = (
             name.lower().replace("statement", "").replace("sync", "").replace("_", " ")
         )
-        dt = dateparser.parse(clean_name)
-        return dt or datetime(2000, 1, 1)
+        if has_dateparser:
+            dt = dateparser.parse(clean_name)
+            return dt or datetime(2000, 1, 1)
+        # Fallback to basic parsing if dateparser not available
+        try:
+            return datetime.strptime(clean_name.strip(), "%Y-%m")
+        except ValueError:
+            return datetime(2000, 1, 1)
     except Exception:
         return datetime(2000, 1, 1)
 
@@ -1229,29 +1244,9 @@ def render_customer_pulse_tab():
             st.plotly_chart(px.bar(source_grp, x='Records', y='_src_tab', orientation='h', title="Records by Statement Source"), use_container_width=True)
 
 
-def compute_unique_customer_count(df: pd.DataFrame) -> int:
-    """Compute unique customer count from dataframe using phone/email/name."""
-    if df is None or df.empty:
-        return 0
-    
-    # Try multiple identification methods
-    for col in ["phone", "_p_phone", "email", "_p_email", "customer_name", "_p_cust_name", "Internal_Customer"]:
-        if col in df.columns:
-            count = df[col].replace("", pd.NA).dropna().nunique()
-            if count > 0:
-                return int(count)
-    
-    # Fallback to order_id
-    for col in ["order_id", "_p_order", "Internal_Order"]:
-        if col in df.columns:
-            return int(df[col].nunique())
-    
-    return 0
-
-
 def render_cache_health_panel():
     """Display cache health metrics and system diagnostics."""
-    from src.core.paths import GSHEETS_CACHE_DIR, GSHEETS_MANIFEST, CACHE_DIR
+    from src.core.paths import GSHEETS_RAW_DIR, GSHEETS_NORM_DIR, GSHEETS_MANIFEST, CACHE_DIR
     
     st.markdown("### 🏥 Cache Health & System Diagnostics")
     
@@ -1270,13 +1265,10 @@ def render_cache_health_panel():
     # Count cached files
     raw_count = 0
     norm_count = 0
-    if GSHEETS_CACHE_DIR.exists():
-        raw_dir = GSHEETS_CACHE_DIR / "raw"
-        norm_dir = GSHEETS_CACHE_DIR / "normalized"
-        if raw_dir.exists():
-            raw_count = len(list(raw_dir.glob("*.csv")))
-        if norm_dir.exists():
-            norm_count = len(list(norm_dir.glob("*.parquet")))
+    if GSHEETS_RAW_DIR.exists():
+        raw_count = len(list(GSHEETS_RAW_DIR.glob("*.csv")))
+    if GSHEETS_NORM_DIR.exists():
+        norm_count = len(list(GSHEETS_NORM_DIR.glob("*.parquet")))
     
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Manifest Entries", f"{manifest_size}")

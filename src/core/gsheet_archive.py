@@ -37,7 +37,7 @@ class ArchiveSyncResult:
     appended_rows: int = 0
     deleted_rows: int = 0
     skipped_existing_rows: int = 0
-    control_column: str | None = None
+    control_column: Optional[str] = None
     auto_enabled: bool = False
     credentials_ready: bool = False
 
@@ -76,7 +76,7 @@ def _extract_spreadsheet_id(sheet_url: str) -> str:
     return tail.split("/", 1)[0]
 
 
-def _service_account_info() -> dict[str, Any] | None:
+def _service_account_info() -> Optional[dict[str, Any]]:
     raw_json = _get_setting("GSHEET_SERVICE_ACCOUNT_JSON") or _get_setting(
         "GOOGLE_SERVICE_ACCOUNT_JSON"
     )
