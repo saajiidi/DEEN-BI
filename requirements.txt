@@ -1,4 +1,4 @@
-.# Core app and analytics
+# Core app and analytics
 streamlit==1.54.0
 pandas==2.3.3
 plotly==6.5.0
