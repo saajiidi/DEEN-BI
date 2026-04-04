@@ -166,9 +166,7 @@ def load_inventory_from_uploads(uploaded_files: Dict[str, object]):
     Matching is based only on 'Title - Size' (computed from Title + Size).
     """
     inventory: Dict[str, Dict[str, int]] = {}
-    sku_to_title_size: Dict[str, str] = (
-        {}
-    )  # sku_key -> Title-Size key (for SKU match validation)
+    sku_to_title_size: Dict[str, str] = {}  # sku_key -> Title-Size key (for SKU match validation)
     all_locations = list(uploaded_files.keys())
     warnings = []
     enriched_dfs: Dict[str, pd.DataFrame] = {}
@@ -181,15 +179,11 @@ def load_inventory_from_uploads(uploaded_files: Dict[str, object]):
             size_col, qty_col, title_col, sku_col = identify_columns(df)
 
             if not title_col:
-                warnings.append(
-                    f"⚠️ {loc_name}: Missing 'Title/Item Name' column. Skipped."
-                )
+                warnings.append(f"⚠️ {loc_name}: Missing 'Title/Item Name' column. Skipped.")
                 continue
 
             if not qty_col:
-                warnings.append(
-                    f"⚠️ {loc_name}: Missing 'Quantity' column. Assuming 0 stock."
-                )
+                warnings.append(f"⚠️ {loc_name}: Missing 'Quantity' column. Assuming 0 stock.")
 
             df = add_title_size_column(df, title_col=title_col, size_col=size_col)
             enriched_dfs[loc_name] = df
@@ -223,9 +217,7 @@ def load_inventory_from_uploads(uploaded_files: Dict[str, object]):
                         if sku_key not in inventory:
                             inventory[sku_key] = {loc: 0 for loc in all_locations}
                         inventory[sku_key][loc_name] += qty
-                        sku_to_title_size[sku_key] = (
-                            key  # SKU -> Title-Size key for this row
-                        )
+                        sku_to_title_size[sku_key] = key  # SKU -> Title-Size key for this row
 
         except Exception as e:
             warnings.append(f"❌ Error in {loc_name}: {e}")
@@ -376,9 +368,7 @@ def add_stock_columns_from_inventory(
         # Create a helper for quantities
         qty_needed = [1] * len(df)
         if qty_to_buy_col and qty_to_buy_col in df.columns:
-            qty_needed = [
-                int(float(x)) if pd.notna(x) else 1 for x in df[qty_to_buy_col]
-            ]
+            qty_needed = [int(float(x)) if pd.notna(x) else 1 for x in df[qty_to_buy_col]]
 
         # Group data to optimize per order
         for _, group_indices in df.groupby(group_col).groups.items():
@@ -392,9 +382,7 @@ def add_stock_columns_from_inventory(
                 for idx in group_indices:
                     source_key = stock_sources[idx]
                     needed = qty_needed[idx]
-                    avail = (
-                        inventory.get(source_key, {}).get(loc, 0) if source_key else 0
-                    )
+                    avail = inventory.get(source_key, {}).get(loc, 0) if source_key else 0
                     if avail < needed:
                         all_match = False
                         break
@@ -417,11 +405,7 @@ def add_stock_columns_from_inventory(
                         for idx in remaining_indices:
                             source_key = stock_sources[idx]
                             needed = qty_needed[idx]
-                            avail = (
-                                inventory.get(source_key, {}).get(loc, 0)
-                                if source_key
-                                else 0
-                            )
+                            avail = inventory.get(source_key, {}).get(loc, 0) if source_key else 0
                             if avail >= needed:
                                 current_covered.append(idx)
 

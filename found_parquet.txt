@@ -1,0 +1,2 @@
+.\BackEnd\data\cache\gsheets\master_recent.parquet
+.\BackEnd\data\cache\gsheets\normalized\gid_0.parquet

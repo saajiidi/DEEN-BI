@@ -282,6 +282,7 @@ def render_sidebar_branding():
     try:
         import base64
         import os
+
         logo_jpg = os.path.join("assets", "deen_logo.jpg")
         if os.path.exists(logo_jpg):
             with open(logo_jpg, "rb") as f:
@@ -306,8 +307,9 @@ def render_sidebar_branding():
                 <span style="font-size:0.85rem; font-weight:400; color:#64748b;">v2.5.0</span>
             </div>
         </div>""",
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
+
 
 def render_header():
     """Minimal header for the main page content area."""
@@ -333,11 +335,13 @@ def render_section_card(title: str, help_text: str = ""):
         unsafe_allow_html=True,
     )
 
+
 def render_footer():
     """Renders a robust and persistent branding footer."""
     logo_src = "https://logo.clearbit.com/deencommerce.com"
     try:
         import base64
+
         logo_jpg = os.path.join("assets", "deen_logo.jpg")
         if os.path.exists(logo_jpg):
             with open(logo_jpg, "rb") as f:
@@ -359,7 +363,7 @@ def render_footer():
             </div>
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
@@ -397,10 +401,16 @@ def render_action_bar(
         st.markdown('<div class="hub-action-wrap"></div>', unsafe_allow_html=True)
         if secondary_label and secondary_key:
             c1, c2 = st.columns([2, 1])
-            primary_clicked = c1.button(primary_label, type="primary", use_container_width=True, key=primary_key)
-            secondary_clicked = c2.button(secondary_label, use_container_width=True, key=secondary_key)
+            primary_clicked = c1.button(
+                primary_label, type="primary", use_container_width=True, key=primary_key
+            )
+            secondary_clicked = c2.button(
+                secondary_label, use_container_width=True, key=secondary_key
+            )
         else:
-            primary_clicked = st.button(primary_label, type="primary", use_container_width=True, key=primary_key)
+            primary_clicked = st.button(
+                primary_label, type="primary", use_container_width=True, key=primary_key
+            )
             secondary_clicked = False
     return primary_clicked, secondary_clicked
 
@@ -412,14 +422,8 @@ def render_reset_confirm(label: str, state_key: str, reset_fn):
     """
     if "registered_resets" not in st.session_state:
         st.session_state.registered_resets = {}
-    
-    st.session_state.registered_resets[label] = {
-        "fn": reset_fn,
-        "key": state_key
-    }
 
-
-
+    st.session_state.registered_resets[label] = {"fn": reset_fn, "key": state_key}
 
 
 def to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Sheet1") -> bytes:

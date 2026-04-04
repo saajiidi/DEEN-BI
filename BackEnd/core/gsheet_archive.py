@@ -1,7 +1,7 @@
 import json
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 import streamlit as st
 from google.oauth2.service_account import Credentials
@@ -167,11 +167,7 @@ def _normalize_rows(values: list[list[Any]]) -> tuple[list[str], list[list[Any]]
 
 
 def _sheet_metadata(service, spreadsheet_id: str) -> dict[str, Any]:
-    return (
-        service.spreadsheets()
-        .get(spreadsheetId=spreadsheet_id)
-        .execute()
-    )
+    return service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
 
 
 def _sheet_id_by_title(metadata: dict[str, Any], title: str) -> int:
@@ -184,10 +180,7 @@ def _sheet_id_by_title(metadata: dict[str, Any], title: str) -> int:
 
 def _get_tab_values(service, spreadsheet_id: str, tab_name: str) -> list[list[Any]]:
     response = (
-        service.spreadsheets()
-        .values()
-        .get(spreadsheetId=spreadsheet_id, range=tab_name)
-        .execute()
+        service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=tab_name).execute()
     )
     return response.get("values", [])
 
@@ -311,9 +304,7 @@ def sync_live_sales_archive(
         if delete_requests:
             (
                 service.spreadsheets()
-                .batchUpdate(
-                    spreadsheetId=spreadsheet_id, body={"requests": delete_requests}
-                )
+                .batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": delete_requests})
                 .execute()
             )
 

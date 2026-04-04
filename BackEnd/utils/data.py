@@ -123,9 +123,7 @@ def find_columns(df):
                 # Special Case: 'customer' alias for customer_name should be EXACT ONLY (already handled in Priority 1)
                 # We skip it here to avoid matching 'customer notes', 'customer info', etc.
                 fuzzy_aliases = [
-                    a
-                    for a in aliases
-                    if not (key == "customer_name" and a == "customer")
+                    a for a in aliases if not (key == "customer_name" and a == "customer")
                 ]
 
                 if any(alias in l_col for alias in fuzzy_aliases):
@@ -243,9 +241,7 @@ def format_address_logic(raw_addr, city_norm, extracted_zone, raw_city_val):
             continue
         cleaned.append(p)
         seen.add(pl)
-    if extracted_zone and (
-        extracted_zone.lower() not in ["sadar", "city"] or not cleaned
-    ):
+    if extracted_zone and (extracted_zone.lower() not in ["sadar", "city"] or not cleaned):
         if not any(extracted_zone.lower() in p.lower() for p in cleaned):
             cleaned.append(extracted_zone)
     if city_norm:

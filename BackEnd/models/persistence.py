@@ -12,6 +12,7 @@ prepare_data_dirs()
 
 from datetime import date, timedelta
 
+
 def save_state():
     """Saves relevant session state keys to a local file."""
     state_to_save = {}
@@ -22,7 +23,7 @@ def save_state():
         "pathao_res_df",
         "low_stock_threshold",
         "cust_start",
-        "cust_end"
+        "cust_end",
     ]
 
     for key in keys_to_persist:

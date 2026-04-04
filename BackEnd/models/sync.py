@@ -45,9 +45,7 @@ def normalize_gsheet_url_to_csv(sheet_url, gid=None):
     if "output=csv" in url:
         return url
     parsed = urlparse(url)
-    resolved_gid = str(
-        gid if gid is not None else parse_qs(parsed.query).get("gid", ["0"])[0]
-    )
+    resolved_gid = str(gid if gid is not None else parse_qs(parsed.query).get("gid", ["0"])[0])
     if "/spreadsheets/d/e/" in parsed.path:
         base = f"{parsed.scheme}://{parsed.netloc}{parsed.path.split('/pub')[0]}"
         return f"{base}/pub?output=csv&gid={resolved_gid}"
@@ -55,7 +53,9 @@ def normalize_gsheet_url_to_csv(sheet_url, gid=None):
         parts = [p for p in parsed.path.split("/") if p]
         if "d" in parts:
             sid = parts[parts.index("d") + 1]
-            return f"https://docs.google.com/spreadsheets/d/{sid}/export?format=csv&gid={resolved_gid}"
+            return (
+                f"https://docs.google.com/spreadsheets/d/{sid}/export?format=csv&gid={resolved_gid}"
+            )
     return url
 
 
@@ -125,6 +125,7 @@ def load_published_sheet_tabs(sheet_url, force_refresh=False):
 def is_volatile(tab_name: str) -> bool:
     """Identify if a sheet is likely to change frequently."""
     from datetime import datetime
+
     name = str(tab_name).lower().strip()
     current_year = str(datetime.now().year)
     # Current year and special 'Live' sheets are volatile
@@ -184,7 +185,7 @@ def load_sheet_with_cache(sheet_url, gid, tab_name, force_refresh=False):
 
         from io import BytesIO
 
-        df = pd.read_csv(BytesIO(raw_bytes), sep='\t')
+        df = pd.read_csv(BytesIO(raw_bytes), sep="\t")
 
         # Save normalized parquet for speed
         df.to_parquet(norm_path, index=False)
@@ -215,15 +216,15 @@ def load_direct_tsv_sheet(tsv_url=None, force_refresh=False):
     """Load data directly from a TSV export URL without tab lookup."""
     if tsv_url is None:
         tsv_url = _get_setting("GSHEET_URL", DEFAULT_GSHEET_URL)
-    
+
     # Use the URL directly as cache key since there's no gid
     cache_key = "direct_sheet"
     raw_path = GSHEETS_RAW_DIR / f"{cache_key}.tsv"
     norm_path = GSHEETS_NORM_DIR / f"{cache_key}.parquet"
-    
+
     manifest = load_manifest()
     ttl_seconds = 60  # Always treat as volatile for live queue
-    
+
     # Check cache
     if cache_key in manifest and not force_refresh:
         cached = manifest[cache_key]
@@ -236,13 +237,13 @@ def load_direct_tsv_sheet(tsv_url=None, force_refresh=False):
                     return pd.read_parquet(norm_path), cached.get("last_modified", "Cached")
                 except Exception:
                     pass
-    
+
     # Fetch directly from URL
     try:
         raw_bytes, headers = fetch_remote_csv_raw(tsv_url)
         etag = headers.get("ETag")
         last_mod = headers.get("Last-Modified")
-        
+
         # Skip if ETag matches
         if (
             not force_refresh
@@ -253,15 +254,16 @@ def load_direct_tsv_sheet(tsv_url=None, force_refresh=False):
         ):
             df = pd.read_parquet(norm_path)
             return df, last_mod or "304 Not Modified"
-        
+
         # Save and parse
         with open(raw_path, "wb") as f:
             f.write(raw_bytes)
-        
+
         from io import BytesIO
-        df = pd.read_csv(BytesIO(raw_bytes), sep='\t')
+
+        df = pd.read_csv(BytesIO(raw_bytes), sep="\t")
         df.to_parquet(norm_path, index=False)
-        
+
         # Update manifest
         manifest[cache_key] = {
             "gid": "direct",
@@ -272,7 +274,7 @@ def load_direct_tsv_sheet(tsv_url=None, force_refresh=False):
             "row_count": len(df),
         }
         save_manifest(manifest)
-        
+
         return df, last_mod or "New Sync"
     except Exception as e:
         # Fallback to cache
@@ -288,9 +290,7 @@ def load_shared_gsheet(target_tab_name=LIVE_SALES_TAB_NAME, force_refresh=False)
     sheet_url = _get_setting("GSHEET_URL", DEFAULT_GSHEET_URL)
     lookup_name = str(target_tab_name).strip().lower()
     candidate_names = (
-        LIVE_SALES_TAB_ALIASES
-        if lookup_name in LIVE_SALES_TAB_ALIASES
-        else {lookup_name}
+        LIVE_SALES_TAB_ALIASES if lookup_name in LIVE_SALES_TAB_ALIASES else {lookup_name}
     )
     tabs = load_published_sheet_tabs(sheet_url, force_refresh=force_refresh)
     target = next((t for t in tabs if t["name"].lower() in candidate_names), None)

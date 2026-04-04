@@ -18,20 +18,14 @@ def clean_dataframe(df):
     # Clean Item Cost
     if "Item Cost" in df.columns:
         if df["Item Cost"].dtype == "object":
-            df["Item Cost"] = (
-                df["Item Cost"].astype(str).str.replace(r"[^\d.]", "", regex=True)
-            )
-        df["Item Cost"] = pd.to_numeric(df.get("Item Cost", 0), errors="coerce").fillna(
-            0
-        )
+            df["Item Cost"] = df["Item Cost"].astype(str).str.replace(r"[^\d.]", "", regex=True)
+        df["Item Cost"] = pd.to_numeric(df.get("Item Cost", 0), errors="coerce").fillna(0)
 
     # Clean Order Total Amount
     if "Order Total Amount" in df.columns:
         if df["Order Total Amount"].dtype == "object":
             df["Order Total Amount"] = (
-                df["Order Total Amount"]
-                .astype(str)
-                .str.replace(r"[^\d.]", "", regex=True)
+                df["Order Total Amount"].astype(str).str.replace(r"[^\d.]", "", regex=True)
             )
         df["Order Total Amount"] = pd.to_numeric(
             df.get("Order Total Amount", 0), errors="coerce"
@@ -197,9 +191,7 @@ def process_single_order_group(phone, group, data_cols):
     extracted_zone = extract_best_zone(temp_addr_clean, KNOWN_ZONES)
 
     # Format Address
-    address_val = format_address_logic(
-        raw_address, recipient_city, extracted_zone, raw_city
-    )
+    address_val = format_address_logic(raw_address, recipient_city, extracted_zone, raw_city)
 
     if not extracted_zone:
         extracted_zone = "Sadar"
@@ -208,11 +200,7 @@ def process_single_order_group(phone, group, data_cols):
     recipient_area = ""
 
     # Combine merchant IDs
-    order_ids = [
-        str(x)
-        for x in unique_orders["Order Number"].unique()
-        if str(x).lower() != "nan"
-    ]
+    order_ids = [str(x) for x in unique_orders["Order Number"].unique() if str(x).lower() != "nan"]
     combined_merchant_id = ", ".join(order_ids)
 
     # --- Build Record ---

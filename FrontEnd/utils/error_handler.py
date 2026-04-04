@@ -10,6 +10,7 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 ERROR_LOG_FILE = os.path.join(DATA_DIR, "error_logs.json")
 
+
 def log_error(error_msg, context="General", details=None):
     """
     Logs an error to a local JSON file for future analysis.
@@ -21,9 +22,9 @@ def log_error(error_msg, context="General", details=None):
             "context": context,
             "error": str(error_msg),
             "traceback": traceback.format_exc(),
-            "details": details or {}
+            "details": details or {},
         }
-        
+
         logs = []
         if os.path.exists(ERROR_LOG_FILE):
             try:
@@ -37,16 +38,16 @@ def log_error(error_msg, context="General", details=None):
             except Exception as e:
                 logging.getLogger(__name__).warning(f"Error reading log file: {e}")
                 logs = []
-        
+
         logs.append(log_entry)
-        
+
         # Keep only last 100 logs to prevent file bloat
         logs = logs[-100:]
-        
+
         # Atomic write
         try:
             fd, temp_path = tempfile.mkstemp(dir=DATA_DIR)
-            with os.fdopen(fd, 'w', encoding="utf-8") as f:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(logs, f, indent=4)
             os.replace(temp_path, ERROR_LOG_FILE)
         except Exception as file_e:
@@ -55,9 +56,10 @@ def log_error(error_msg, context="General", details=None):
                 os.unlink(temp_path)
             except OSError:
                 pass
-            
+
     except Exception as e:
         print(f"Error logging failed: {e}")
+
 
 def get_logs():
     """Returns the list of logged errors."""

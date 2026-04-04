@@ -1,5 +1,6 @@
 import re
 
+
 def _normalize(value) -> str:
     return str(value or "").strip().lower()
 
@@ -23,9 +24,7 @@ def _is_full_sleeve_sales(text: str) -> bool:
 
 
 def _tshirt_label(text: str, mode: str) -> str | None:
-    tshirt_keywords = (
-        ["t-shirt", "t shirt"] if mode == "orders" else ["t-shirt", "t shirt", "tee"]
-    )
+    tshirt_keywords = ["t-shirt", "t shirt"] if mode == "orders" else ["t-shirt", "t shirt", "tee"]
     if not _has_any(text, tshirt_keywords):
         return None
 

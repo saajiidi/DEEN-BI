@@ -8,8 +8,8 @@ from .live_stream import render_live_tab, render_manual_tab
 from .customer_insights import render_customer_insight_tab
 
 __all__ = [
-    'render_dashboard_tab',
-    'render_live_tab',
-    'render_manual_tab',
-    'render_customer_insight_tab',
+    "render_dashboard_tab",
+    "render_live_tab",
+    "render_manual_tab",
+    "render_customer_insight_tab",
 ]

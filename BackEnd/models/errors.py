@@ -30,9 +30,7 @@ def log_error(error_msg, context="General", details=None):
                 with open(ERROR_LOG_FILE, "r", encoding="utf-8") as f:
                     logs = json.load(f)
             except json.JSONDecodeError:
-                logging.getLogger(__name__).warning(
-                    "Error JSON decode error, resetting log file."
-                )
+                logging.getLogger(__name__).warning("Error JSON decode error, resetting log file.")
                 logs = []
             except FileNotFoundError:
                 logs = []

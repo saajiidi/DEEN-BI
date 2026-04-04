@@ -19,14 +19,14 @@ from .animation import render_bike_animation
 section_card = render_section_card
 
 __all__ = [
-    'inject_base_styles',
-    'render_section_card',
-    'section_card',
-    'render_action_bar',
-    'render_reset_confirm',
-    'render_header',
-    'render_footer',
-    'render_sidebar_branding',
-    'to_excel_bytes',
-    'render_bike_animation',
+    "inject_base_styles",
+    "render_section_card",
+    "section_card",
+    "render_action_bar",
+    "render_reset_confirm",
+    "render_header",
+    "render_footer",
+    "render_sidebar_branding",
+    "to_excel_bytes",
+    "render_bike_animation",
 ]

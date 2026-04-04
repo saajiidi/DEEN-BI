@@ -57,9 +57,7 @@ class WhatsAppOrderProcessor:
             for part in parts:
                 if not part:
                     continue
-                formatted_parts.append(
-                    " ".join(capitalize_word(w) for w in part.split())
-                )
+                formatted_parts.append(" ".join(capitalize_word(w) for w in part.split()))
             return ", ".join(formatted_parts)
 
         # Handle regular text
@@ -70,11 +68,7 @@ class WhatsAppOrderProcessor:
         return self.format_text(str(name)) if pd.notna(name) else ""
 
     def format_address(self, *address_parts):
-        parts = [
-            self.format_text(str(p))
-            for p in address_parts
-            if pd.notna(p) and str(p).strip()
-        ]
+        parts = [self.format_text(str(p)) for p in address_parts if pd.notna(p) and str(p).strip()]
         return "\n".join(parts)
 
     def detect_gender_salutation(self, name: str) -> str:
@@ -188,9 +182,7 @@ class WhatsAppOrderProcessor:
 
         # Validate core required columns are present
         required = ["phone_col", "name_col", "product_col"]
-        missing = [
-            self.config[col] for col in required if self.config[col] not in df.columns
-        ]
+        missing = [self.config[col] for col in required if self.config[col] not in df.columns]
         if missing:
             raise ValueError(
                 f"Required data columns not found. Partial match failed for: {missing}"
@@ -200,9 +192,7 @@ class WhatsAppOrderProcessor:
 
         # Clean data
         df[phone_col] = df[phone_col].apply(self.clean_phone_number)
-        df[self.config["name_col"]] = df[self.config["name_col"]].apply(
-            self.format_name
-        )
+        df[self.config["name_col"]] = df[self.config["name_col"]].apply(self.format_name)
 
         # Format address columns
         for col_type in ["address_col", "city_col"]:
@@ -259,9 +249,9 @@ class WhatsAppOrderProcessor:
         if total_col in df.columns:
             # Get one row per order to capture the Order Total once
             if order_id_col in df.columns:
-                unique_orders = df[
-                    [phone_col, order_id_col, total_col]
-                ].drop_duplicates(subset=[order_id_col])
+                unique_orders = df[[phone_col, order_id_col, total_col]].drop_duplicates(
+                    subset=[order_id_col]
+                )
             else:
                 unique_orders = df[[phone_col, total_col]].drop_duplicates()
 
@@ -342,9 +332,7 @@ class WhatsAppOrderProcessor:
             products = str(row.get(self.config.get("product_col"), "")).split("\n- ")
             quantities = []
             if self.config.get("quantity_col"):
-                quantities = str(row.get(self.config.get("quantity_col"), "")).split(
-                    "\n- "
-                )
+                quantities = str(row.get(self.config.get("quantity_col"), "")).split("\n- ")
             prices = []
             if self.config.get("price_col"):
                 prices = str(row.get(self.config.get("price_col"), "")).split("\n- ")
@@ -422,9 +410,7 @@ class WhatsAppOrderProcessor:
             worksheet = writer.sheets["Orders"]
 
             # Styles
-            header_fill = PatternFill(
-                start_color="4F81BD", end_color="4F81BD", fill_type="solid"
-            )
+            header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
             header_font = Font(color="FFFFFF", bold=True)
             link_font = Font(color="0000FF", underline="single")
             center_align = Alignment(horizontal="center")
@@ -457,8 +443,6 @@ class WhatsAppOrderProcessor:
                             max_length = len(str(cell.value))
                     except:
                         pass
-                worksheet.column_dimensions[column_letter].width = min(
-                    (max_length + 2) * 1.2, 50
-                )
+                worksheet.column_dimensions[column_letter].width = min((max_length + 2) * 1.2, 50)
 
         return output.getvalue()

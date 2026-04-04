@@ -12,7 +12,6 @@ from BackEnd.core.gsheet_archive import (
 from BackEnd.core.sync import LIVE_SALES_TAB_NAME, load_direct_tsv_sheet
 from BackEnd.data.normalized_sales import compute_sales_analytics, normalize_sales_dataframe
 
-
 LIVE_STREAM_REFRESH_SECONDS = 60
 
 
@@ -73,11 +72,26 @@ def compute_live_queue_metrics(normalized_df: pd.DataFrame) -> dict:
     )
 
     age_days = (
-        (pd.Timestamp.now().normalize() - pd.to_datetime(order_level["order_date"], errors="coerce"))
-        .dt.days.fillna(0)
-    )
-    ready_mask = order_level["archive_status"].astype(str).str.strip().str.lower().isin(
-        {"archive", "archived", "complete", "completed", "done", "moved", "ready", "shipped", "synced"}
+        pd.Timestamp.now().normalize() - pd.to_datetime(order_level["order_date"], errors="coerce")
+    ).dt.days.fillna(0)
+    ready_mask = (
+        order_level["archive_status"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .isin(
+            {
+                "archive",
+                "archived",
+                "complete",
+                "completed",
+                "done",
+                "moved",
+                "ready",
+                "shipped",
+                "synced",
+            }
+        )
     )
 
     regions = (

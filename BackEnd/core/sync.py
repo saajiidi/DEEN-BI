@@ -45,9 +45,7 @@ def normalize_gsheet_url_to_csv(sheet_url, gid=None):
     if "output=csv" in url:
         return url
     parsed = urlparse(url)
-    resolved_gid = str(
-        gid if gid is not None else parse_qs(parsed.query).get("gid", ["0"])[0]
-    )
+    resolved_gid = str(gid if gid is not None else parse_qs(parsed.query).get("gid", ["0"])[0])
     if "/spreadsheets/d/e/" in parsed.path:
         base = f"{parsed.scheme}://{parsed.netloc}{parsed.path.split('/pub')[0]}"
         return f"{base}/pub?output=csv&gid={resolved_gid}"
@@ -55,7 +53,9 @@ def normalize_gsheet_url_to_csv(sheet_url, gid=None):
         parts = [p for p in parsed.path.split("/") if p]
         if "d" in parts:
             sid = parts[parts.index("d") + 1]
-            return f"https://docs.google.com/spreadsheets/d/{sid}/export?format=csv&gid={resolved_gid}"
+            return (
+                f"https://docs.google.com/spreadsheets/d/{sid}/export?format=csv&gid={resolved_gid}"
+            )
     return url
 
 
@@ -125,6 +125,7 @@ def load_published_sheet_tabs(sheet_url, force_refresh=False):
 def is_volatile(tab_name: str) -> bool:
     """Identify if a sheet is likely to change frequently."""
     from datetime import datetime
+
     name = str(tab_name).lower().strip()
     current_year = str(datetime.now().year)
     # Current year and special 'Live' sheets are volatile
@@ -216,9 +217,7 @@ def load_shared_gsheet(target_tab_name=LIVE_SALES_TAB_NAME, force_refresh=False)
     sheet_url = _get_setting("GSHEET_URL", DEFAULT_GSHEET_URL)
     lookup_name = str(target_tab_name).strip().lower()
     candidate_names = (
-        LIVE_SALES_TAB_ALIASES
-        if lookup_name in LIVE_SALES_TAB_ALIASES
-        else {lookup_name}
+        LIVE_SALES_TAB_ALIASES if lookup_name in LIVE_SALES_TAB_ALIASES else {lookup_name}
     )
     tabs = load_published_sheet_tabs(sheet_url, force_refresh=force_refresh)
     target = next((t for t in tabs if t["name"].lower() in candidate_names), None)
