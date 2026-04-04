@@ -452,6 +452,9 @@ def render_sales_trends(df: pd.DataFrame):
     heatmap_data = df.groupby(["day_num", "hour"]).size().reset_index(name="Orders")
     heatmap_pivot = heatmap_data.pivot(index="day_num", columns="hour", values="Orders").fillna(0)
 
+    # Reindex to force all 7 days (0-6) and all 24 hours (0-23) to exist in the matrix
+    heatmap_pivot = heatmap_pivot.reindex(index=range(7), columns=range(24), fill_value=0)
+
     day_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
     fig_heatmap = px.imshow(

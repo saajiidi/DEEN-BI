@@ -14,7 +14,12 @@ def render_ai_assistant_tab():
     )
 
     # Ensure API Key is available
-    api_key = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    try:
+        if not api_key:
+            api_key = st.secrets.get("GEMINI_API_KEY", "")
+    except FileNotFoundError:
+        pass
 
     if not api_key:
         st.warning(
