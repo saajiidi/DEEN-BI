@@ -129,7 +129,33 @@ def load_hybrid_data(start_date: Optional[str] = None, end_date: Optional[str] =
     df_historical = load_historical_data()
     df_live = load_live_2026_data()
     
-    # Combine using DuckDB
+    # Short-circuit if either is empty
+    if df_historical.empty and df_live.empty:
+        return pd.DataFrame()
+        
+    if df_historical.empty:
+        df_merged = df_live.copy()
+        date_col = 'Order Date' if 'Order Date' in df_merged.columns else None
+        if start_date and end_date and date_col:
+            df_merged[date_col] = pd.to_datetime(df_merged[date_col], errors='coerce')
+            df_merged = df_merged[
+                (df_merged[date_col] >= start_date) & 
+                (df_merged[date_col] <= end_date)
+            ]
+        return df_merged
+        
+    if df_live.empty:
+        df_merged = df_historical.copy()
+        date_col = 'Order Date' if 'Order Date' in df_merged.columns else None
+        if start_date and end_date and date_col:
+            df_merged[date_col] = pd.to_datetime(df_merged[date_col], errors='coerce')
+            df_merged = df_merged[
+                (df_merged[date_col] >= start_date) & 
+                (df_merged[date_col] <= end_date)
+            ]
+        return df_merged
+    
+    # Combine using DuckDB only if both have data
     con = duckdb.connect(database=':memory:')
     
     # Register dataframes
