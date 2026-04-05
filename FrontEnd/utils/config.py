@@ -9,6 +9,7 @@ PRIMARY_NAV = (
     "Customer Intelligence",
     "Commerce Hub",
     "Business Cycles",
+    "ShopAI Support",
     "System Health",
 )
 
@@ -33,6 +34,11 @@ PRIMARY_PAGE_CONFIG = (
         "key": "business_cycles",
         "label": "Business Cycles",
         "description": "Order performance tracking based on 5 PM operational cutoffs.",
+    },
+    {
+        "key": "shop_ai_crm",
+        "label": "ShopAI Support",
+        "description": "AI Customer Support conversations, order tracking bot, and tools testing.",
     },
     {
         "key": "system_health",
