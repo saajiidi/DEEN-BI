@@ -176,6 +176,7 @@ def render_executive_summary(df_sales: pd.DataFrame, df_customers: pd.DataFrame,
     if not insights:
         insights.append("The core metrics look stable. The biggest next upside will likely come from retention programs and inventory planning.")
     render_commentary_panel("Intelligence Commentary", insights)
+    render_data_trust_panel(df_sales)
 
 
 
@@ -460,6 +461,52 @@ def render_forecast_and_alerts(ml_bundle: dict[str, pd.DataFrame]):
         st.plotly_chart(fig_anomaly, use_container_width=True)
         st.dataframe(
             anomaly_df[["order_day", "metric", "direction", "z_score", "commentary"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+def render_data_trust_panel(df_sales: pd.DataFrame):
+    df = ensure_sales_schema(df_sales)
+    if df.empty:
+        return
+
+    valid_dates = df["order_date"].dropna()
+    min_date = valid_dates.min() if not valid_dates.empty else None
+    max_date = valid_dates.max() if not valid_dates.empty else None
+    unique_orders = df["order_id"].replace("", pd.NA).dropna().nunique()
+    unique_customers = df["customer_key"].replace("", pd.NA).dropna().nunique()
+    line_items = len(df)
+    active_sources = sorted({src for src in df["source"].dropna().astype(str) if src})
+
+    trust_notes = [
+        f"Unique orders are counted using distinct `order_id` values after source normalization and deduplication.",
+        f"Visible line items in the current filter: {line_items:,}.",
+        f"Visible unique orders in the current filter: {unique_orders:,}.",
+    ]
+    if min_date is not None and max_date is not None:
+        trust_notes.append(
+            f"Current data window spans from {min_date.strftime('%Y-%m-%d %H:%M')} to {max_date.strftime('%Y-%m-%d %H:%M')}."
+        )
+    if active_sources:
+        trust_notes.append(f"Active sources in this view: {', '.join(active_sources)}.")
+
+    with st.expander("Data Trust Panel", expanded=False):
+        render_commentary_panel("How This Dashboard Counts Data", trust_notes)
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.metric("Line Items", f"{line_items:,}")
+        with c2:
+            st.metric("Unique Orders", f"{unique_orders:,}")
+        with c3:
+            st.metric("Unique Customers", f"{unique_customers:,}")
+        with c4:
+            st.metric("Sources", f"{len(active_sources):,}")
+
+        preview_cols = [col for col in ["order_date", "order_id", "item_name", "qty", "order_total", "source"] if col in df.columns]
+        st.caption("Sample rows from the exact filtered dataset used in the KPIs above.")
+        st.dataframe(
+            df[preview_cols].sort_values("order_date", ascending=False).head(25),
             use_container_width=True,
             hide_index=True,
         )

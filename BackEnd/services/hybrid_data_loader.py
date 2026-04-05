@@ -19,7 +19,11 @@ LIVE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTOiRkybNzMNvE
 
 
 @st.cache_data(ttl=900)
-def load_woocommerce_live_data(days: int = 30) -> pd.DataFrame:
+def load_woocommerce_live_data(
+    days: int = 30,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> pd.DataFrame:
     if "woocommerce" not in st.secrets:
         return pd.DataFrame()
 
@@ -27,14 +31,27 @@ def load_woocommerce_live_data(days: int = 30) -> pd.DataFrame:
         from BackEnd.services.woocommerce_service import WooCommerceService
 
         wc_service = WooCommerceService()
-        after = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
-        df = wc_service.fetch_all_historical_orders(after=after, status="any")
+        after = (
+            pd.to_datetime(start_date, errors="coerce").strftime("%Y-%m-%dT00:00:00Z")
+            if start_date and pd.notna(pd.to_datetime(start_date, errors="coerce"))
+            else (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
+        )
+        before = (
+            pd.to_datetime(end_date, errors="coerce").strftime("%Y-%m-%dT23:59:59Z")
+            if end_date and pd.notna(pd.to_datetime(end_date, errors="coerce"))
+            else None
+        )
+        df = wc_service.fetch_all_historical_orders(after=after, before=before, status="any")
         if df.empty:
             return df
         df["_source"] = df.get("_source", "woocommerce_live")
         return ensure_sales_schema(df)
     except Exception as exc:
-        log_error(exc, context="Hybrid Loader - WooCommerce Live", details={"days": days})
+        log_error(
+            exc,
+            context="Hybrid Loader - WooCommerce Live",
+            details={"days": days, "start_date": start_date, "end_date": end_date},
+        )
         return pd.DataFrame()
 
 
@@ -100,7 +117,11 @@ def load_hybrid_data(
 ) -> pd.DataFrame:
     df_hist = load_historical_data()
     df_gsheet = load_live_2026_data() if include_gsheet else pd.DataFrame()
-    df_woo = load_woocommerce_live_data() if include_woocommerce else pd.DataFrame()
+    df_woo = (
+        load_woocommerce_live_data(start_date=start_date, end_date=end_date)
+        if include_woocommerce
+        else pd.DataFrame()
+    )
 
     frames = [df for df in [df_hist, df_gsheet, df_woo] if df is not None and not df.empty]
     if not frames:

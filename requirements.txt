@@ -5,21 +5,23 @@ plotly
 openpyxl
 xlsxwriter
 pillow
-fuzzywuzzy==0.18.0
-python-Levenshtein
+requests
+
+# Data & Database
+duckdb
+pyarrow
+woocommerce
 
 # Machine Learning / Fuzzy Matching
 rapidfuzz
+fuzzywuzzy==0.18.0
+python-Levenshtein
 
 # Google Cloud / Drive Integration
 google-api-python-client
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
-requests
-
-# Analytics Database
-duckdb
 
 # AI Chatbot Integration
 google-generativeai
