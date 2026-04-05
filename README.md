@@ -1,11 +1,10 @@
 # Automation Pivot
 
-Automation Pivot is a WooCommerce-first Streamlit business intelligence workspace for e-commerce sales, customer intelligence, inventory visibility, live stream monitoring, and operational diagnostics.
+Automation Pivot is a WooCommerce-only Streamlit business intelligence workspace for e-commerce sales, customer intelligence, inventory visibility, and operational diagnostics.
 
-The current app is organized around five primary workspaces:
+The current app is organized around four primary workspaces:
 
 - `Business Intelligence`: executive KPIs, sales analysis, customer behavior, inventory, forecasts, and data-audit views
-- `Stream Monitor`: live stream sales visibility from the locked stream sheet
 - `Customer Intelligence`: lifetime customer metrics, RFM segmentation, and retention context
 - `Commerce Hub`: WooCommerce order sync, inventory fetch, previews, and local storage utilities
 - `System Health`: logs, diagnostics, and operational trust tools
@@ -44,7 +43,7 @@ Across the app, date selectors are standardized to:
 
 ### Backend
 
-- [BackEnd/services/hybrid_data_loader.py](H:/Analysis/Automation-Pivot/BackEnd/services/hybrid_data_loader.py): hybrid loading, local cache management, background refresh jobs, full-history sync status
+- [BackEnd/services/hybrid_data_loader.py](H:/Analysis/Automation-Pivot/BackEnd/services/hybrid_data_loader.py): WooCommerce-focused loading, local cache management, background refresh jobs, full-history sync status
 - [BackEnd/services/woocommerce_service.py](H:/Analysis/Automation-Pivot/BackEnd/services/woocommerce_service.py): WooCommerce API access for orders and stock
 - [BackEnd/services/customer_insights.py](H:/Analysis/Automation-Pivot/BackEnd/services/customer_insights.py): customer normalization, lifetime metrics, RFM segmentation, and first-order logic
 - [BackEnd/services/ml_insights.py](H:/Analysis/Automation-Pivot/BackEnd/services/ml_insights.py): demand forecast, churn-risk scoring, anomaly detection
@@ -52,13 +51,12 @@ Across the app, date selectors are standardized to:
 
 ## Data Strategy
 
-The app uses a hybrid local-first strategy:
+The app uses a WooCommerce local-first strategy:
 
-1. historical local data is loaded from parquet
-2. WooCommerce order and stock cache is read first for fast UI response
-3. stale or missing WooCommerce cache is refreshed in the background
-4. lifetime WooCommerce history can be built through a one-time full sync
-5. live stream views use the locked Google Sheet sources for stream-only reporting
+1. WooCommerce order and stock cache is read first for fast UI response
+2. stale or missing WooCommerce cache is refreshed in the background
+3. lifetime WooCommerce history can be built through a one-time full sync
+4. cached sales data is reused locally per user to keep the UI fast
 
 ## Customer and Revenue Counting
 
@@ -72,7 +70,7 @@ The app uses a hybrid local-first strategy:
 
 - `Unique Customers` means distinct normalized customers inside the visible filter
 - `New Customers` means customers whose first-ever WooCommerce order falls inside the relevant period
-- lifetime customer metrics use full available WooCommerce history from local cache plus stored historical Woo data
+- lifetime customer metrics use full available WooCommerce history from the local cache
 
 ## Working with the Codebase
 
@@ -81,7 +79,7 @@ Recommended areas for future work:
 - add more small helpers in `FrontEnd/components/ui_components.py` before duplicating UI markup in pages
 - keep page-specific rendering in `FrontEnd/pages/`
 - keep data retrieval, cache management, and model logic in `BackEnd/services/`
-- keep schema normalization and cross-source cleanup in `BackEnd/utils/`
+- keep schema normalization and WooCommerce field cleanup in `BackEnd/utils/`
 - prefer extending the page registry in `FrontEnd/pages/__init__.py` instead of wiring page tabs directly in `app.py`
 
 ## Legacy / Archived Areas
@@ -93,6 +91,6 @@ Some older modules still exist in the repository for backward reference or recov
 Typical local verification commands:
 
 ```bash
-python -m py_compile app.py FrontEnd\pages\dashboard.py FrontEnd\pages\customer_insights.py FrontEnd\pages\live_stream.py FrontEnd\pages\woocommerce.py
+python -m py_compile app.py FrontEnd\pages\dashboard.py FrontEnd\pages\customer_insights.py FrontEnd\pages\woocommerce.py
 python -m unittest tests.test_hybrid_data_loader tests.test_customer_history tests.test_dashboard_revenue
 ```

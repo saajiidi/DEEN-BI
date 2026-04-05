@@ -9,7 +9,6 @@ Automation Pivot is now structured as a local-first analytics app with a thin St
 ### Primary navigation
 
 - `Business Intelligence`
-- `Stream Monitor`
 - `Customer Intelligence`
 - `Commerce Hub`
 - `System Health`
@@ -38,7 +37,6 @@ Responsibilities:
 ### Pages
 
 - `FrontEnd/pages/dashboard.py`
-- `FrontEnd/pages/live_stream.py`
 - `FrontEnd/pages/customer_insights.py`
 - `FrontEnd/pages/woocommerce.py`
 - `FrontEnd/pages/system_health.py`
@@ -74,7 +72,7 @@ Responsibilities:
 
 Responsibilities:
 
-- hybrid dataset loading
+- WooCommerce sales dataset loading
 - WooCommerce API access
 - local cache persistence
 - background refresh scheduling
@@ -90,25 +88,17 @@ Responsibilities:
 
 - canonical column mapping
 - normalized identifiers
-- schema cleanup across historical, Google Sheet, and WooCommerce sources
+- schema cleanup across WooCommerce order and inventory exports
 
 ## 4. Data Flow
 
 ### Sales and customer flow
 
-1. load local historical parquet
-2. load WooCommerce cache if available
-3. show cache-backed UI immediately
-4. trigger background refresh if stale or incomplete
-5. recompute customer and BI views from normalized data
-6. use lifetime WooCommerce history for first-order and retention logic
-
-### Live stream flow
-
-1. load from locked stream sheet
-2. normalize columns
-3. render stream metrics and visual analytics
-4. show loaded activity window for context
+1. load WooCommerce cache if available
+2. show cache-backed UI immediately
+3. trigger background refresh if stale or incomplete
+4. recompute customer and BI views from normalized data
+5. use lifetime WooCommerce history for first-order and retention logic
 
 ### Inventory flow
 

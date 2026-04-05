@@ -6,7 +6,6 @@ APP_DATA_START_DATE = date(2022, 8, 1)
 
 PRIMARY_NAV = (
     "Business Intelligence",
-    "Stream Monitor",
     "Customer Intelligence",
     "Commerce Hub",
     "System Health",
@@ -18,11 +17,7 @@ PRIMARY_PAGE_CONFIG = (
         "label": "Business Intelligence",
         "description": "Executive KPIs, sales analysis, customer behavior, inventory, and forecasts.",
     },
-    {
-        "key": "stream_monitor",
-        "label": "Stream Monitor",
-        "description": "Live stream sales view with rapid visibility into active performance.",
-    },
+
     {
         "key": "customer_intelligence",
         "label": "Customer Intelligence",

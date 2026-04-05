@@ -1,4 +1,4 @@
-"""Main retail dashboard powered by the normalized hybrid sales schema."""
+"""Main retail dashboard powered by the normalized WooCommerce sales schema."""
 
 from __future__ import annotations
 
@@ -17,9 +17,7 @@ from BackEnd.services.hybrid_data_loader import (
     get_woocommerce_orders_cache_status,
     get_woocommerce_stock_cache_status,
     load_full_woocommerce_history,
-    load_comparison_data,
     load_hybrid_data,
-    load_live_stream_data,
     load_cached_woocommerce_stock_data,
     start_full_history_background_refresh,
     start_orders_background_refresh,
@@ -157,36 +155,59 @@ def _render_section_date_context(df: pd.DataFrame, label: str):
 
 
 def render_dashboard_tab():
+    # Inject Responsive CSS
+    st.markdown("""
+    <style>
+    /* Global layout adjustments for mobile */
+    @media (max-width: 900px) {
+        .main .block-container {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+        }
+        /* Mobile-friendly metrics */
+        div[data-testid="stMetricValue"] {
+            font-size: 1.5rem !important;
+        }
+        div[data-testid="stMetric"] {
+            margin-bottom: 0px !important;
+        }
+        /* Lock charts to a mobile-friendly height */
+        .stPlotlyChart {
+            height: 320px !important;
+        }
+        /* Collapse sidebar by default on super small screens is mostly handled by streamlit, 
+           but we can hide some captions to reduce noise */
+        .stCaption {
+            font-size: 0.75rem !important;
+        }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     render_bi_hero(
         "Commerce Command Center",
-        "A cleaner BI-style operating view for revenue, demand, customer health, and geographic performance. The dashboard is now optimized for WooCommerce-first analysis with less visual noise and clearer executive signals.",
+        "A cleaner BI-style operating view for revenue, demand, customer health, and geographic performance. The dashboard is now optimized for WooCommerce-only analysis with less visual noise and clearer executive signals.",
         chips=[
-            "WooCommerce-first",
-            "Stream sheet locked",
+            "WooCommerce-only",
             "Customer intelligence",
+            "Inventory visibility",
             "Modern BI layout",
         ],
     )
 
     with st.sidebar:
         st.subheader("Data Connectors")
-        live_source = st.radio(
-            "Executive Trends Source",
-            ["WooCommerce API Only", "Merged (Woo + Sheets)", "Historical + Sheets Only"],
-            index=0,
-            key="dashboard_live_source",
-            help="Product, customer, forecast, and inventory views always use WooCommerce API data. This selector only changes the executive trend layer.",
-        )
+        st.info("Business Intelligence is now powered only by WooCommerce orders, customers, and inventory cache.")
 
-    include_gsheet = live_source in {"Merged (Woo + Sheets)", "Historical + Sheets Only"}
-    include_woo = live_source in {"Merged (Woo + Sheets)", "WooCommerce API Only"}
+    include_gsheet = False
+    include_woo = True
 
     # Date range is now fixed for rolling comparisons
     end_date = date.today()
     start_date = end_date - timedelta(days=120)
     
     st.markdown("<div style='margin-bottom: 1rem;'></div>", unsafe_allow_html=True)
-    load_clicked = st.button("Sync Live Data", use_container_width=True, type="primary", help="Force a refresh of WooCommerce and Google Sheet data.")
+    load_clicked = st.button("Sync WooCommerce Data", use_container_width=True, type="primary", help="Force a refresh of WooCommerce orders, customer history, and inventory cache.")
 
     start_date_str = start_date.strftime("%Y-%m-%d")
     end_date_str = end_date.strftime("%Y-%m-%d")
@@ -209,9 +230,7 @@ def render_dashboard_tab():
     request_signature = {
         "start_date": start_date_str,
         "end_date": end_date_str,
-        "include_gsheet": include_gsheet,
         "include_woo": include_woo,
-        "live_source": live_source,
     }
     cache_signature = "|".join(
         [
@@ -231,19 +250,7 @@ def render_dashboard_tab():
     )
     if should_load:
         try:
-            # Main Sales DF (can be Merged for Trends/Geo)
             df_sales = ensure_sales_schema(
-                load_hybrid_data(
-                    start_date=start_date_str,
-                    end_date=end_date_str,
-                    include_gsheet=include_gsheet,
-                    include_woocommerce=include_woo,
-                    woocommerce_mode="cache_only",
-                )
-            )
-            
-            # Restricted DF for Product/Customer Analysis (WooCommerce Only)
-            df_woo_only = ensure_sales_schema(
                 load_hybrid_data(
                     start_date=start_date_str,
                     end_date=end_date_str,
@@ -252,6 +259,7 @@ def render_dashboard_tab():
                     woocommerce_mode="cache_only",
                 )
             )
+            df_woo_only = df_sales.copy()
             
             full_woo_history = load_full_woocommerce_history(end_date=end_date_str)
             if not full_woo_history.empty:
@@ -263,9 +271,8 @@ def render_dashboard_tab():
                 full_woo_history = full_woo_history[history_cols].copy()
             df_customers = _build_dashboard_customer_insights(df_woo_only, full_woo_history)
             if df_sales.empty:
-                if not include_woo and include_gsheet:
-                    st.warning("No sales data found for the selected date range.")
-                    return
+                st.warning("No WooCommerce sales data was found for the selected date range.")
+                return
             st.session_state.dashboard_data = {
                 "sales": df_sales,
                 "woo_only": df_woo_only,
@@ -285,7 +292,7 @@ def render_dashboard_tab():
             return
 
     if "dashboard_data" not in st.session_state:
-        st.info("Click 'Sync Live Data' to fetch the latest insights from WooCommerce and Google Sheets.")
+        st.info("Click 'Sync WooCommerce Data' to fetch the latest insights from WooCommerce.")
         return
 
     data = st.session_state.dashboard_data
@@ -309,13 +316,12 @@ def render_dashboard_tab():
     if orders_status.get("is_running") or stock_status.get("is_running") or full_history_status.get("is_running"):
         st.info("Background sync is running. The dashboard is using local cached data now and will pick up fresher WooCommerce data on the next rerun.")
     elif include_woo and df_woo_only.empty and not orders_status.get("cache_exists"):
-        st.info("WooCommerce cache is being prepared. Historical and sheet-backed views can open first, and WooCommerce-only tabs will fill in after the background sync completes.")
+        st.info("WooCommerce cache is being prepared. Core BI views will fill in as soon as the background sync finishes.")
 
     tabs = st.tabs([
         "Business Intelligence",
         "Executive Summary",
         "Data Audit",
-        "Streaming Comparison",
         "Sales Trends",
         "Product Performance",
         "Customer Behavior",
@@ -330,26 +336,24 @@ def render_dashboard_tab():
     with tabs[2]:
         render_data_audit(df_sales, df_customers, start_date, end_date)
     with tabs[3]:
-        render_live_stream_comparison()
-    with tabs[4]:
         render_sales_trends(df_sales)
+    with tabs[4]:
+        render_product_performance(df_woo_only)
     with tabs[5]:
-        render_product_performance(df_woo_only) # Restricted to WooCommerce
+        render_customer_behavior(df_woo_only, df_customers)
     with tabs[6]:
-        render_customer_behavior(df_woo_only, df_customers) # Restricted to WooCommerce
-    with tabs[7]:
         render_geographic_insights(df_sales)
-    with tabs[8]:
+    with tabs[7]:
         render_inventory_health(stock_df, ml_bundle.get("forecast", pd.DataFrame()))
-    with tabs[9]:
+    with tabs[8]:
         render_forecast_and_alerts(ml_bundle)
 
 
 def render_business_intelligence(df_sales: pd.DataFrame, df_customers: pd.DataFrame):
     st.subheader("Business Intelligence")
-    st.caption("Executive comparison and rolling period-based sales performance.")
+    st.caption("Executive comparison and rolling period-based sales performance from WooCommerce orders only.")
 
-    render_today_vs_last_day_sales_chart()
+    render_today_vs_last_day_sales_chart(df_sales, df_customers)
     st.divider()
     render_last_7_days_sales_chart(df_sales, df_customers)
     st.divider()
@@ -361,63 +365,99 @@ def render_business_intelligence(df_sales: pd.DataFrame, df_customers: pd.DataFr
     st.divider()
 
 
-def render_today_vs_last_day_sales_chart():
-    st.markdown("#### Today vs Last Day Sales Comparison")
-    stream_df = load_live_stream_data()
-    compare_df = load_comparison_data()
-    if stream_df.empty and compare_df.empty:
-        st.info("No live comparison data is available right now.")
+def render_today_vs_last_day_sales_chart(df_sales: pd.DataFrame, df_customers: pd.DataFrame):
+    st.markdown("#### Today vs Previous Day Sales Comparison")
+    sales = ensure_sales_schema(df_sales)
+    sales = sales[sales["order_date"].notna()].copy()
+    if sales.empty:
+        st.info("No WooCommerce daily comparison data is available right now.")
         return
 
-    stream_orders = _build_order_level_dataset(stream_df)
-    compare_orders = _build_order_level_dataset(compare_df)
-    comparison = pd.DataFrame(
-        {
-            "Period": ["Today", "Last Day"],
-            "Revenue": [
-                float(pd.to_numeric(stream_orders.get("order_total", 0), errors="coerce").fillna(0).sum()) if not stream_orders.empty else 0.0,
-                float(pd.to_numeric(compare_orders.get("order_total", 0), errors="coerce").fillna(0).sum()) if not compare_orders.empty else 0.0,
-            ],
-            "Orders": [
-                int(stream_orders["order_id"].replace("", pd.NA).dropna().nunique()) if not stream_orders.empty else 0,
-                int(compare_orders["order_id"].replace("", pd.NA).dropna().nunique()) if not compare_orders.empty else 0,
-            ],
-            "Units": [
-                float(pd.to_numeric(stream_df.get("qty", 0), errors="coerce").fillna(0).sum()) if not stream_df.empty else 0.0,
-                float(pd.to_numeric(compare_df.get("qty", 0), errors="coerce").fillna(0).sum()) if not compare_df.empty else 0.0,
-            ],
-        }
+    sales["order_day"] = sales["order_date"].dt.normalize()
+    order_daily = (
+        _build_order_level_dataset(sales)
+        .groupby("order_day", as_index=False)
+        .agg(
+            revenue=("order_total", "sum"),
+            orders=("order_id", lambda s: s.replace("", pd.NA).dropna().nunique()),
+            unique_customers=("customer_key", lambda s: s.replace("", pd.NA).dropna().nunique()),
+            units=("qty", "sum"),
+        )
+        .sort_values("order_day")
+        .tail(2)
+        .reset_index(drop=True)
+    )
+    if order_daily.empty:
+        st.info("No WooCommerce daily comparison data is available right now.")
+        return
+
+    if isinstance(df_customers, pd.DataFrame) and not df_customers.empty and "first_order" in df_customers.columns:
+        customer_df = df_customers.copy()
+        customer_df["first_order"] = pd.to_datetime(customer_df["first_order"], errors="coerce").dt.normalize()
+        new_customer_daily = (
+            customer_df[customer_df["first_order"].notna()]
+            .groupby("first_order")
+            .size()
+            .reset_index(name="new_customers")
+            .rename(columns={"first_order": "order_day"})
+        )
+        order_daily = order_daily.merge(new_customer_daily, on="order_day", how="left")
+    order_daily["new_customers"] = pd.to_numeric(order_daily.get("new_customers", 0), errors="coerce").fillna(0).astype(int)
+
+    latest_day = order_daily["order_day"].max()
+    label_map = {0: "Today", 1: "Previous"}
+    order_daily["days_ago"] = (latest_day - order_daily["order_day"]).dt.days
+    order_daily["day_label"] = order_daily.apply(
+        lambda row: f"{label_map.get(int(row['days_ago']), 'Earlier')} - {row['order_day'].strftime('%A, %d %b')}"
+        if pd.notna(row["order_day"]) else "Unknown",
+        axis=1,
     )
 
     c1, c2 = st.columns(2)
     with c1:
         fig_revenue = px.bar(
-            comparison,
-            x="Period",
-            y="Revenue",
-            color="Period",
-            title="Today vs Last Day Revenue",
+            order_daily,
+            x="day_label",
+            y="revenue",
+            color="day_label",
+            title="Today vs Previous Day Revenue",
             text_auto=".2s",
         )
-        fig_revenue.update_layout(height=320, showlegend=False)
+        fig_revenue.update_layout(height=320, showlegend=False, xaxis_title="Day", yaxis_title="Revenue")
         st.plotly_chart(fig_revenue, use_container_width=True)
     with c2:
-        comp_melt = comparison.melt(
-            id_vars=["Period"],
-            value_vars=["Orders", "Units"],
-            var_name="Metric",
-            value_name="Value",
+        comparison_metrics = order_daily.melt(
+            id_vars=["day_label"],
+            value_vars=["orders", "unique_customers", "new_customers", "units"],
+            var_name="metric",
+            value_name="value",
         )
-        fig_volume = px.bar(
-            comp_melt,
-            x="Metric",
-            y="Value",
-            color="Period",
+        fig_counts = px.bar(
+            comparison_metrics,
+            x="metric",
+            y="value",
+            color="day_label",
             barmode="group",
-            title="Today vs Last Day Orders and Units",
+            title="Today vs Previous Day Volume",
+            labels={"metric": "Metric", "value": "Value", "day_label": "Day"},
         )
-        fig_volume.update_layout(height=320)
-        st.plotly_chart(fig_volume, use_container_width=True)
+        fig_counts.update_layout(height=320, xaxis_title="Metric", yaxis_title="Value")
+        st.plotly_chart(fig_counts, use_container_width=True)
+
+    st.dataframe(
+        order_daily[["day_label", "revenue", "orders", "unique_customers", "new_customers", "units"]].rename(
+            columns={
+                "day_label": "Day",
+                "revenue": "Sales Revenue",
+                "orders": "Order Count",
+                "unique_customers": "Unique Customers",
+                "new_customers": "New Customers",
+                "units": "Units Sold",
+            }
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 def render_last_7_days_sales_chart(df_sales: pd.DataFrame, df_customers: pd.DataFrame):
@@ -428,7 +468,7 @@ def render_last_7_days_sales_chart(df_sales: pd.DataFrame, df_customers: pd.Data
         st.info("No daily comparison data is available for the current filter.")
         return
 
-    sales["order_day"] = sales["order_date"].dt.normalize()
+    sales["order_date"] = pd.to_datetime(sales["order_date"], errors="coerce")
     daily = (
         _build_order_level_dataset(sales.assign(order_day=sales["order_date"].dt.normalize()))
         .groupby("order_day", as_index=False)
@@ -539,12 +579,14 @@ def build_period_business_metrics(
         "Week": "W",
         "Year": "Y",
     }
+    sales["order_date"] = pd.to_datetime(sales["order_date"], errors="coerce")
     period_series = sales["order_date"].dt.to_period(freq_map.get(view_mode, "Q"))
     sales["period"] = period_series
     sales["period_label"] = period_series.astype(str)
     order_metrics = _build_order_level_dataset(sales)
     if order_metrics.empty:
         return pd.DataFrame()
+    order_metrics["order_date"] = pd.to_datetime(order_metrics["order_date"], errors="coerce")
     order_metrics["period"] = order_metrics["order_date"].dt.to_period(freq_map.get(view_mode, "Q"))
     order_metrics["period_label"] = order_metrics["period"].astype(str)
     metrics = (
@@ -667,51 +709,7 @@ def render_month_over_month_summary(df_sales: pd.DataFrame, df_customers: pd.Dat
 
 
 def render_live_stream_comparison():
-    st.caption("This comparison is locked to the dedicated Live Stream Google Sheet and the fixed Today vs Last Day comparison sheet.")
-    st.subheader("📡 Live Stream Comparison (Today vs Last Day)")
-    
-    stream_df = load_live_stream_data()
-    compare_df = load_comparison_data()
-    
-    if stream_df.empty:
-        st.warning("Live Stream data is currently empty or unavailable.")
-        return
-        
-    stream_orders = _build_order_level_dataset(stream_df)
-    compare_orders = _build_order_level_dataset(compare_df)
-    s_rev = float(pd.to_numeric(stream_orders.get("order_total", 0), errors="coerce").fillna(0).sum()) if not stream_orders.empty else 0.0
-    s_ord = stream_orders["order_id"].replace("", pd.NA).dropna().nunique() if not stream_orders.empty else 0
-    s_qty = stream_df["qty"].sum()
-    
-    c_rev = float(pd.to_numeric(compare_orders.get("order_total", 0), errors="coerce").fillna(0).sum()) if not compare_orders.empty else 0.0
-    c_ord = compare_orders["order_id"].replace("", pd.NA).dropna().nunique() if not compare_orders.empty else 0
-    c_qty = compare_df["qty"].sum() if not compare_df.empty else 0
-    
-    m1, m2, m3 = st.columns(3)
-    with m1:
-        st.metric("Live Revenue", f"TK {s_rev:,.0f}", _pct_delta(s_rev, c_rev, "vs Last Day"))
-    with m2:
-        st.metric("Live Orders", f"{s_ord:,}", _pct_delta(float(s_ord), float(c_ord), "vs Last Day"))
-    with m3:
-        st.metric("Live Units", f"{s_qty:,.0f}", _pct_delta(s_qty, c_qty, "vs Last Day"))
-        
-    st.divider()
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("#### Live Stream Items")
-        if not stream_df.empty:
-            st.dataframe(stream_df[["order_id", "item_name", "qty", "order_total"]].head(50), use_container_width=True, hide_index=True)
-    with c2:
-        st.markdown("#### Live Trends")
-        if "_imported_at" in stream_df.columns:
-            stream_df["_import_time"] = pd.to_datetime(stream_df["_imported_at"], errors="coerce")
-            live_trend_source = _build_order_level_dataset(stream_df.assign(_import_time=stream_df["_import_time"]))
-            live_trend = live_trend_source.groupby(live_trend_source["_import_time"].dt.hour).agg(Revenue=("order_total", "sum")).reset_index()
-            fig = px.area(live_trend, x="_import_time", y="Revenue", title="Import Activity (Hour)")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Waiting for more stream activity to plot trends.")
+    st.info("This legacy stream comparison is no longer active. The app now runs on WooCommerce-only data.")
 
 
 def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame):
@@ -878,7 +876,7 @@ def render_executive_summary(df_sales: pd.DataFrame, df_customers: pd.DataFrame,
     with s1:
         st.metric("Items Sold", f"{total_items:,.0f}")
         render_kpi_note("Counting mode: summed qty from visible rows")
-        st.caption(f"Historical: {summary.get('historical', 0):,} | Woo: {summary.get('woocommerce_live', 0):,} | Stream: {summary.get('live_stream', 0):,}")
+        st.caption(f"WooCommerce rows in cache: {summary.get('woocommerce_live', 0):,} | Inventory rows: {summary.get('stock_rows', 0):,}")
     with s2:
         repeat_rate = 0.0
         if isinstance(df_customers, pd.DataFrame) and not df_customers.empty and "total_orders" in df_customers.columns:
@@ -922,6 +920,7 @@ def render_data_audit(
         return
 
     audit_df = df.copy()
+    audit_df["order_date"] = pd.to_datetime(audit_df["order_date"], errors="coerce")
     audit_df["order_day"] = audit_df["order_date"].dt.date
     order_level_audit = _build_order_level_dataset(audit_df)
     order_counts = (
@@ -1132,7 +1131,7 @@ def render_sales_trends(df: pd.DataFrame):
 
 def render_product_performance(df: pd.DataFrame):
     st.subheader("Product Performance")
-    st.caption("This view uses WooCommerce API order items only. Google Sheets are excluded here for cleaner item-level accuracy.")
+    st.caption("This view uses WooCommerce order items only for cleaner item-level accuracy.")
     _render_section_date_context(df, "Loaded product activity")
     if df.empty:
         st.info("No product data available.")
@@ -1174,7 +1173,7 @@ def render_product_performance(df: pd.DataFrame):
 
 def render_customer_behavior(df_sales: pd.DataFrame, df_customers: pd.DataFrame):
     st.subheader("Customer Behavior")
-    st.caption("This view uses WooCommerce API customer and order history only. Google Sheets are excluded here for retention accuracy.")
+    st.caption("This view uses WooCommerce customer and order history only for retention accuracy.")
     _render_section_date_context(df_sales, "Loaded customer behavior activity")
     if df_customers is None or df_customers.empty:
         st.info("Customer insights are not available yet for the selected period.")

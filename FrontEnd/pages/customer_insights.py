@@ -32,7 +32,7 @@ def render_customer_insight_tab():
 
     with st.sidebar:
         st.subheader("Data Connectors")
-        st.info("Customer insights are exclusively powered by WooCommerce API & Historical data for maximum accuracy.")
+        st.info("Customer insights are exclusively powered by WooCommerce order history for maximum accuracy.")
         include_woo = True
 
     # Fixed rolling 120-day window

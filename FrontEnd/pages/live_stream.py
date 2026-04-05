@@ -918,29 +918,12 @@ def render_manual_tab():
 
     st.divider()
 
-    # Date range selector
-    col1, col2, col3 = st.columns([2, 2, 1])
-    with col1:
-        start_date = st.date_input(
-            "From",
-            value=APP_DATA_START_DATE,
-            min_value=APP_DATA_START_DATE,
-            max_value=date.today(),
-            key="manual_start_date",
-        )
-    with col2:
-        end_date = st.date_input(
-            "To",
-            value=date.today(),
-            min_value=APP_DATA_START_DATE,
-            max_value=date.today(),
-            key="manual_end_date",
-        )
-    with col3:
-        # Add vertical spacing to align button with date input fields
-        st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
-        search_clicked = st.button("🔍 Search", use_container_width=True, type="primary")
+    # Fixed rolling 120-day window
+    end_date = date.today()
+    start_date = end_date - timedelta(days=120)
 
+    st.markdown("<div style='margin-bottom: 1rem;'></div>", unsafe_allow_html=True)
+    search_clicked = st.button("🔍 Sync Live & Google Sheets Data", use_container_width=True, type="primary")
     if search_clicked:
         if start_date > end_date:
             st.error("Start date must be before end date")

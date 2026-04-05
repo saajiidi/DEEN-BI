@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reorganized the app around a registry-driven primary navigation model
 - Simplified `app.py` into a thinner shell with sidebar helpers and dynamic page rendering
 - Standardized date defaults across the app to `2022-08-01` through `today`
-- Unified loaded-date context messaging across dashboard, customer, stream, and WooCommerce pages
+- Unified loaded-date context messaging across dashboard, customer, and WooCommerce pages
 - Improved component exports so shared UI helpers are easier to reuse consistently
 
 ### Added

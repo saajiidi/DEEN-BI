@@ -1,4 +1,4 @@
-"""Hybrid data loader - combines historical parquet with live sheets and WooCommerce data."""
+"""WooCommerce-focused data loader with local cache and background refresh support."""
 
 from __future__ import annotations
 
@@ -304,17 +304,11 @@ def load_cached_woocommerce_history() -> pd.DataFrame:
 
 
 def load_full_woocommerce_history(end_date: Optional[str] = None) -> pd.DataFrame:
-    historical = load_historical_data()
     cached = load_cached_woocommerce_history()
-    frames = [df for df in [historical, cached] if df is not None and not df.empty]
-    if not frames:
+    if cached is None or cached.empty:
         return pd.DataFrame()
 
-    merged = ensure_sales_schema(pd.concat(frames, ignore_index=True, sort=False))
-    merged = _dedupe_orders(merged)
-    if "source" in merged.columns:
-        source_mask = merged["source"].astype(str).str.contains("woocommerce", case=False, na=False)
-        merged = merged[source_mask].copy()
+    merged = _dedupe_orders(ensure_sales_schema(cached))
     if end_date:
         end_ts = pd.to_datetime(end_date, errors="coerce")
         if pd.notna(end_ts):
@@ -710,23 +704,18 @@ def load_hybrid_data(
     include_woocommerce: bool = True,
     woocommerce_mode: str = "live",
 ) -> pd.DataFrame:
-    df_hist = load_historical_data()
-    df_gsheet = load_live_2026_data() if include_gsheet else pd.DataFrame()
-    df_woo = (
-        (
-            load_cached_woocommerce_live_data(start_date=start_date, end_date=end_date)
-            if woocommerce_mode == "cache_only"
-            else load_woocommerce_live_data(start_date=start_date, end_date=end_date)
-        )
-        if include_woocommerce
-        else pd.DataFrame()
-    )
-
-    frames = [df for df in [df_hist, df_gsheet, df_woo] if df is not None and not df.empty]
-    if not frames:
+    if not include_woocommerce:
         return pd.DataFrame()
 
-    merged = ensure_sales_schema(pd.concat(frames, ignore_index=True, sort=False))
+    df_woo = (
+        load_cached_woocommerce_live_data(start_date=start_date, end_date=end_date)
+        if woocommerce_mode == "cache_only"
+        else load_woocommerce_live_data(start_date=start_date, end_date=end_date)
+    )
+    if df_woo.empty:
+        return pd.DataFrame()
+
+    merged = ensure_sales_schema(df_woo)
     merged = _dedupe_orders(merged)
 
     if start_date:
@@ -740,18 +729,14 @@ def load_hybrid_data(
 
 
 def get_data_summary(woocommerce_mode: str = "live") -> dict:
-    df_hist = load_historical_data()
-    df_live = load_live_2026_data()
     df_woo = (
         load_cached_woocommerce_live_data()
         if woocommerce_mode == "cache_only"
         else load_woocommerce_live_data()
     )
-    df_stream = load_live_stream_data()
+    df_stock = load_cached_woocommerce_stock_data()
     return {
-        "historical": len(df_hist),
-        "live_2026": len(df_live),
         "woocommerce_live": len(df_woo),
-        "live_stream": len(df_stream),
-        "total": len(df_hist) + len(df_live) + len(df_woo) + len(df_stream),
+        "stock_rows": len(df_stock),
+        "total": len(df_woo),
     }
