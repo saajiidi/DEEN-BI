@@ -558,6 +558,19 @@ def render_highlight_stat(label: str, value: str, help_text: str = ""):
     )
 
 
+def _safe_datetime_series(value) -> pd.Series:
+    if value is None:
+        return pd.Series(dtype="datetime64[ns]")
+    converted = pd.to_datetime(value, errors="coerce")
+    if isinstance(converted, pd.Series):
+        return converted
+    if isinstance(converted, pd.Index):
+        return pd.Series(converted)
+    if pd.isna(converted):
+        return pd.Series(dtype="datetime64[ns]")
+    return pd.Series([converted])
+
+
 def render_loaded_date_context(
     requested_start=None,
     requested_end=None,
@@ -573,8 +586,10 @@ def render_loaded_date_context(
     requested_text = " ".join(requested_parts).strip()
     prefix = f"Requested range: {requested_text}" if requested_text else "Requested range: not specified"
 
-    loaded_start_ts = pd.to_datetime(loaded_start, errors="coerce") if loaded_start is not None else pd.NaT
-    loaded_end_ts = pd.to_datetime(loaded_end, errors="coerce") if loaded_end is not None else pd.NaT
+    loaded_start_series = _safe_datetime_series(loaded_start)
+    loaded_end_series = _safe_datetime_series(loaded_end)
+    loaded_start_ts = loaded_start_series.min() if not loaded_start_series.empty and loaded_start_series.notna().any() else pd.NaT
+    loaded_end_ts = loaded_end_series.max() if not loaded_end_series.empty and loaded_end_series.notna().any() else pd.NaT
     if pd.notna(loaded_start_ts) and pd.notna(loaded_end_ts):
         st.caption(
             f"{prefix} | {label}: {loaded_start_ts.strftime('%Y-%m-%d %H:%M')} to {loaded_end_ts.strftime('%Y-%m-%d %H:%M')}"

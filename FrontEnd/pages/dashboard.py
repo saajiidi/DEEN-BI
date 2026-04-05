@@ -243,9 +243,9 @@ def render_dashboard_tab():
     include_gsheet = False
     include_woo = True
 
-    # Date range is now fixed for rolling comparisons
+    # Date range is now fixed for rolling comparisons (90 days / 3 months)
     end_date = date.today()
-    start_date = end_date - timedelta(days=120)
+    start_date = end_date - timedelta(days=90)
     
     st.markdown("<div style='margin-bottom: 1rem;'></div>", unsafe_allow_html=True)
     load_clicked = st.button("Sync WooCommerce Data", use_container_width=True, type="primary", help="Force a refresh of WooCommerce orders, customer history, and inventory cache.")
@@ -305,16 +305,20 @@ def render_dashboard_tab():
                 st.warning("No WooCommerce sales data was found for the selected date range.")
                 return
 
-            full_woo_history = _prune_dataframe(
-                load_full_woocommerce_history(end_date=end_date_str),
-                FULL_HISTORY_COLUMNS,
-            )
+            try:
+                full_woo_history = _prune_dataframe(
+                    load_full_woocommerce_history(end_date=end_date_str),
+                    FULL_HISTORY_COLUMNS,
+                )
+            except MemoryError as exc:
+                log_error(exc, context="Dashboard Load", details={"mode": "full_history_disabled"})
+                full_woo_history = pd.DataFrame()
 
             try:
                 df_customers = _build_dashboard_customer_insights(df_sales, full_woo_history)
             except MemoryError as exc:
                 log_error(exc, context="Dashboard Load", details={"mode": "customer_history_disabled"})
-                df_customers = _build_dashboard_customer_insights(df_sales, pd.DataFrame())
+                df_customers = pd.DataFrame()
 
             try:
                 ml_bundle = _build_dashboard_ml_bundle(df_sales, df_customers)
@@ -322,7 +326,12 @@ def render_dashboard_tab():
                 log_error(exc, context="Dashboard Load", details={"mode": "ml_disabled"})
                 ml_bundle = {"forecast": pd.DataFrame(), "customer_risk": pd.DataFrame(), "anomalies": pd.DataFrame()}
 
-            stock_df = load_cached_woocommerce_stock_data()
+            try:
+                stock_df = load_cached_woocommerce_stock_data()
+            except MemoryError as exc:
+                log_error(exc, context="Dashboard Load", details={"mode": "stock_disabled"})
+                stock_df = pd.DataFrame()
+
             summary = {
                 "woocommerce_live": len(df_sales),
                 "stock_rows": len(stock_df),
@@ -342,9 +351,46 @@ def render_dashboard_tab():
             st.session_state.dashboard_request_signature = request_signature
             st.session_state.dashboard_cache_signature = cache_signature
         except Exception as exc:
-            log_error(exc, context="Dashboard Load")
-            st.error(f"Error loading dashboard data: {exc}")
-            return
+            if isinstance(exc, MemoryError) or "Unable to allocate" in str(exc):
+                log_error(exc, context="Dashboard Load", details={"mode": "sales_only_safe_mode"})
+                try:
+                    df_sales = _prune_dataframe(
+                        load_hybrid_data(
+                            start_date=start_date_str,
+                            end_date=end_date_str,
+                            include_gsheet=False,
+                            include_woocommerce=True,
+                            woocommerce_mode="cache_only",
+                        ),
+                        DASHBOARD_SALES_COLUMNS,
+                    )
+                except Exception:
+                    df_sales = pd.DataFrame()
+
+                if df_sales.empty:
+                    st.error("Error loading dashboard data: not enough memory to open even the lightweight WooCommerce view.")
+                    return
+
+                st.session_state.dashboard_data = {
+                    "sales": df_sales,
+                    "customers": pd.DataFrame(),
+                    "summary": {
+                        "woocommerce_live": len(df_sales),
+                        "stock_rows": 0,
+                        "total": len(df_sales),
+                    },
+                    "ml": {"forecast": pd.DataFrame(), "customer_risk": pd.DataFrame(), "anomalies": pd.DataFrame()},
+                    "stock": pd.DataFrame(),
+                    "loaded_from_cache_hint": orders_status.get("status_message", ""),
+                    "stock_cache_hint": "Inventory was skipped in low-memory safe mode.",
+                    "full_history_hint": "Customer lifetime history was skipped in low-memory safe mode.",
+                }
+                st.session_state.dashboard_request_signature = request_signature
+                st.session_state.dashboard_cache_signature = cache_signature
+            else:
+                log_error(exc, context="Dashboard Load")
+                st.error(f"Error loading dashboard data: {exc}")
+                return
 
     if "dashboard_data" not in st.session_state:
         st.info("Click 'Sync WooCommerce Data' to fetch the latest insights from WooCommerce.")
@@ -377,12 +423,7 @@ def render_dashboard_tab():
         "Business Intelligence",
         "Executive Summary",
         "Data Audit",
-        "Sales Trends",
-        "Product Performance",
-        "Customer Behavior",
-        "Geographic",
-        "Inventory",
-        "Forecast & Alerts",
+        "Operations",
     ])
     with tabs[0]:
         render_business_intelligence(df_sales, df_customers)
@@ -391,30 +432,54 @@ def render_dashboard_tab():
     with tabs[2]:
         render_data_audit(df_sales, df_customers, start_date, end_date)
     with tabs[3]:
-        render_sales_trends(df_sales)
-    with tabs[4]:
-        render_product_performance(df_woo_only)
-    with tabs[5]:
-        render_customer_behavior(df_woo_only, df_customers)
-    with tabs[6]:
-        render_geographic_insights(df_sales)
-    with tabs[7]:
-        render_inventory_health(stock_df, ml_bundle.get("forecast", pd.DataFrame()))
-    with tabs[8]:
-        render_forecast_and_alerts(ml_bundle)
+        operations_tabs = st.tabs([
+            "Sales Trends",
+            "Product Performance",
+            "Customer Behavior",
+            "Geographic",
+            "Inventory",
+            "Forecast & Alerts",
+        ])
+        with operations_tabs[0]:
+            render_sales_trends(df_sales)
+        with operations_tabs[1]:
+            render_product_performance(df_woo_only)
+        with operations_tabs[2]:
+            render_customer_behavior(df_woo_only, df_customers)
+        with operations_tabs[3]:
+            render_geographic_insights(df_sales)
+        with operations_tabs[4]:
+            render_inventory_health(stock_df, ml_bundle.get("forecast", pd.DataFrame()))
+        with operations_tabs[5]:
+            render_forecast_and_alerts(ml_bundle)
 
 
 def render_business_intelligence(df_sales: pd.DataFrame, df_customers: pd.DataFrame):
     st.subheader("Business Intelligence")
     st.caption("Executive comparison and rolling period-based sales performance from WooCommerce orders only.")
 
-    render_today_vs_last_day_sales_chart(df_sales, df_customers)
+    with st.expander("📅 Period Filter", expanded=False):
+        c1, c2 = st.columns(2)
+        with c1:
+            bi_start = st.date_input("BI Start Date", value=date.today() - timedelta(days=90))
+        with c2:
+            bi_end = st.date_input("BI End Date", value=date.today())
+    
+    st.caption(f"**Active BI Data Window:** {bi_start.strftime('%B %d, %Y')} to {bi_end.strftime('%B %d, %Y')}")
+    
+    bi_df = df_sales.copy()
+    if not bi_df.empty and "order_date" in bi_df.columns:
+        bi_df["order_date"] = pd.to_datetime(bi_df["order_date"], errors="coerce")
+        mask = (bi_df["order_date"].dt.date >= bi_start) & (bi_df["order_date"].dt.date <= bi_end)
+        bi_df = bi_df[mask].copy()
+
+    render_today_vs_last_day_sales_chart(bi_df, df_customers)
     st.divider()
-    render_last_7_days_sales_chart(df_sales, df_customers)
+    render_last_7_days_sales_chart(bi_df, df_customers)
     st.divider()
-    render_week_over_week_summary(df_sales, df_customers)
+    render_week_over_week_summary(bi_df, df_customers)
     st.divider()
-    render_month_over_month_summary(df_sales, df_customers)
+    render_month_over_month_summary(bi_df, df_customers)
     st.divider()
 
     st.divider()
@@ -424,12 +489,32 @@ def render_today_vs_last_day_sales_chart(df_sales: pd.DataFrame, df_customers: p
     st.markdown("#### Exact Order Status Breakdown")
     order_df = _build_order_level_dataset(df_sales)
     if not order_df.empty and "order_status" in order_df.columns:
-        status_counts = order_df["order_status"].value_counts().reset_index()
+        # Standardize labels for display (e.g. on-hold -> Waiting, completed -> Shipped)
+        status_map = {
+            "completed": "Shipped",
+            "on-hold": "Waiting",
+            "processing": "Processing",
+            "cancelled": "Cancelled",
+            "refunded": "Refunded",
+            "pending": "Pending",
+            "failed": "Failed"
+        }
+        
+        status_counts = order_df["order_status"].str.lower().value_counts().reset_index()
         status_counts.columns = ["Status", "Orders"]
-        status_cols = st.columns(min(len(status_counts), 5))
-        for idx, row in status_counts.iterrows():
-            with status_cols[idx % len(status_cols)]:
-                st.metric(row["Status"].title(), f"{row['Orders']:,}")
+        
+        # Display as cards in a grid
+        rows = (len(status_counts) + 3) // 4
+        for r in range(rows):
+            cols = st.columns(4)
+            for c in range(4):
+                idx = r * 4 + c
+                if idx < len(status_counts):
+                    row = status_counts.iloc[idx]
+                    raw_status = row["Status"]
+                    display_status = status_map.get(raw_status, raw_status.title())
+                    with cols[c]:
+                        st.metric(display_status, f"{row['Orders']:,}")
     
     st.divider()
     st.markdown("#### Today vs Previous Day Sales Comparison")

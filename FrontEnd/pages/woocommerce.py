@@ -242,11 +242,12 @@ def _render_order_sync(wc_service: WooCommerceService):
     df = st.session_state.woo_orders_preview_df
     preview_cols = _resolve_preview_columns(df)
     loaded_order_dates = pd.to_datetime(df.get("Order Date"), errors="coerce")
+    has_loaded_order_dates = isinstance(loaded_order_dates, pd.Series) and not loaded_order_dates.empty and loaded_order_dates.notna().any()
     render_loaded_date_context(
         requested_start=start_date,
         requested_end=end_date,
-        loaded_start=loaded_order_dates.min() if loaded_order_dates.notna().any() else None,
-        loaded_end=loaded_order_dates.max() if loaded_order_dates.notna().any() else None,
+        loaded_start=loaded_order_dates.min() if has_loaded_order_dates else None,
+        loaded_end=loaded_order_dates.max() if has_loaded_order_dates else None,
         label="Fetched order activity",
     )
     _render_preview_chart_block("Order Charts", _build_order_charts(df))
@@ -281,11 +282,12 @@ def _render_inventory_sync(wc_service: WooCommerceService):
     df_full["Price"] = pd.to_numeric(df_full.get("Price", 0), errors="coerce").fillna(0)
     df_full["Inventory Value"] = df_full["Stock Quantity"] * df_full["Price"]
     imported_at = pd.to_datetime(df_full.get("_imported_at"), errors="coerce")
+    has_imported_at = isinstance(imported_at, pd.Series) and not imported_at.empty and imported_at.notna().any()
     render_loaded_date_context(
         requested_start=None,
         requested_end=datetime.now(),
-        loaded_start=imported_at.min() if imported_at.notna().any() else None,
-        loaded_end=imported_at.max() if imported_at.notna().any() else None,
+        loaded_start=imported_at.min() if has_imported_at else None,
+        loaded_end=imported_at.max() if has_imported_at else None,
         label="Fetched inventory snapshot",
     )
 
@@ -359,10 +361,9 @@ consumer_secret = "cs_your_consumer_secret"
     wc_service = WooCommerceService()
     st.success(f"Connected to {get_woocommerce_store_label()}. API keys stay hidden in Streamlit secrets.")
 
-    order_tab, inventory_tab, storage_tab = st.tabs([
+    order_tab, inventory_tab = st.tabs([
         "Order Sync",
-        "Inventory Sync",
-        "Storage Status",
+        "Inventory Control",
     ])
 
     with order_tab:
@@ -371,7 +372,7 @@ consumer_secret = "cs_your_consumer_secret"
     with inventory_tab:
         _render_inventory_sync(wc_service)
 
-    with storage_tab:
+        st.divider()
         st.subheader("Storage Status")
         from BackEnd.services.duckdb_loader import get_data_completeness
 
