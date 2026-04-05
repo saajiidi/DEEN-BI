@@ -3,7 +3,6 @@ APP_VERSION = "v2.5.0"
 
 PRIMARY_NAV = [
     "📊 Dashboard",
-    "🤖 AI Assistant",
     "📡 Live Stream",
     "📦 Orders",
     "🎯 Customer Insights",

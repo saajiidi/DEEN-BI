@@ -30,10 +30,9 @@ st.set_page_config(
 
 def run_app():
     # Lazy imports keep bootstrap resilient on cloud when a module has runtime incompatibilities.
-    from FrontEnd.components import render_bike_animation
+    from FrontEnd.components import render_bike_animation, render_floating_ai_chat
     from FrontEnd.pages import render_customer_insight_tab
     from FrontEnd.pages import render_dashboard_tab
-    from FrontEnd.pages.ai_assistant import render_ai_assistant_tab
     from FrontEnd.pages.catwise import render_catwise_analytics_tab
     from FrontEnd.pages.system_health import render_system_health_tab
     from FrontEnd.utils.error_handler import get_logs, log_error
@@ -122,27 +121,25 @@ def run_app():
         render_dashboard_tab()
 
     with nav_tabs[1]:
-        render_ai_assistant_tab()
-
-    with nav_tabs[2]:
         render_live_tab()
 
-    with nav_tabs[3]:
+    with nav_tabs[2]:
         render_manual_tab()
 
-    with nav_tabs[4]:
+    with nav_tabs[3]:
         render_customer_insight_tab()
 
-    with nav_tabs[5]:
+    with nav_tabs[4]:
         render_catwise_analytics_tab()
 
-    with nav_tabs[6]:
+    with nav_tabs[5]:
         render_woocommerce_tab()
 
-    with nav_tabs[7]:
+    with nav_tabs[6]:
         render_system_health_tab()
 
     render_footer()
+    render_floating_ai_chat()
 
 
 try:

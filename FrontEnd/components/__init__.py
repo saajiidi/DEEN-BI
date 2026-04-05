@@ -14,6 +14,7 @@ from .ui_components import (
     to_excel_bytes,
 )
 from .animation import render_bike_animation
+from .ai_chatbot import render_floating_ai_chat
 
 # Backward-compatible alias for older imports.
 section_card = render_section_card
@@ -29,4 +30,5 @@ __all__ = [
     "render_sidebar_branding",
     "to_excel_bytes",
     "render_bike_animation",
+    "render_floating_ai_chat",
 ]

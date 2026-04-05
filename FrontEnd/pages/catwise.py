@@ -2,7 +2,11 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timedelta
+import plotly.graph_objects as go
+from BackEnd.core.categories import get_category_for_sales, get_category_for_orders
+from BackEnd.utils.data import find_columns as auto_find_columns
+from BackEnd.services.hybrid_data_loader import load_hybrid_data
 
 # --- Configuration & Mappings (Ported from Catwise-Analytics) ---
 
@@ -132,40 +136,26 @@ COLUMN_ALIAS_MAPPING = {
 
 
 def get_product_category(name, mode="Sales Performance"):
-    """Categorizes product based on keywords or lambdas from mapping."""
-    name_str = str(name).lower()
-    mapping = STOCK_CATEGORY_MAPPING if mode == "Stock Count" else SALES_CATEGORY_MAPPING
-
-    for cat, check in mapping.items():
-        if callable(check):
-            if check(name_str):
-                return cat
-        elif any(kw.lower() in name_str for kw in check):
-            return cat
-    return "Others"
+    """Categorizes product based on central rules."""
+    if mode == "Stock Count":
+        # Keep specialized stock matching for now as it's more specific
+        name_str = str(name).lower()
+        for cat, check in STOCK_CATEGORY_MAPPING.items():
+            if callable(check):
+                if check(name_str): return cat
+            elif any(kw.lower() in name_str for kw in check): return cat
+        return "Others"
+    
+    return get_category_for_sales(name)
 
 
 def find_columns(df):
-    """Auto-detects columns from dataframe based on aliases."""
-    found = {}
-    actual_cols = list(df.columns)
-    lower_cols = [c.strip().lower() for c in actual_cols]
-
-    for key, aliases in COLUMN_ALIAS_MAPPING.items():
-        for alias in aliases:
-            if alias in lower_cols:
-                found[key] = actual_cols[lower_cols.index(alias)]
-                break
-        if key not in found:
-            for i, col in enumerate(lower_cols):
-                if any(alias in col for alias in aliases):
-                    found[key] = actual_cols[i]
-                    break
-    return found
+    """Detects primary columns; using both local specific and global utility."""
+    return auto_find_columns(df)
 
 
 def process_analytics(df, mapping, mode="Sales Performance"):
-    """Core data processing and metric calculation."""
+    """Core data processing and exhaustive metric calculation."""
     df = df.copy()
 
     df["Clean_Name"] = df[mapping["name"]].fillna("Unknown").astype(str)
@@ -173,6 +163,7 @@ def process_analytics(df, mapping, mode="Sales Performance"):
 
     cost_col = mapping.get("cost")
     qty_col = mapping.get("qty")
+    date_col = mapping.get("date")
 
     df["Clean_Cost"] = pd.to_numeric(df[cost_col], errors="coerce").fillna(0) if cost_col else 0
     df["Clean_Qty"] = pd.to_numeric(df[qty_col], errors="coerce").fillna(0) if qty_col else 0
@@ -181,30 +172,65 @@ def process_analytics(df, mapping, mode="Sales Performance"):
     df["Total Amount"] = df["Clean_Cost"] * df["Clean_Qty"]
     df["Category"] = df["Clean_Name"].apply(lambda n: get_product_category(n, mode=mode))
 
-    timeframe = ""
-    if mapping.get("date") and mapping["date"] in df.columns:
-        try:
-            dates = pd.to_datetime(df[mapping["date"]], errors="coerce").dropna()
-            if not dates.empty:
-                if dates.dt.to_period("M").nunique() == 1:
-                    timeframe = dates.iloc[0].strftime("%B_%Y")
-                else:
-                    timeframe = (
-                        f"{dates.min().strftime('%d%b')}_to_{dates.max().strftime('%d%b_%y')}"
-                    )
-        except:
-            timeframe = "Report"
+    # Time-based analytics
+    timeframe = "Full Report"
+    trend_df = pd.DataFrame()
+    if date_col and date_col in df.columns:
+        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df_timed = df.dropna(subset=[date_col])
+        if not df_timed.empty:
+            df_timed = df_timed.sort_values(date_col)
+            timeframe = f"{df_timed[date_col].min().strftime('%d %b %y')} - {df_timed[date_col].max().strftime('%d %b %y')}"
+            
+            # Resample for trends
+            resample_rule = "W" if (df_timed[date_col].max() - df_timed[date_col].min()).days > 60 else "D"
+            trend_df = df_timed.set_index(date_col).resample(resample_rule).agg({
+                "Total Amount": "sum",
+                "Clean_Qty": "sum"
+            }).reset_index()
 
-    summary = df.groupby("Category").agg({"Clean_Qty": "sum", "Total Amount": "sum"}).reset_index()
-    summary.columns = ["Category", "Total Qty", "Total Amount"]
+    # Summary
+    summary = df.groupby("Category").agg({"Clean_Qty": "sum", "Total Amount": "sum", "Clean_Name": "nunique"}).reset_index()
+    summary.columns = ["Category", "Total Qty", "Total Amount", "SKU Count"]
 
     t_rev = summary["Total Amount"].sum()
     t_qty = summary["Total Qty"].sum()
-    if t_rev > 0:
-        summary["Revenue Share (%)"] = (summary["Total Amount"] / t_rev * 100).round(2)
-    if t_qty > 0:
-        summary["Quantity Share (%)"] = (summary["Total Qty"] / t_qty * 100).round(2)
+    if t_rev > 0: summary["Revenue Share (%)"] = (summary["Total Amount"] / t_rev * 100).round(2)
+    if t_qty > 0: summary["Quantity Share (%)"] = (summary["Total Qty"] / t_qty * 100).round(2)
 
+    # Top items by category
+    top_items = df.groupby("Clean_Name").agg({
+        "Clean_Qty": "sum", 
+        "Total Amount": "sum", 
+        "Category": "first"
+    }).reset_index()
+    top_items.columns = ["Product Name", "Total Qty", "Total Amount", "Category"]
+    top_items = top_items.sort_values("Total Amount", ascending=False)
+
+    # Basket Analysis
+    group_cols = [c for c in [mapping.get("order_id"), mapping.get("phone")] if c and c in df.columns]
+    basket_stats = {"avg_value": 0, "total_orders": 0, "bundles": []}
+    
+    if group_cols:
+        order_groups = df.groupby(group_cols).agg({
+            "Total Amount": "sum",
+            "Category": lambda x: list(set(x))
+        })
+        basket_stats["avg_value"] = order_groups["Total Amount"].mean()
+        basket_stats["total_orders"] = len(order_groups)
+        
+        # Simple association (category pairs)
+        multi_cat_orders = order_groups[order_groups["Category"].map(len) > 1]
+        if not multi_cat_orders.empty:
+            pairs = []
+            for cats in multi_cat_orders["Category"]:
+                cats.sort()
+                for i in range(len(cats)):
+                    for j in range(i + 1, len(cats)):
+                        pairs.append(f"{cats[i]} + {cats[j]}")
+            basket_stats["bundles"] = pd.Series(pairs).value_counts().head(10).to_dict()
+
+    # Price Drilldown
     drilldown = (
         df.groupby(["Category", "Clean_Cost"])
         .agg({"Clean_Qty": "sum", "Total Amount": "sum"})
@@ -212,34 +238,16 @@ def process_analytics(df, mapping, mode="Sales Performance"):
     )
     drilldown.columns = ["Category", "Price (TK)", "Total Qty", "Total Amount"]
 
-    top_items = (
-        df.groupby("Clean_Name")
-        .agg({"Clean_Qty": "sum", "Total Amount": "sum", "Category": "first"})
-        .reset_index()
-    )
-    top_items.columns = ["Product Name", "Total Qty", "Total Amount", "Category"]
-    top_items = top_items.sort_values("Total Amount", ascending=False)
-
-    avg_basket_value = 0
-    order_groups_count = 0
-    group_cols = [
-        c for c in [mapping.get("order_id"), mapping.get("phone")] if c and c in df.columns
-    ]
-
-    if group_cols:
-        order_groups = df.groupby(group_cols).agg({"Total Amount": "sum"})
-        avg_basket_value = order_groups["Total Amount"].mean()
-        order_groups_count = len(order_groups)
-
     return {
-        "drilldown": drilldown,
         "summary": summary,
         "top_items": top_items,
+        "drilldown": drilldown,
         "timeframe": timeframe,
-        "avg_basket_value": avg_basket_value,
+        "trend_df": trend_df,
+        "basket": basket_stats,
         "total_qty": t_qty,
         "total_rev": t_rev,
-        "total_orders": order_groups_count,
+        "raw_df": df
     }
 
 
@@ -252,26 +260,39 @@ def render_catwise_analytics_tab():
     st.info("Upload sales or stock data to see automated categorical performance insights.")
 
     mode = st.radio("Select Analysis Mode", ["Sales Performance", "Stock Count"], horizontal=True)
-    uploaded_file = st.file_uploader(
-        f"Upload {mode} Data (Excel or CSV)", type=["xlsx", "csv"], key="catwise_uploader"
-    )
-
-    if uploaded_file:
-        try:
-            if uploaded_file.name.endswith(".csv"):
-                df = pd.read_csv(uploaded_file)
+    data_source = st.radio("Select Data Source", ["Upload File", "Use System Hybrid Data"], horizontal=True)
+    
+    df = None
+    if data_source == "Upload File":
+        uploaded_file = st.file_uploader(
+            f"Upload {mode} Data (Excel or CSV)", type=["xlsx", "csv"], key="catwise_uploader"
+        )
+        if uploaded_file:
+            try:
+                if uploaded_file.name.endswith(".csv"):
+                    df = pd.read_csv(uploaded_file)
+                else:
+                    df = pd.read_excel(uploaded_file)
+                st.success(f"Attached: {uploaded_file.name}")
+            except Exception as e:
+                st.error(f"Error reading file: {e}")
+    else:
+        with st.spinner("Loading System Hybrid Data..."):
+            df = load_hybrid_data()
+            if not df.empty:
+                st.success(f"System Data Loaded ({len(df):,} rows)")
             else:
-                df = pd.read_excel(uploaded_file)
+                st.warning("No system data found. Please ensure data exists in 'data/' or Google Sheet is connected.")
 
+    if df is not None and not df.empty:
+        try:
             if mode == "Stock Count" and "Type" in df.columns:
                 df = df[df["Type"].str.lower().isin(["variation", "simple"])]
-
-            st.success(f"Attached: {uploaded_file.name}")
 
             auto_cols = find_columns(df)
             all_cols = list(df.columns)
 
-            with st.expander("🛠️ Column Mapping & Preview", expanded=True):
+            with st.expander("🛠️ Column Mapping & Preview", expanded=False):
                 mc1, mc2, mc3 = st.columns(3)
                 mc4, mc5, mc6 = st.columns(3)
 
@@ -317,98 +338,150 @@ def render_catwise_analytics_tab():
 
             if st.button("🔥 Generate Engine Insights", use_container_width=True):
                 results = process_analytics(df, mapping, mode=mode)
-
-                # Metrics Row
+                
+                # --- Metrics Row ---
+                st.subheader(f"📊 {mode} Summary: {results['timeframe']}")
                 m1, m2, m3, m4 = st.columns(4)
+                
                 if mode == "Sales Performance":
-                    m1.metric(
-                        "Orders",
-                        f"{results['total_orders']:,.0f}" if results["total_orders"] > 0 else "N/A",
-                    )
+                    b = results["basket"]
+                    m1.metric("Orders", f"{b['total_orders']:,}" if b["total_orders"] > 0 else "N/A")
                     m2.metric("Units Sold", f"{results['total_qty']:,.0f}")
-                    m3.metric("Total Revenue", f"TK {results['total_rev']:,.2f}")
-                    m4.metric(
-                        "Avg Basket (TK)",
-                        (
-                            f"TK {results['avg_basket_value']:,.2f}"
-                            if results["avg_basket_value"] > 0
-                            else "N/A"
-                        ),
-                    )
+                    m3.metric("Total Revenue", f"TK {results['total_rev']:,.0f}")
+                    m4.metric("Avg Basket", f"TK {b['avg_value']:,.0f}" if b["avg_value"] > 0 else "N/A")
                 else:
-                    m1.metric("Total SKU Count", f"{len(df):,.0f}")
-                    m2.metric("Total Stock Qty", f"{results['total_qty']:,.0f}")
-                    m3.metric("Total Stock Value", f"TK {results['total_rev']:,.2f}")
-                    m4.metric(
-                        "Avg Qty/SKU",
-                        f"{results['total_qty']/len(df):,.1f}" if len(df) > 0 else "N/A",
-                    )
+                    m1.metric("SKU Count", f"{len(df):,}")
+                    m2.metric("Stock Qty", f"{results['total_qty']:,.0f}")
+                    m3.metric("Stock Value", f"TK {results['total_rev']:,.0f}")
+                    m4.metric("Avg/SKU", f"{results['total_qty']/len(df):,.1f}" if len(df) > 0 else "N/A")
 
                 st.divider()
 
-                # Visuals
-                v1, v2 = st.columns(2)
-                summ_sorted = results["summary"].sort_values("Total Amount", ascending=False)
-                color_seq = px.colors.qualitative.Pastel
+                # --- Tabbed Deep Dive ---
+                t_overview, t_trends, t_basket, t_rankings, t_data = st.tabs([
+                    "📌 Overview", 
+                    "📈 Trends", 
+                    "🧺 Basket Insights", 
+                    "🏆 Product Rankings", 
+                    "📑 Full Data"
+                ])
 
-                label_prefix = "Revenue" if mode == "Sales Performance" else "Value"
+                with t_overview:
+                    v1, v2 = st.columns(2)
+                    summ_sorted = results["summary"].sort_values("Total Amount", ascending=False)
+                    label_prefix = "Revenue" if mode == "Sales Performance" else "Value"
+                    
+                    # Enhanced Donut Chart
+                    fig_pie = go.Figure(data=[go.Pie(
+                        labels=summ_sorted["Category"],
+                        values=summ_sorted["Total Amount"],
+                        hole=.5,
+                        textinfo='percent+label',
+                        marker=dict(colors=px.colors.qualitative.Pastel)
+                    )])
+                    fig_pie.update_layout(title=f"{label_prefix} Distribution", margin=dict(t=40, b=10, l=10, r=10))
+                    v1.plotly_chart(fig_pie, use_container_width=True)
 
-                v1.plotly_chart(
-                    px.pie(
-                        summ_sorted,
-                        values="Total Amount",
-                        names="Category",
-                        hole=0.5,
-                        title=f"{label_prefix} Share by Category",
-                        color_discrete_sequence=color_seq,
-                    ),
-                    use_container_width=True,
-                )
-
-                v2.plotly_chart(
-                    px.bar(
-                        summ_sorted,
-                        x="Category",
-                        y="Total Qty",
+                    # Category Qty Bar
+                    fig_bar = px.bar(
+                        results["summary"].sort_values("Total Qty", ascending=False),
+                        x="Category", y="Total Qty",
                         color="Category",
-                        title="Volume Breakdown by Category",
-                        color_discrete_sequence=color_seq,
-                    ),
-                    use_container_width=True,
-                )
-
-                # Data Tables
-                t1, t2, t3 = st.tabs(
-                    [
-                        "📑 Aggregated Breakdown",
-                        "🏆 Top Performing Items",
-                        "🔍 Full Price Drilldown",
-                    ]
-                )
-                with t1:
-                    st.dataframe(
-                        results["summary"].sort_values("Total Amount", ascending=False),
-                        use_container_width=True,
+                        title="Volume by Category",
+                        color_discrete_sequence=px.colors.qualitative.Pastel
                     )
-                with t2:
+                    v2.plotly_chart(fig_bar, use_container_width=True)
+
+                with t_trends:
+                    if not results["trend_df"].empty:
+                        df_trend = results["trend_df"]
+                        fig_trend = go.Figure()
+                        fig_trend.add_trace(go.Scatter(
+                            x=df_trend[mapping["date"]], y=df_trend["Total Amount"],
+                            mode='lines+markers', name='Revenue',
+                            line=dict(color='#1d4ed8', width=3)
+                        ))
+                        fig_trend.update_layout(
+                            title="Performance Trend",
+                            xaxis_title="Timeline",
+                            yaxis_title="Amount (TK)",
+                            plot_bgcolor='rgba(0,0,0,0)'
+                        )
+                        st.plotly_chart(fig_trend, use_container_width=True)
+                        
+                        # Qty Trend
+                        fig_qty = px.area(
+                            df_trend, x=mapping["date"], y="Clean_Qty",
+                            title="Volume Trend",
+                            color_discrete_sequence=['#10b981']
+                        )
+                        st.plotly_chart(fig_qty, use_container_width=True)
+                    else:
+                        st.info("No valid date column provided for trend analysis.")
+
+                with t_basket:
+                    if mode == "Sales Performance" and results["basket"]["total_orders"] > 0:
+                        b = results["basket"]
+                        c1, c2 = st.columns([2, 3])
+                        with c1:
+                            st.write("### 🧺 Basket Composition")
+                            st.metric("Avg Basket Value", f"TK {b['avg_value']:,.2f}")
+                            st.metric("Total Order Sample", f"{b['total_orders']:,}")
+                            
+                        with c2:
+                            if b["bundles"]:
+                                st.write("### 🤝 Top Category Bundles")
+                                bundles_df = pd.DataFrame(list(b["bundles"].items()), columns=["Bundle", "Occurrences"])
+                                fig_bundles = px.bar(
+                                    bundles_df, x="Occurrences", y="Bundle",
+                                    orientation='h', title="Common Cross-Purchases",
+                                    color_discrete_sequence=['#8b5cf6']
+                                )
+                                st.plotly_chart(fig_bundles, use_container_width=True)
+                            else:
+                                st.info("Not enough multi-item orders for bundle analysis.")
+                    else:
+                        st.info("Basket analysis requires Order ID or Phone number for grouping products into orders.")
+
+                with t_rankings:
+                    st.write("### 🏆 Top 25 Products")
                     st.dataframe(results["top_items"].head(25), use_container_width=True)
-                with t3:
+                    
+                    # Treemap of categories vs products
+                    fig_tree = px.treemap(
+                        results["top_items"].head(100),
+                        path=["Category", "Product Name"],
+                        values="Total Amount",
+                        title="Category & Product Hierarchy (Top 100)",
+                        color="Total Amount",
+                        color_continuous_scale='Viridis'
+                    )
+                    st.plotly_chart(fig_tree, use_container_width=True)
+
+                with t_data:
+                    st.write("### 📑 Categorized Data")
+                    st.dataframe(results["summary"].sort_values("Total Amount", ascending=False), use_container_width=True)
+                    st.write("### 🔍 Price Point Breakdown")
                     st.dataframe(results["drilldown"], use_container_width=True)
 
-                # Export functionality
+                # --- Export Actions ---
+                st.divider()
                 buf = BytesIO()
                 with pd.ExcelWriter(buf, engine="xlsxwriter") as wr:
                     results["summary"].to_excel(wr, sheet_name="Category Summary", index=False)
                     results["top_items"].to_excel(wr, sheet_name="Product Rankings", index=False)
                     results["drilldown"].to_excel(wr, sheet_name="Price Points", index=False)
+                    if not results["trend_df"].empty:
+                        results["trend_df"].to_excel(wr, sheet_name="Trends", index=False)
 
-                fname = f"Catwise_{mode.replace(' ', '_')}_{results['timeframe']}.xlsx"
+                fname = f"CatwiseReport_{results['timeframe'].replace(' ', '_')}.xlsx"
                 st.download_button(
-                    "📥 Download Analysis Report",
+                    "📥 Export Comprehensive Analysis",
                     data=buf.getvalue(),
                     file_name=fname,
-                    key="catwise_download",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
                 )
 
         except Exception as e:
-            st.error(f"Engine Error: {e}")
+            st.exception(e)
