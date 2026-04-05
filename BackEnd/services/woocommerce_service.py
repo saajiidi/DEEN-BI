@@ -42,7 +42,7 @@ class WooCommerceService:
             st.error(f"Failed to fetch orders: {response.status_code} - {response.text}")
             return []
 
-    def fetch_all_historical_orders(self, after: Optional[str] = None) -> pd.DataFrame:
+    def fetch_all_historical_orders(self, after: Optional[str] = None, before: Optional[str] = None, status: str = "any") -> pd.DataFrame:
         """Fetch all historical orders recursively."""
         all_orders = []
         page = 1
@@ -52,8 +52,8 @@ class WooCommerceService:
         status_text = st.empty()
         
         while True:
-            status_text.text(f"Fetching page {page}...")
-            orders = self.fetch_orders(page=page, after=after)
+            status_text.text(f"Fetching page {page} with status '{status}'...")
+            orders = self.fetch_orders(page=page, after=after, before=before, status=status)
             if not orders:
                 break
                 
@@ -93,12 +93,28 @@ class WooCommerceService:
             
             total_amount = order.get("total")
             payment_method = order.get("payment_method_title")
+            shipped_date = order.get("date_modified")
+            if shipped_date:
+                try:
+                    dt_mod = datetime.fromisoformat(shipped_date.replace("Z", "+00:00"))
+                    shipped_date = dt_mod.strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    pass
+
+            # Tracking extraction
+            tracking_number = "N/A"
+            if order.get("meta_data"):
+                for meta in order["meta_data"]:
+                    if "tracking" in str(meta.get("key", "")).lower():
+                        tracking_number = meta.get("value")
+                        break
             
             # Line items
             for item in order.get("line_items", []):
                 item_data = {
                     "Order ID": order_id,
                     "Order Date": order_date,
+                    "Shipped Date": shipped_date,
                     "year": year,
                     "Full Name (Billing)": full_name,
                     "Phone (Billing)": phone,
@@ -110,6 +126,7 @@ class WooCommerceService:
                     "SKU": item.get("sku"),
                     "Quantity": item.get("quantity"),
                     "Item cost": item.get("price"),
+                    "Tracking": tracking_number,
                     "_source": "woocommerce_api"
                 }
                 flattened_data.append(item_data)
