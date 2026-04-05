@@ -38,7 +38,7 @@ def run_app():
     from FrontEnd.pages.system_health import render_system_health_tab
     from FrontEnd.utils.error_handler import get_logs, log_error
     from FrontEnd.utils.state import init_state, save_state
-    from FrontEnd.pages import render_live_tab, render_manual_tab
+    from FrontEnd.pages import render_live_tab, render_manual_tab, render_woocommerce_tab
     from FrontEnd.components import (
         inject_base_styles,
         render_header,
@@ -137,6 +137,9 @@ def run_app():
         render_catwise_analytics_tab()
 
     with nav_tabs[6]:
+        render_woocommerce_tab()
+
+    with nav_tabs[7]:
         render_system_health_tab()
 
     render_footer()

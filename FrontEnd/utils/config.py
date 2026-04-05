@@ -8,6 +8,7 @@ PRIMARY_NAV = [
     "📦 Orders",
     "🎯 Customer Insights",
     "📈 Catwise Analytics",
+    "🛍️ WooCommerce",
     "🩺 System Health",
 ]
 
