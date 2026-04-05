@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-04-05
+
+### Changed
+- Reorganized the app around a registry-driven primary navigation model
+- Simplified `app.py` into a thinner shell with sidebar helpers and dynamic page rendering
+- Standardized date defaults across the app to `2022-08-01` through `today`
+- Unified loaded-date context messaging across dashboard, customer, stream, and WooCommerce pages
+- Improved component exports so shared UI helpers are easier to reuse consistently
+
+### Added
+- `PRIMARY_PAGE_CONFIG` in `FrontEnd/utils/config.py` for page metadata and future navigation changes
+- `PrimaryPage` registry in `FrontEnd/pages/__init__.py`
+- shared highlight-stat and loaded-date-context UI helpers
+- workspace view descriptions in the sidebar for faster onboarding
+
+### Fixed
+- Brought the README and architecture documentation in line with the current WooCommerce-first BI application structure
+- Removed several readability issues caused by direct page wiring and repeated navigation knowledge
+
 ## [2.5.0] - 2026-04-03
 
 ### Fixed

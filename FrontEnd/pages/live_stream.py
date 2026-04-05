@@ -11,10 +11,12 @@ from email.utils import parsedate_to_datetime
 from urllib.request import Request, urlopen
 from urllib.parse import parse_qs, urlparse
 from FrontEnd.components.ui_components import (
+    render_loaded_date_context,
     render_section_card,
     render_action_bar,
     render_reset_confirm,
 )
+from FrontEnd.utils.config import APP_DATA_START_DATE
 
 
 def render_snapshot_button(marker_id="snapshot-target"):
@@ -919,9 +921,21 @@ def render_manual_tab():
     # Date range selector
     col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
-        start_date = st.date_input("From", value=date(2024, 1, 1), key="manual_start_date")
+        start_date = st.date_input(
+            "From",
+            value=APP_DATA_START_DATE,
+            min_value=APP_DATA_START_DATE,
+            max_value=date.today(),
+            key="manual_start_date",
+        )
     with col2:
-        end_date = st.date_input("To", value=date.today(), key="manual_end_date")
+        end_date = st.date_input(
+            "To",
+            value=date.today(),
+            min_value=APP_DATA_START_DATE,
+            max_value=date.today(),
+            key="manual_end_date",
+        )
     with col3:
         # Add vertical spacing to align button with date input fields
         st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
@@ -1099,6 +1113,15 @@ def render_live_tab():
             "order_id": auto_cols.get("order_id"),
             "phone": auto_cols.get("phone"),
         }
+
+        loaded_dates = pd.to_datetime(df_live[live_mapping["date"]], errors="coerce") if live_mapping.get("date") in df_live.columns else pd.Series(dtype="datetime64[ns]")
+        render_loaded_date_context(
+            requested_start=None,
+            requested_end=None,
+            loaded_start=loaded_dates.min() if not loaded_dates.empty and loaded_dates.notna().any() else None,
+            loaded_end=loaded_dates.max() if not loaded_dates.empty and loaded_dates.notna().any() else None,
+            label="Loaded live stream activity",
+        )
 
         drill, summ, top, timeframe, basket = process_data(df_live, live_mapping)
         if drill is not None:

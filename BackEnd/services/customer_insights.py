@@ -10,9 +10,19 @@ from typing import Optional
 import pandas as pd
 import streamlit as st
 
-from BackEnd.services.hybrid_data_loader import load_hybrid_data
+from BackEnd.services.hybrid_data_loader import load_full_woocommerce_history, load_hybrid_data
 from BackEnd.utils.sales_schema import ensure_sales_schema
 from FrontEnd.utils.error_handler import log_error
+
+CUSTOMER_BASE_COLUMNS = [
+    "order_id",
+    "order_date",
+    "customer_name",
+    "phone",
+    "email",
+    "item_name",
+    "order_total",
+]
 
 
 
@@ -57,30 +67,102 @@ def generate_customer_insights(
 ) -> pd.DataFrame:
     # Customer insights exclusively use WooCommerce for live data (ignoring Google Sheets)
     df = load_hybrid_data(start_date, end_date, include_gsheet=False, include_woocommerce=include_woocommerce)
-    return generate_customer_insights_from_sales(df)
+    full_history = load_full_woocommerce_history(end_date=end_date) if include_woocommerce else pd.DataFrame()
+    return generate_customer_insights_from_sales(df, full_history_df=full_history)
 
 
-def generate_customer_insights_from_sales(df: pd.DataFrame) -> pd.DataFrame:
+def generate_customer_insights_from_sales(
+    df: pd.DataFrame,
+    full_history_df: pd.DataFrame | None = None,
+    include_rfm: bool = True,
+    include_favorites: bool = True,
+) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
 
-    df = ensure_sales_schema(df)
-    df = df.copy()
-    df["normalized_name"] = df["customer_name"].apply(normalize_name)
-    df["clean_email"] = df["email"].apply(clean_email)
-    df["clean_phone"] = df["phone"].apply(clean_phone)
-    df["customer_id"] = df.apply(
-        lambda row: generate_customer_id(row.get("clean_email", ""), row.get("clean_phone", ""), row.get("order_id", "")),
-        axis=1,
-    )
+    df = _prepare_customer_identity(df)
 
     try:
         result = _aggregate_customer_metrics(df)
-        result = calculate_rfm_scores(result)
-        result = classify_rfm_segments(result)
-        favorite_products = get_favorite_products(df)
-        if not favorite_products.empty:
-            result = result.merge(favorite_products, on="customer_id", how="left")
+        current_window = result[
+            [
+                "customer_id",
+                "total_orders",
+                "total_revenue",
+                "avg_order_value",
+                "first_order",
+                "last_order",
+                "customer_lifespan_days",
+                "recency_days",
+                "purchase_cycle_days",
+                "clv",
+            ]
+        ].copy()
+        current_window = current_window.rename(
+            columns={
+                "total_orders": "current_orders",
+                "total_revenue": "current_revenue",
+                "avg_order_value": "current_avg_order_value",
+                "first_order": "current_first_order",
+                "last_order": "current_last_order",
+                "customer_lifespan_days": "current_lifespan_days",
+                "recency_days": "current_recency_days",
+                "purchase_cycle_days": "current_purchase_cycle_days",
+                "clv": "current_clv",
+            }
+        )
+
+        if isinstance(full_history_df, pd.DataFrame) and not full_history_df.empty:
+            history_prepared = _prepare_customer_identity(full_history_df)
+            history_metrics = _aggregate_customer_metrics(history_prepared)
+            if not history_metrics.empty:
+                result = result.drop(
+                    columns=[
+                        "total_orders",
+                        "total_revenue",
+                        "avg_order_value",
+                        "first_order",
+                        "last_order",
+                        "customer_lifespan_days",
+                        "recency_days",
+                        "purchase_cycle_days",
+                        "clv",
+                    ],
+                    errors="ignore",
+                ).merge(
+                    history_metrics[
+                        [
+                            "customer_id",
+                            "total_orders",
+                            "total_revenue",
+                            "avg_order_value",
+                            "first_order",
+                            "last_order",
+                            "customer_lifespan_days",
+                            "recency_days",
+                            "purchase_cycle_days",
+                            "clv",
+                        ]
+                    ],
+                    on="customer_id",
+                    how="left",
+                )
+        result = result.merge(current_window, on="customer_id", how="left")
+        if include_rfm:
+            result = calculate_rfm_scores(result)
+            result = classify_rfm_segments(result)
+        else:
+            result["r_score"] = pd.NA
+            result["f_score"] = pd.NA
+            result["m_score"] = pd.NA
+            result["rfm_score"] = ""
+            result["rfm_avg"] = pd.NA
+            result["segment"] = result.apply(_classify_without_rfm, axis=1)
+
+        if include_favorites:
+            favorite_products = get_favorite_products(df)
+            if not favorite_products.empty:
+                result = result.merge(favorite_products, on="customer_id", how="left")
         return result.sort_values("total_revenue", ascending=False).reset_index(drop=True)
     except Exception as exc:
         log_error(exc, context="Customer Insights Generation")
@@ -112,6 +194,40 @@ def _aggregate_customer_metrics(df: pd.DataFrame) -> pd.DataFrame:
     )
     result["clv"] = result["total_revenue"]
     return result
+
+
+def _prepare_customer_identity(df: pd.DataFrame) -> pd.DataFrame:
+    prepared = ensure_sales_schema(_select_customer_columns(df)).copy()
+    prepared["normalized_name"] = prepared["customer_name"].apply(normalize_name)
+    prepared["clean_email"] = prepared["email"].apply(clean_email)
+    prepared["clean_phone"] = prepared["phone"].apply(clean_phone)
+    prepared["customer_id"] = prepared.apply(
+        lambda row: generate_customer_id(row.get("clean_email", ""), row.get("clean_phone", ""), row.get("order_id", "")),
+        axis=1,
+    )
+    return prepared
+
+
+def _select_customer_columns(df: pd.DataFrame) -> pd.DataFrame:
+    sales = ensure_sales_schema(df)
+    available = [col for col in CUSTOMER_BASE_COLUMNS if col in sales.columns]
+    if not available:
+        return sales
+    return sales[available].copy()
+
+
+def _build_customer_first_order_history(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["customer_id", "first_order"])
+    prepared = _prepare_customer_identity(df)
+    if prepared.empty:
+        return pd.DataFrame(columns=["customer_id", "first_order"])
+    history = (
+        prepared.groupby("customer_id", dropna=False)
+        .agg(first_order=("order_date", "min"))
+        .reset_index()
+    )
+    return history
 
 
 
@@ -162,6 +278,24 @@ def classify_rfm_segments(df: pd.DataFrame) -> pd.DataFrame:
 
     result["segment"] = result.apply(get_segment, axis=1)
     return result
+
+
+def _classify_without_rfm(row: pd.Series) -> str:
+    recency = pd.to_numeric(row.get("recency_days"), errors="coerce")
+    total_orders = pd.to_numeric(row.get("total_orders"), errors="coerce")
+    total_revenue = pd.to_numeric(row.get("total_revenue"), errors="coerce")
+
+    if pd.notna(recency) and recency > 180:
+        return "Churned"
+    if pd.notna(total_orders) and total_orders <= 1:
+        return "New"
+    if pd.notna(recency) and recency > 60:
+        return "At Risk"
+    if pd.notna(total_orders) and total_orders >= 5 and pd.notna(total_revenue) and total_revenue > 0:
+        return "VIP"
+    if pd.notna(total_orders) and total_orders >= 2:
+        return "Potential Loyalist"
+    return "Regular"
 
 
 

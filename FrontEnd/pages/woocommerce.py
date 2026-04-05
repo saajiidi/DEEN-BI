@@ -9,6 +9,8 @@ from BackEnd.services.woocommerce_service import (
     get_woocommerce_credentials,
     get_woocommerce_store_label,
 )
+from FrontEnd.components.ui_components import render_loaded_date_context
+from FrontEnd.utils.config import APP_DATA_START_DATE
 
 
 def _resolve_preview_columns(df: pd.DataFrame) -> list[str]:
@@ -192,9 +194,19 @@ def _render_order_sync(wc_service: WooCommerceService):
     with st.expander("Fetch Settings", expanded=True):
         col1, col2 = st.columns(2)
         with col1:
-            start_date = st.date_input("Start Date", value=datetime.now() - timedelta(days=30))
+            start_date = st.date_input(
+                "Start Date",
+                value=APP_DATA_START_DATE,
+                min_value=APP_DATA_START_DATE,
+                max_value=datetime.now().date(),
+            )
         with col2:
-            end_date = st.date_input("End Date", value=datetime.now())
+            end_date = st.date_input(
+                "End Date",
+                value=datetime.now().date(),
+                min_value=APP_DATA_START_DATE,
+                max_value=datetime.now().date(),
+            )
 
         status_filter = st.selectbox(
             "Order Status",
@@ -236,6 +248,14 @@ def _render_order_sync(wc_service: WooCommerceService):
 
     df = st.session_state.woo_orders_preview_df
     preview_cols = _resolve_preview_columns(df)
+    loaded_order_dates = pd.to_datetime(df.get("Order Date"), errors="coerce")
+    render_loaded_date_context(
+        requested_start=start_date,
+        requested_end=end_date,
+        loaded_start=loaded_order_dates.min() if loaded_order_dates.notna().any() else None,
+        loaded_end=loaded_order_dates.max() if loaded_order_dates.notna().any() else None,
+        label="Fetched order activity",
+    )
     _render_preview_chart_block("Order Charts", _build_order_charts(df))
     st.markdown("#### Order Preview")
     st.dataframe(df[preview_cols].head(50), use_container_width=True, hide_index=True)
@@ -267,6 +287,14 @@ def _render_inventory_sync(wc_service: WooCommerceService):
     df_full["Stock Quantity"] = pd.to_numeric(df_full.get("Stock Quantity", 0), errors="coerce").fillna(0)
     df_full["Price"] = pd.to_numeric(df_full.get("Price", 0), errors="coerce").fillna(0)
     df_full["Inventory Value"] = df_full["Stock Quantity"] * df_full["Price"]
+    imported_at = pd.to_datetime(df_full.get("_imported_at"), errors="coerce")
+    render_loaded_date_context(
+        requested_start=None,
+        requested_end=datetime.now(),
+        loaded_start=imported_at.min() if imported_at.notna().any() else None,
+        loaded_end=imported_at.max() if imported_at.notna().any() else None,
+        label="Fetched inventory snapshot",
+    )
 
     f1, f2 = st.columns([1, 2])
     with f1:

@@ -1,51 +1,143 @@
-# Automation Pivot - Architecture & Workflow Overview
+# Automation Pivot Architecture
 
-This document provides a comprehensive technical breakdown of the Automation Hub Pro (Automation Pivot) application. It is designed to assist both human developers and AI assistants in understanding the project structure, data flow, and runtime mechanics for further analysis and feature development.
+This document describes the current application architecture after the WooCommerce-first BI refactor.
 
-## 1. System Architecture
-The application is built on a modern **Streamlit** frontend with a robust, modular Python backend powered by **DuckDB** and **Pandas** for high-speed analytical data processing.
+## 1. Application Shape
 
-### Directory Structure
-- `app.py`: The root application entrypoint. It handles basic routing across the Navigation Tabs, renders the sidebar (including Global Settings, Workspace Control, and System Logs), and initializes the custom theme.
-- `FrontEnd/`: Contains all client-facing UI logic.
-  - `pages/`: Individual modular tabs (e.g., `dashboard.py`, `ai_assistant.py`, `system_health.py`).
-  - `components/`: Reusable UI modules (e.g., headers, footers, animations, KPI cards).
-  - `utils/`: Configuration (`config.py`), state management, and error orchestration.
-- `BackEnd/`: Houses the core business logic, data models, and services.
-  - `services/`: High-level data retrieval scripts. `hybrid_data_loader.py` merges historical `.parquet` stores with live Google Sheet exports.
-  - `core/`: Critical infrastructure files such as `gsheet_archive.py` (handles the API logic for mutating Google Sheets), and `paths.py` (dynamic directory configurations).
-  - `engine/`: Processing cores like `ai_query.py` (which orchestrates the Text-to-SQL logic for Gemini).
+Automation Pivot is now structured as a local-first analytics app with a thin Streamlit shell and a service-oriented backend.
 
-## 2. Core Workflows & Data Loaders
+### Primary navigation
 
-### Hybrid Data Strategy
-The application operates on a "Hybrid" model to maximize speed without sacrificing up-to-date information. 
-The main data ingestion runs through `BackEnd.services.hybrid_data_loader.load_hybrid_data`:
-1. **Historical Partition:** Attempts to pull archived data from local `data/data.parquet` files. If the file is omitted (e.g. fresh `.gitignore` clones), the app gracefully ignores the error and proceeds.
-2. **Live Partition:** Fetches the active 2026 sales manifest directly from a published Google Sheet CSV link.
-3. **DuckDB Union:** Joins both dataframes dynamically in an in-memory `duckdb` connection to run sub-second analytical queries. 
+- `Business Intelligence`
+- `Stream Monitor`
+- `Customer Intelligence`
+- `Commerce Hub`
+- `System Health`
 
-### Smart AI Query Integration
-Integrated via `BackEnd/engine/ai_query.py` and `FrontEnd/pages/ai_assistant.py`, the AI Assistant is context-aware:
-- It injects the active database schema dynamically into a generative AI prompt (Gemini-1.5-flash).
-- The AI responds with a strict `SQL` query designed for `DuckDB`.
-- The backend executes this query in-memory against the active `df_sales` DataFrame, then feeds the subset array back to the AI for a final, natural language answer. This securely bridges app data with Generative AI without directly streaming gigabytes of raw data.
+These primary workspaces are registered centrally in:
 
-## 3. Notable Configurations & Fixes
+- `FrontEnd/utils/config.py`
+- `FrontEnd/pages/__init__.py`
 
-### Error Management and Resiliency
-To prevent catastrophic Streamlit UI crashes (such as white screening on the Cloud), failures are caught and written to `System Logs` inside the UI sidebar (handled by `utils/error_handler.py` and parsed in `system_health.py`). 
+That registry-based approach keeps `app.py` small and makes future navigation changes predictable.
 
-### Dimension Guarantee Strategies
-In the frontend views like `dashboard.py`, we construct dynamic analytic metrics. For instance, the **Peak Activity Heatmap** relies on Plotly's `px.imshow()`. To prevent `vector mismatch` or `dimension` errors caused by dataset anomalies (e.g., days/hours with 0 sales), the logic enforces `.reindex(index=range(7), columns=range(24), fill_value=0)` so UI plot geometries are always statically bound.
+## 2. Frontend Layers
 
-### Authentication & Secrets
-The platform hooks directly into `.streamlit/secrets.toml`. Features relying on API connections dynamically look up variables like:
-- `GEMINI_API_KEY`: Used to power your AI chatbot capabilities.
-- `GOOGLE_SERVICE_ACCOUNT_JSON`: Consumed via OAuth flows to authenticate archival actions inside `gsheet_archive.py`.
+### App shell
 
-## 4. Extension Guidelines
-If an AI assistant or developer is modifying this application:
-- **UI Tweaks:** Stick to defining logic in `FrontEnd/pages/` and keeping generic UI blocks in `FrontEnd/components/`. 
-- **Dependencies:** Keep dependencies incredibly lean. Re-use existing generic parsing tools before fetching heavy packages like `langchain` if unnecessary.
-- **Testing Scripts:** Always pass changes against Ruff with checking specific identifiers `ruff check . --select=E9,F63,F7,F82`.
+- `app.py`
+
+Responsibilities:
+
+- page config
+- numbered dataframes
+- sidebar controls
+- page registry rendering
+- bootstrap-level error handling
+
+### Pages
+
+- `FrontEnd/pages/dashboard.py`
+- `FrontEnd/pages/live_stream.py`
+- `FrontEnd/pages/customer_insights.py`
+- `FrontEnd/pages/woocommerce.py`
+- `FrontEnd/pages/system_health.py`
+
+Responsibilities:
+
+- page-specific user flow
+- feature composition
+- page-level charts, commentary, and previews
+
+### Shared components
+
+- `FrontEnd/components/ui_components.py`
+
+Responsibilities:
+
+- design system styles
+- hero sections
+- commentary cards
+- audit cards
+- highlight stats
+- loaded-date context display
+- export helpers
+
+## 3. Backend Layers
+
+### Core services
+
+- `BackEnd/services/hybrid_data_loader.py`
+- `BackEnd/services/woocommerce_service.py`
+- `BackEnd/services/customer_insights.py`
+- `BackEnd/services/ml_insights.py`
+
+Responsibilities:
+
+- hybrid dataset loading
+- WooCommerce API access
+- local cache persistence
+- background refresh scheduling
+- full WooCommerce history sync
+- customer-lifecycle metrics
+- forecasting and anomaly signals
+
+### Utilities
+
+- `BackEnd/utils/sales_schema.py`
+
+Responsibilities:
+
+- canonical column mapping
+- normalized identifiers
+- schema cleanup across historical, Google Sheet, and WooCommerce sources
+
+## 4. Data Flow
+
+### Sales and customer flow
+
+1. load local historical parquet
+2. load WooCommerce cache if available
+3. show cache-backed UI immediately
+4. trigger background refresh if stale or incomplete
+5. recompute customer and BI views from normalized data
+6. use lifetime WooCommerce history for first-order and retention logic
+
+### Live stream flow
+
+1. load from locked stream sheet
+2. normalize columns
+3. render stream metrics and visual analytics
+4. show loaded activity window for context
+
+### Inventory flow
+
+1. fetch stock from WooCommerce REST API
+2. cache local stock snapshot
+3. reuse cached inventory while refresh runs
+4. compare stock against demand forecast
+
+## 5. Trust and Consistency Rules
+
+The current app emphasizes user trust through a few shared rules:
+
+- date selectors default to `2022-08-01` through `today`
+- pages show requested date range and actual loaded activity range
+- revenue in BI and KPI views is counted once per order
+- unique customers are filter-based
+- new customers are lifetime-history based
+- WooCommerce history sync runs in the background and does not block the UI
+
+## 6. Future Development Guidance
+
+When adding features:
+
+- put UI composition in `FrontEnd/pages/`
+- put reusable display logic in `FrontEnd/components/ui_components.py`
+- put cache, loading, sync, and analytical logic in `BackEnd/services/`
+- reuse the page registry rather than wiring tabs directly in `app.py`
+- prefer extending canonical schema logic before adding page-local column hacks
+
+## 7. Legacy Code
+
+The repository still contains older modules and historical structures under `src/` and some non-primary frontend pages. These remain useful as reference material, but the active product path is the registry-driven Streamlit app described above.

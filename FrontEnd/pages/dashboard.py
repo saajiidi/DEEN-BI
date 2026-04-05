@@ -13,25 +13,147 @@ from BackEnd.services.customer_insights import generate_customer_insights_from_s
 from BackEnd.services.hybrid_data_loader import (
     estimate_woocommerce_load_time,
     get_data_summary,
+    get_woocommerce_full_history_status,
     get_woocommerce_orders_cache_status,
     get_woocommerce_stock_cache_status,
+    load_full_woocommerce_history,
     load_comparison_data,
     load_hybrid_data,
     load_live_stream_data,
     load_cached_woocommerce_stock_data,
+    start_full_history_background_refresh,
     start_orders_background_refresh,
     start_stock_background_refresh,
 )
-from BackEnd.services.ml_insights import build_ml_insight_bundle
+from BackEnd.services.ml_insights import build_ml_insight_bundle, detect_sales_anomalies, generate_demand_forecast
 from BackEnd.utils.sales_schema import ensure_sales_schema
 from FrontEnd.components.ui_components import (
     render_audit_card,
     render_bi_hero,
     render_commentary_panel,
+    render_loaded_date_context,
     render_kpi_note,
     render_section_card,
 )
+from FrontEnd.utils.config import APP_DATA_START_DATE
 from FrontEnd.utils.error_handler import log_error
+
+
+def _build_dashboard_ml_bundle(df_woo_only: pd.DataFrame, df_customers: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    try:
+        return build_ml_insight_bundle(df_woo_only, df_customers, horizon_days=7)
+    except MemoryError as exc:
+        log_error(exc, context="Dashboard ML Bundle", details={"mode": "fallback"})
+        return {
+            "forecast": generate_demand_forecast(df_woo_only, horizon_days=7),
+            "customer_risk": pd.DataFrame(),
+            "anomalies": detect_sales_anomalies(df_woo_only),
+        }
+
+
+def _build_dashboard_customer_insights(
+    df_woo_only: pd.DataFrame,
+    full_woo_history: pd.DataFrame,
+) -> pd.DataFrame:
+    try:
+        return generate_customer_insights_from_sales(
+            df_woo_only,
+            full_history_df=full_woo_history,
+            include_rfm=True,
+            include_favorites=True,
+        )
+    except MemoryError as exc:
+        log_error(exc, context="Dashboard Customer Insights", details={"mode": "fallback_lightweight"})
+        return generate_customer_insights_from_sales(
+            df_woo_only,
+            full_history_df=full_woo_history,
+            include_rfm=False,
+            include_favorites=False,
+        )
+
+
+def _build_order_level_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    sales = ensure_sales_schema(df)
+    if sales.empty:
+        return pd.DataFrame()
+
+    optional_columns = [col for col in ["order_day", "day_name", "day_num", "hour", "region", "_import_time"] if col in sales.columns]
+    order_rows = sales[sales["order_id"].replace("", pd.NA).notna()].copy()
+    no_order_id_rows = sales[sales["order_id"].replace("", pd.NA).isna()].copy()
+
+    grouped_orders = pd.DataFrame()
+    if not order_rows.empty:
+        aggregations = {
+            "order_date": ("order_date", "min"),
+            "order_total": ("order_total", "max"),
+            "customer_key": ("customer_key", lambda s: next((v for v in s if str(v).strip()), "")),
+            "customer_name": ("customer_name", lambda s: next((v for v in s if str(v).strip()), "")),
+            "order_status": ("order_status", lambda s: next((v for v in s if str(v).strip()), "")),
+            "source": ("source", lambda s: ", ".join(sorted({str(v) for v in s if str(v).strip()}))),
+            "city": ("city", lambda s: next((v for v in s if str(v).strip()), "")),
+            "state": ("state", lambda s: next((v for v in s if str(v).strip()), "")),
+            "qty": ("qty", "sum"),
+        }
+        for col in optional_columns:
+            aggregations[col] = (col, "first")
+        grouped_orders = order_rows.sort_values("order_date").groupby("order_id", as_index=False).agg(**aggregations)
+
+    passthrough_rows = pd.DataFrame()
+    if not no_order_id_rows.empty:
+        passthrough_rows = no_order_id_rows[
+            ["order_id", "order_date", "order_total", "customer_key", "customer_name", "order_status", "source", "city", "state", "qty"] + optional_columns
+        ].copy()
+
+    frames = [frame for frame in [grouped_orders, passthrough_rows] if not frame.empty]
+    if not frames:
+        return pd.DataFrame(columns=["order_id", "order_date", "order_total", "customer_key", "customer_name", "order_status", "source", "city", "state", "qty"] + optional_columns)
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _sum_order_level_revenue(df: pd.DataFrame) -> float:
+    orders = _build_order_level_dataset(df)
+    if orders.empty:
+        return 0.0
+    return float(pd.to_numeric(orders["order_total"], errors="coerce").fillna(0).sum())
+
+
+def _estimate_line_revenue(df: pd.DataFrame) -> pd.Series:
+    sales = ensure_sales_schema(df)
+    if sales.empty:
+        return pd.Series(dtype="float64")
+
+    qty = pd.to_numeric(sales.get("qty", 0), errors="coerce").fillna(0)
+    direct_candidates = []
+    for col in ["item_revenue", "Item Revenue", "line_total", "Line Total"]:
+        if col in sales.columns:
+            direct_candidates.append(pd.to_numeric(sales[col], errors="coerce"))
+    if direct_candidates:
+        direct = direct_candidates[0].fillna(0)
+        return direct
+
+    for col in ["item_cost", "Item Cost", "price", "Price"]:
+        if col in sales.columns:
+            unit_price = pd.to_numeric(sales[col], errors="coerce").fillna(0)
+            if unit_price.gt(0).any():
+                return unit_price * qty
+
+    line_counts = sales.groupby("order_id")["order_id"].transform("size").replace(0, pd.NA)
+    qty_totals = sales.groupby("order_id")["qty"].transform("sum").replace(0, pd.NA)
+    order_total = pd.to_numeric(sales.get("order_total", 0), errors="coerce").fillna(0)
+    allocated_by_qty = order_total * (qty / qty_totals)
+    allocated_by_lines = order_total / line_counts
+    return allocated_by_qty.fillna(allocated_by_lines).fillna(order_total)
+
+
+def _render_section_date_context(df: pd.DataFrame, label: str):
+    sales = ensure_sales_schema(df)
+    valid_dates = pd.to_datetime(sales.get("order_date"), errors="coerce")
+    if valid_dates is None or valid_dates.empty or not valid_dates.notna().any():
+        st.caption(f"{label}: dates are not available in the current result.")
+        return
+    st.caption(
+        f"{label}: {valid_dates.min().strftime('%Y-%m-%d %H:%M')} to {valid_dates.max().strftime('%Y-%m-%d %H:%M')}"
+    )
 
 
 def render_dashboard_tab():
@@ -61,9 +183,21 @@ def render_dashboard_tab():
 
     col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
-        start_date = st.date_input("From", value=date(2022, 8, 1), key="dashboard_start_date")
+        start_date = st.date_input(
+            "From",
+            value=APP_DATA_START_DATE,
+            min_value=APP_DATA_START_DATE,
+            max_value=date.today(),
+            key="dashboard_start_date",
+        )
     with col2:
-        end_date = st.date_input("To", value=date.today(), key="dashboard_end_date")
+        end_date = st.date_input(
+            "To",
+            value=date.today(),
+            min_value=APP_DATA_START_DATE,
+            max_value=date.today(),
+            key="dashboard_end_date",
+        )
     with col3:
         st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
         load_clicked = st.button("Refresh Data", use_container_width=True, type="primary")
@@ -74,9 +208,13 @@ def render_dashboard_tab():
 
     orders_status = get_woocommerce_orders_cache_status(start_date_str, end_date_str)
     stock_status = get_woocommerce_stock_cache_status()
+    full_history_status = get_woocommerce_full_history_status(end_date=end_date_str)
     if include_woo:
+        full_history_started = start_full_history_background_refresh(end_date=end_date_str, force=load_clicked)
         orders_started = start_orders_background_refresh(start_date_str, end_date_str, force=load_clicked)
         stock_started = start_stock_background_refresh(force=load_clicked)
+        if full_history_started:
+            full_history_status = get_woocommerce_full_history_status(end_date=end_date_str)
         if orders_started:
             orders_status = get_woocommerce_orders_cache_status(start_date_str, end_date_str)
         if stock_started:
@@ -95,6 +233,8 @@ def render_dashboard_tab():
             str(orders_status.get("is_running", False)),
             str(stock_status.get("last_refresh", "")),
             str(stock_status.get("is_running", False)),
+            str(full_history_status.get("last_full_sync", "")),
+            str(full_history_status.get("is_running", False)),
         ]
     )
     should_load = (
@@ -127,7 +267,15 @@ def render_dashboard_tab():
                 )
             )
             
-            df_customers = generate_customer_insights_from_sales(df_woo_only)
+            full_woo_history = load_full_woocommerce_history(end_date=end_date_str)
+            if not full_woo_history.empty:
+                history_cols = [
+                    col
+                    for col in ["order_id", "order_date", "customer_name", "phone", "email", "item_name", "order_total"]
+                    if col in full_woo_history.columns
+                ]
+                full_woo_history = full_woo_history[history_cols].copy()
+            df_customers = _build_dashboard_customer_insights(df_woo_only, full_woo_history)
             if df_sales.empty:
                 if not include_woo and include_gsheet:
                     st.warning("No sales data found for the selected date range.")
@@ -137,10 +285,11 @@ def render_dashboard_tab():
                 "woo_only": df_woo_only,
                 "customers": df_customers,
                 "summary": get_data_summary(woocommerce_mode="cache_only"),
-                "ml": build_ml_insight_bundle(df_woo_only, df_customers, horizon_days=7),
+                "ml": _build_dashboard_ml_bundle(df_woo_only, df_customers),
                 "stock": load_cached_woocommerce_stock_data(),
                 "loaded_from_cache_hint": orders_status.get("status_message", ""),
                 "stock_cache_hint": stock_status.get("status_message", ""),
+                "full_history_hint": full_history_status.get("status_message", ""),
             }
             st.session_state.dashboard_request_signature = request_signature
             st.session_state.dashboard_cache_signature = cache_signature
@@ -162,7 +311,16 @@ def render_dashboard_tab():
     stock_df = data.get("stock", pd.DataFrame())
     st.caption(data.get("loaded_from_cache_hint", ""))
     st.caption(data.get("stock_cache_hint", ""))
-    if orders_status.get("is_running") or stock_status.get("is_running"):
+    st.caption(data.get("full_history_hint", ""))
+    loaded_sales = df_sales[df_sales["order_date"].notna()].copy()
+    render_loaded_date_context(
+        requested_start=start_date,
+        requested_end=end_date,
+        loaded_start=loaded_sales["order_date"].min() if not loaded_sales.empty else None,
+        loaded_end=loaded_sales["order_date"].max() if not loaded_sales.empty else None,
+        label="Loaded sales activity",
+    )
+    if orders_status.get("is_running") or stock_status.get("is_running") or full_history_status.get("is_running"):
         st.info("Background sync is running. The dashboard is using local cached data now and will pick up fresher WooCommerce data on the next rerun.")
     elif include_woo and df_woo_only.empty and not orders_status.get("cache_exists"):
         st.info("WooCommerce cache is being prepared. Historical and sheet-backed views can open first, and WooCommerce-only tabs will fill in after the background sync completes.")
@@ -204,10 +362,15 @@ def render_dashboard_tab():
 def render_business_intelligence(df_sales: pd.DataFrame, df_customers: pd.DataFrame):
     st.subheader("Business Intelligence")
     st.caption("Executive comparison and period-based sales performance.")
+    _render_section_date_context(df_sales, "Loaded BI sales activity")
 
     render_today_vs_last_day_sales_chart()
     st.divider()
+    render_last_7_days_sales_chart(df_sales, df_customers)
+    st.divider()
     render_week_over_week_summary(df_sales, df_customers)
+    st.divider()
+    render_month_over_month_summary(df_sales, df_customers)
     st.divider()
 
     view_mode = st.selectbox(
@@ -294,20 +457,22 @@ def render_today_vs_last_day_sales_chart():
         st.info("No live comparison data is available right now.")
         return
 
+    stream_orders = _build_order_level_dataset(stream_df)
+    compare_orders = _build_order_level_dataset(compare_df)
     comparison = pd.DataFrame(
         {
             "Period": ["Today", "Last Day"],
             "Revenue": [
-                float(stream_df["order_total"].sum()) if not stream_df.empty else 0.0,
-                float(compare_df["order_total"].sum()) if not compare_df.empty else 0.0,
+                float(pd.to_numeric(stream_orders.get("order_total", 0), errors="coerce").fillna(0).sum()) if not stream_orders.empty else 0.0,
+                float(pd.to_numeric(compare_orders.get("order_total", 0), errors="coerce").fillna(0).sum()) if not compare_orders.empty else 0.0,
             ],
             "Orders": [
-                int(stream_df["order_id"].nunique()) if not stream_df.empty else 0,
-                int(compare_df["order_id"].nunique()) if not compare_df.empty else 0,
+                int(stream_orders["order_id"].replace("", pd.NA).dropna().nunique()) if not stream_orders.empty else 0,
+                int(compare_orders["order_id"].replace("", pd.NA).dropna().nunique()) if not compare_orders.empty else 0,
             ],
             "Units": [
-                float(stream_df["qty"].sum()) if not stream_df.empty else 0.0,
-                float(compare_df["qty"].sum()) if not compare_df.empty else 0.0,
+                float(pd.to_numeric(stream_df.get("qty", 0), errors="coerce").fillna(0).sum()) if not stream_df.empty else 0.0,
+                float(pd.to_numeric(compare_df.get("qty", 0), errors="coerce").fillna(0).sum()) if not compare_df.empty else 0.0,
             ],
         }
     )
@@ -343,6 +508,109 @@ def render_today_vs_last_day_sales_chart():
         st.plotly_chart(fig_volume, use_container_width=True)
 
 
+def render_last_7_days_sales_chart(df_sales: pd.DataFrame, df_customers: pd.DataFrame):
+    st.markdown("#### Daily Comparison: Today vs Last Day vs Previous 7 Days")
+    sales = ensure_sales_schema(df_sales)
+    sales = sales[sales["order_date"].notna()].copy()
+    if sales.empty:
+        st.info("No daily comparison data is available for the current filter.")
+        return
+
+    sales["order_day"] = sales["order_date"].dt.normalize()
+    daily = (
+        _build_order_level_dataset(sales.assign(order_day=sales["order_date"].dt.normalize()))
+        .groupby("order_day", as_index=False)
+        .agg(
+            revenue=("order_total", "sum"),
+            orders=("order_id", lambda s: s.replace("", pd.NA).dropna().nunique()),
+            unique_customers=("customer_key", lambda s: s.replace("", pd.NA).dropna().nunique()),
+            units=("qty", "sum"),
+        )
+        .sort_values("order_day")
+        .tail(7)
+        .reset_index(drop=True)
+    )
+    if daily.empty:
+        st.info("No daily comparison data is available for the current filter.")
+        return
+
+    latest_day = daily["order_day"].max()
+    label_map = {
+        0: "Today",
+        1: "Previous",
+        2: "Earlier",
+    }
+    daily["days_ago"] = (latest_day - daily["order_day"]).dt.days
+    daily["day_label"] = daily.apply(
+        lambda row: f"{label_map[row['days_ago']]} - {row['order_day'].strftime('%A, %d %b')}"
+        if row["days_ago"] in label_map
+        else row["order_day"].strftime("%A, %d %b"),
+        axis=1,
+    )
+    daily = daily.sort_values("order_day").reset_index(drop=True)
+
+    if isinstance(df_customers, pd.DataFrame) and not df_customers.empty and "first_order" in df_customers.columns:
+        customer_df = df_customers.copy()
+        customer_df["first_order"] = pd.to_datetime(customer_df["first_order"], errors="coerce").dt.normalize()
+        new_customer_daily = (
+            customer_df[customer_df["first_order"].notna()]
+            .groupby("first_order")
+            .size()
+            .reset_index(name="new_customers")
+            .rename(columns={"first_order": "order_day"})
+        )
+        daily = daily.merge(new_customer_daily, on="order_day", how="left")
+    daily["new_customers"] = pd.to_numeric(daily.get("new_customers", 0), errors="coerce").fillna(0).astype(int)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        fig_revenue = px.bar(
+            daily,
+            x="day_label",
+            y="revenue",
+            color="revenue",
+            title="Last 7 Days Revenue",
+            text_auto=".2s",
+            color_continuous_scale="Tealgrn",
+            labels={"day_label": "Day", "revenue": "Revenue"},
+        )
+        fig_revenue.update_layout(height=340, xaxis_title="Day", yaxis_title="Revenue")
+        st.plotly_chart(fig_revenue, use_container_width=True)
+    with c2:
+        daily_people = daily.melt(
+            id_vars=["day_label"],
+            value_vars=["orders", "unique_customers", "new_customers"],
+            var_name="metric",
+            value_name="value",
+        )
+        fig_people = px.line(
+            daily_people,
+            x="day_label",
+            y="value",
+            color="metric",
+            markers=True,
+            title="Last 7 Days Orders and Customers",
+            labels={"day_label": "Day", "value": "Count", "metric": "Metric"},
+        )
+        fig_people.update_layout(height=340, xaxis_title="Day", yaxis_title="Count")
+        st.plotly_chart(fig_people, use_container_width=True)
+
+    st.dataframe(
+        daily[["day_label", "revenue", "orders", "unique_customers", "new_customers", "units"]].rename(
+            columns={
+                "day_label": "Day",
+                "revenue": "Sales Revenue",
+                "orders": "Order Count",
+                "unique_customers": "Unique Customers",
+                "new_customers": "New Customers",
+                "units": "Units Sold",
+            }
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
 def build_period_business_metrics(
     df_sales: pd.DataFrame,
     df_customers: pd.DataFrame,
@@ -362,9 +630,13 @@ def build_period_business_metrics(
     period_series = sales["order_date"].dt.to_period(freq_map.get(view_mode, "Q"))
     sales["period"] = period_series
     sales["period_label"] = period_series.astype(str)
-
+    order_metrics = _build_order_level_dataset(sales)
+    if order_metrics.empty:
+        return pd.DataFrame()
+    order_metrics["period"] = order_metrics["order_date"].dt.to_period(freq_map.get(view_mode, "Q"))
+    order_metrics["period_label"] = order_metrics["period"].astype(str)
     metrics = (
-        sales.groupby(["period", "period_label"], as_index=False)
+        order_metrics.groupby(["period", "period_label"], as_index=False)
         .agg(
             revenue=("order_total", "sum"),
             orders=("order_id", lambda s: s.replace("", pd.NA).dropna().nunique()),
@@ -384,22 +656,29 @@ def build_period_business_metrics(
             metrics = metrics.merge(new_customer_counts, on="period", how="left")
 
     metrics["new_customers"] = pd.to_numeric(metrics.get("new_customers", 0), errors="coerce").fillna(0).astype(int)
+    limit_map = {
+        "Quarter": 4,
+        "Month": 3,
+        "Week": 4,
+        "Year": 3,
+    }
+    limit = limit_map.get(view_mode, 4)
+    metrics = metrics.tail(limit).reset_index(drop=True)
     return metrics[["period", "period_label", "revenue", "orders", "unique_customers", "new_customers"]]
 
 
 def render_week_over_week_summary(df_sales: pd.DataFrame, df_customers: pd.DataFrame):
-    st.markdown("#### Week vs Week Overview")
+    st.markdown("#### Last 4 Weeks Overview")
     weekly_metrics = build_period_business_metrics(df_sales, df_customers, "Week")
-    if weekly_metrics.empty or len(weekly_metrics) < 2:
+    if weekly_metrics.empty:
         st.info("Not enough weekly data is available yet for a week-over-week comparison.")
         return
 
-    latest_two = weekly_metrics.tail(2).copy()
-    latest_two["period_label"] = latest_two["period_label"].astype(str)
+    weekly_metrics["period_label"] = weekly_metrics["period_label"].astype(str)
 
     c1, c2 = st.columns(2)
     with c1:
-        week_revenue = latest_two[["period_label", "revenue"]].rename(
+        week_revenue = weekly_metrics[["period_label", "revenue"]].rename(
             columns={"period_label": "Week", "revenue": "Sales Revenue"}
         )
         fig_revenue = px.bar(
@@ -407,13 +686,13 @@ def render_week_over_week_summary(df_sales: pd.DataFrame, df_customers: pd.DataF
             x="Week",
             y="Sales Revenue",
             color="Week",
-            title="Week vs Week Revenue",
+            title="Last 4 Weeks Revenue",
             text_auto=".2s",
         )
         fig_revenue.update_layout(height=320, showlegend=False)
         st.plotly_chart(fig_revenue, use_container_width=True)
     with c2:
-        week_counts = latest_two.melt(
+        week_counts = weekly_metrics.melt(
             id_vars=["period_label"],
             value_vars=["orders", "unique_customers", "new_customers"],
             var_name="Metric",
@@ -425,8 +704,51 @@ def render_week_over_week_summary(df_sales: pd.DataFrame, df_customers: pd.DataF
             y="Count",
             color="period_label",
             barmode="group",
-            title="Week vs Week Orders and Customers",
+            title="Last 4 Weeks Orders and Customers",
             labels={"period_label": "Week"},
+        )
+        fig_counts.update_layout(height=320)
+        st.plotly_chart(fig_counts, use_container_width=True)
+
+
+def render_month_over_month_summary(df_sales: pd.DataFrame, df_customers: pd.DataFrame):
+    st.markdown("#### Last 3 Months Overview")
+    monthly_metrics = build_period_business_metrics(df_sales, df_customers, "Month")
+    if monthly_metrics.empty:
+        st.info("Not enough monthly data is available yet for a month-over-month comparison.")
+        return
+
+    monthly_metrics["period_label"] = monthly_metrics["period_label"].astype(str)
+    c1, c2 = st.columns(2)
+    with c1:
+        month_revenue = monthly_metrics[["period_label", "revenue"]].rename(
+            columns={"period_label": "Month", "revenue": "Sales Revenue"}
+        )
+        fig_revenue = px.bar(
+            month_revenue,
+            x="Month",
+            y="Sales Revenue",
+            color="Month",
+            title="Last 3 Months Revenue",
+            text_auto=".2s",
+        )
+        fig_revenue.update_layout(height=320, showlegend=False)
+        st.plotly_chart(fig_revenue, use_container_width=True)
+    with c2:
+        month_counts = monthly_metrics.melt(
+            id_vars=["period_label"],
+            value_vars=["orders", "unique_customers", "new_customers"],
+            var_name="Metric",
+            value_name="Count",
+        )
+        fig_counts = px.bar(
+            month_counts,
+            x="Metric",
+            y="Count",
+            color="period_label",
+            barmode="group",
+            title="Last 3 Months Orders and Customers",
+            labels={"period_label": "Month"},
         )
         fig_counts.update_layout(height=320)
         st.plotly_chart(fig_counts, use_container_width=True)
@@ -443,12 +765,14 @@ def render_live_stream_comparison():
         st.warning("Live Stream data is currently empty or unavailable.")
         return
         
-    s_rev = stream_df["order_total"].sum()
-    s_ord = stream_df["order_id"].nunique()
+    stream_orders = _build_order_level_dataset(stream_df)
+    compare_orders = _build_order_level_dataset(compare_df)
+    s_rev = float(pd.to_numeric(stream_orders.get("order_total", 0), errors="coerce").fillna(0).sum()) if not stream_orders.empty else 0.0
+    s_ord = stream_orders["order_id"].replace("", pd.NA).dropna().nunique() if not stream_orders.empty else 0
     s_qty = stream_df["qty"].sum()
     
-    c_rev = compare_df["order_total"].sum() if not compare_df.empty else 0
-    c_ord = compare_df["order_id"].nunique() if not compare_df.empty else 0
+    c_rev = float(pd.to_numeric(compare_orders.get("order_total", 0), errors="coerce").fillna(0).sum()) if not compare_orders.empty else 0.0
+    c_ord = compare_orders["order_id"].replace("", pd.NA).dropna().nunique() if not compare_orders.empty else 0
     c_qty = compare_df["qty"].sum() if not compare_df.empty else 0
     
     m1, m2, m3 = st.columns(3)
@@ -470,7 +794,8 @@ def render_live_stream_comparison():
         st.markdown("#### Live Trends")
         if "_imported_at" in stream_df.columns:
             stream_df["_import_time"] = pd.to_datetime(stream_df["_imported_at"], errors="coerce")
-            live_trend = stream_df.groupby(stream_df["_import_time"].dt.hour).agg(Revenue=("order_total", "sum")).reset_index()
+            live_trend_source = _build_order_level_dataset(stream_df.assign(_import_time=stream_df["_import_time"]))
+            live_trend = live_trend_source.groupby(live_trend_source["_import_time"].dt.hour).agg(Revenue=("order_total", "sum")).reset_index()
             fig = px.area(live_trend, x="_import_time", y="Revenue", title="Import Activity (Hour)")
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -480,6 +805,11 @@ def render_live_stream_comparison():
 def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame):
     st.subheader("Inventory Health")
     st.caption("Live stock is fetched directly from the WooCommerce REST API.")
+    imported_at = pd.to_datetime(stock_df.get("_imported_at"), errors="coerce") if isinstance(stock_df, pd.DataFrame) else pd.Series(dtype="datetime64[ns]")
+    if not imported_at.empty and imported_at.notna().any():
+        st.caption(
+            f"Loaded inventory snapshot: {imported_at.min().strftime('%Y-%m-%d %H:%M')} to {imported_at.max().strftime('%Y-%m-%d %H:%M')}"
+        )
     if stock_df is None or stock_df.empty:
         st.info("No live stock snapshot is available yet from WooCommerce.")
         return
@@ -591,38 +921,40 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame):
 
 def render_executive_summary(df_sales: pd.DataFrame, df_customers: pd.DataFrame, summary: dict):
     st.subheader("Executive Summary")
+    _render_section_date_context(df_sales, "Loaded executive sales activity")
     df = df_sales[df_sales["order_date"].notna()].copy()
     df["order_day"] = df["order_date"].dt.normalize()
+    order_df = _build_order_level_dataset(df)
     today = pd.Timestamp.now().normalize()
     yesterday = today - pd.Timedelta(days=1)
 
-    today_data = df[df["order_day"] == today]
-    yesterday_data = df[df["order_day"] == yesterday]
+    today_data = order_df[order_df["order_day"] == today] if not order_df.empty else pd.DataFrame()
+    yesterday_data = order_df[order_df["order_day"] == yesterday] if not order_df.empty else pd.DataFrame()
 
-    total_revenue = float(df["order_total"].sum())
-    total_orders = df["order_id"].replace("", pd.NA).dropna().nunique()
+    total_revenue = _sum_order_level_revenue(df)
+    total_orders = order_df["order_id"].replace("", pd.NA).dropna().nunique() if not order_df.empty else 0
     active_customers = df["customer_key"].replace("", pd.NA).dropna().nunique()
     total_items = float(df["qty"].sum())
     pending_count = len(df[df["order_status"].str.lower().isin(["pending", "processing", "on-hold"])])
 
-    today_revenue = float(today_data["order_total"].sum())
-    yesterday_revenue = float(yesterday_data["order_total"].sum())
-    today_orders = today_data["order_id"].replace("", pd.NA).dropna().nunique()
-    yesterday_orders = yesterday_data["order_id"].replace("", pd.NA).dropna().nunique()
+    today_revenue = float(pd.to_numeric(today_data.get("order_total", 0), errors="coerce").fillna(0).sum()) if not today_data.empty else 0.0
+    yesterday_revenue = float(pd.to_numeric(yesterday_data.get("order_total", 0), errors="coerce").fillna(0).sum()) if not yesterday_data.empty else 0.0
+    today_orders = today_data["order_id"].replace("", pd.NA).dropna().nunique() if not today_data.empty else 0
+    yesterday_orders = yesterday_data["order_id"].replace("", pd.NA).dropna().nunique() if not yesterday_data.empty else 0
     today_aov = today_revenue / today_orders if today_orders else 0
     yesterday_aov = yesterday_revenue / yesterday_orders if yesterday_orders else 0
 
     k1, k2, k3, k4, k5 = st.columns(5)
     with k1:
         st.metric("Revenue", f"TK {total_revenue:,.0f}", _pct_delta(today_revenue, yesterday_revenue, "today vs yesterday"))
-        render_kpi_note("Counting mode: summed line-item revenue")
+        render_kpi_note("Counting mode: one order_total per distinct order_id")
     with k2:
         st.metric("Orders", f"{total_orders:,}", _pct_delta(today_orders, yesterday_orders, "today vs yesterday"))
         render_kpi_note("Counting mode: distinct normalized order_id")
     with k3:
         overall_aov = total_revenue / total_orders if total_orders else 0
         st.metric("AOV", f"TK {overall_aov:,.0f}", _pct_delta(today_aov, yesterday_aov, "today vs yesterday"))
-        render_kpi_note("Counting mode: revenue / distinct orders")
+        render_kpi_note("Counting mode: order-level revenue / distinct orders")
     with k4:
         st.metric("Customers", f"{active_customers:,}")
         render_kpi_note("Counting mode: distinct customer_key")
@@ -679,6 +1011,7 @@ def render_data_audit(
 
     audit_df = df.copy()
     audit_df["order_day"] = audit_df["order_date"].dt.date
+    order_level_audit = _build_order_level_dataset(audit_df)
     order_counts = (
         audit_df[audit_df["order_id"].replace("", pd.NA).notna()]
         .groupby("order_id")
@@ -686,14 +1019,14 @@ def render_data_audit(
             first_seen=("order_date", "min"),
             line_items=("order_id", "size"),
             units=("qty", "sum"),
-            revenue=("order_total", "sum"),
+            revenue=("order_total", "max"),
             sources=("source", lambda s: ", ".join(sorted({str(v) for v in s if str(v).strip()}))),
         )
         .reset_index()
         .sort_values("first_seen", ascending=False)
     )
     per_source = (
-        audit_df.groupby("source", dropna=False)
+        order_level_audit.groupby("source", dropna=False)
         .agg(
             line_items=("order_id", "size"),
             unique_orders=("order_id", lambda s: s.replace("", pd.NA).dropna().nunique()),
@@ -704,7 +1037,7 @@ def render_data_audit(
         .sort_values(["revenue", "line_items"], ascending=False)
     )
     per_day = (
-        audit_df.groupby("order_day", dropna=False)
+        order_level_audit.groupby("order_day", dropna=False)
         .agg(
             line_items=("order_id", "size"),
             unique_orders=("order_id", lambda s: s.replace("", pd.NA).dropna().nunique()),
@@ -743,7 +1076,7 @@ def render_data_audit(
     with a2:
         render_audit_card(
             "How Revenue Counting Works",
-            "Revenue is summed from the visible normalized rows in the current filter. That means product-level tables and trend charts use the same filtered dataset shown below.",
+            "Revenue is counted once per distinct order_id using order-level totals, so multi-item orders do not multiply revenue in KPI cards and BI comparisons.",
         )
 
     metrics = st.columns(5)
@@ -826,6 +1159,7 @@ def render_data_audit(
 
 def render_sales_trends(df: pd.DataFrame):
     st.subheader("Sales Trends")
+    _render_section_date_context(df, "Loaded trend activity")
     df = df[df["order_date"].notna()].copy()
     if df.empty:
         st.info("No date data available for trend analysis.")
@@ -837,7 +1171,8 @@ def render_sales_trends(df: pd.DataFrame):
     trend_df["day_num"] = trend_df["order_date"].dt.dayofweek
     trend_df["hour"] = trend_df["order_date"].dt.hour
 
-    daily = trend_df.groupby("order_day", as_index=False).agg(Revenue=("order_total", "sum"), Orders=("order_id", "nunique"))
+    order_trend_df = _build_order_level_dataset(trend_df)
+    daily = order_trend_df.groupby("order_day", as_index=False).agg(Revenue=("order_total", "sum"), Orders=("order_id", "nunique"))
     fig_line = px.line(daily, x="order_day", y="Revenue", title="Daily Revenue", markers=True)
     fig_line.update_layout(height=350, xaxis_title="Date")
     st.plotly_chart(fig_line, use_container_width=True)
@@ -883,11 +1218,14 @@ def render_sales_trends(df: pd.DataFrame):
 def render_product_performance(df: pd.DataFrame):
     st.subheader("Product Performance")
     st.caption("This view uses WooCommerce API order items only. Google Sheets are excluded here for cleaner item-level accuracy.")
+    _render_section_date_context(df, "Loaded product activity")
     if df.empty:
         st.info("No product data available.")
         return
 
-    grouped = df.groupby("item_name").agg(Revenue=("order_total", "sum"), Units=("qty", "sum"), Orders=("order_id", "nunique")).reset_index()
+    product_df = df.copy()
+    product_df["line_revenue"] = _estimate_line_revenue(product_df)
+    grouped = product_df.groupby("item_name").agg(Revenue=("line_revenue", "sum"), Units=("qty", "sum"), Orders=("order_id", "nunique")).reset_index()
     grouped = grouped[grouped["item_name"].astype(str).str.strip() != ""].sort_values("Revenue", ascending=False)
     if grouped.empty:
         st.info("No product-level metrics are available.")
@@ -902,7 +1240,7 @@ def render_product_performance(df: pd.DataFrame):
         )
         concentration = top_products["Revenue"].sum() / grouped["Revenue"].sum() if grouped["Revenue"].sum() else 0
         product_notes.append(
-            f"The top 10 products contribute {concentration * 100:.1f}% of visible product revenue, which helps show catalog concentration risk."
+            f"The top 10 products contribute {concentration * 100:.1f}% of visible estimated item revenue, which helps show catalog concentration risk."
         )
     render_commentary_panel("Merchandising Commentary", product_notes)
 
@@ -922,6 +1260,7 @@ def render_product_performance(df: pd.DataFrame):
 def render_customer_behavior(df_sales: pd.DataFrame, df_customers: pd.DataFrame):
     st.subheader("Customer Behavior")
     st.caption("This view uses WooCommerce API customer and order history only. Google Sheets are excluded here for retention accuracy.")
+    _render_section_date_context(df_sales, "Loaded customer behavior activity")
     if df_customers is None or df_customers.empty:
         st.info("Customer insights are not available yet for the selected period.")
         return
@@ -974,6 +1313,7 @@ def render_customer_behavior(df_sales: pd.DataFrame, df_customers: pd.DataFrame)
 
 def render_geographic_insights(df: pd.DataFrame):
     st.subheader("Geographic Insights")
+    _render_section_date_context(df, "Loaded geographic activity")
     geo = df.copy()
     geo["region"] = geo["state"].where(geo["state"] != "", geo["city"])
     geo = geo[geo["region"].astype(str).str.strip() != ""]
@@ -981,7 +1321,8 @@ def render_geographic_insights(df: pd.DataFrame):
         st.info("No geographic data found in the selected dataset.")
         return
 
-    geo_sales = geo.groupby("region").agg(Revenue=("order_total", "sum"), Orders=("order_id", "nunique")).reset_index().sort_values("Revenue", ascending=False).head(15)
+    geo_orders = _build_order_level_dataset(geo)
+    geo_sales = geo_orders.groupby("region").agg(Revenue=("order_total", "sum"), Orders=("order_id", "nunique")).reset_index().sort_values("Revenue", ascending=False).head(15)
     geo_notes = []
     if not geo_sales.empty:
         leader = geo_sales.iloc[0]
@@ -1113,6 +1454,7 @@ def render_data_trust_panel(df_sales: pd.DataFrame):
     if df.empty:
         return
 
+    order_df = _build_order_level_dataset(df)
     valid_dates = df["order_date"].dropna()
     min_date = valid_dates.min() if not valid_dates.empty else None
     max_date = valid_dates.max() if not valid_dates.empty else None
@@ -1120,9 +1462,11 @@ def render_data_trust_panel(df_sales: pd.DataFrame):
     unique_customers = df["customer_key"].replace("", pd.NA).dropna().nunique()
     line_items = len(df)
     active_sources = sorted({src for src in df["source"].dropna().astype(str) if src})
+    total_revenue = float(pd.to_numeric(order_df.get("order_total", 0), errors="coerce").fillna(0).sum()) if not order_df.empty else 0.0
 
     trust_notes = [
         f"Unique orders are counted using distinct `order_id` values after source normalization and deduplication.",
+        f"Revenue is counted once per order using order-level totals: TK {total_revenue:,.0f} in the current filter.",
         f"Visible line items in the current filter: {line_items:,}.",
         f"Visible unique orders in the current filter: {unique_orders:,}.",
     ]

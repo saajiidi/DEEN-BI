@@ -203,6 +203,35 @@ def inject_base_styles():
             line-height: 1.6;
             font-size: 0.92rem;
         }
+        .bi-highlight-stat {
+            background: linear-gradient(135deg, rgba(8, 51, 88, 0.98) 0%, rgba(15, 76, 129, 0.95) 58%, rgba(20, 184, 166, 0.90) 100%);
+            color: #f8fbff;
+            border-radius: 22px;
+            padding: 1.1rem 1.2rem;
+            margin-bottom: 1rem;
+            box-shadow: var(--card-shadow);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+        }
+        .bi-highlight-label {
+            font-size: 0.74rem;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: rgba(242, 248, 255, 0.78);
+            margin-bottom: 0.45rem;
+        }
+        .bi-highlight-value {
+            font-size: 2rem;
+            font-weight: 800;
+            line-height: 1.1;
+            letter-spacing: -0.03em;
+        }
+        .bi-highlight-help {
+            margin-top: 0.45rem;
+            color: rgba(244, 250, 255, 0.84);
+            font-size: 0.9rem;
+            line-height: 1.45;
+        }
         [data-testid="stMetricContainer"] {
             background: rgba(255,255,255,0.80);
             border: 1px solid var(--border-soft);
@@ -511,6 +540,47 @@ def render_audit_card(title: str, body: str):
         """,
         unsafe_allow_html=True,
     )
+
+
+def render_highlight_stat(label: str, value: str, help_text: str = ""):
+    if not label or value is None:
+        return
+    help_block = f'<div class="bi-highlight-help">{help_text}</div>' if help_text else ""
+    st.markdown(
+        f"""
+        <div class="bi-highlight-stat">
+          <div class="bi-highlight-label">{label}</div>
+          <div class="bi-highlight-value">{value}</div>
+          {help_block}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_loaded_date_context(
+    requested_start=None,
+    requested_end=None,
+    loaded_start=None,
+    loaded_end=None,
+    label: str = "Loaded data",
+):
+    requested_parts = []
+    if requested_start is not None:
+        requested_parts.append(f"from {pd.to_datetime(requested_start).strftime('%Y-%m-%d')}")
+    if requested_end is not None:
+        requested_parts.append(f"to {pd.to_datetime(requested_end).strftime('%Y-%m-%d')}")
+    requested_text = " ".join(requested_parts).strip()
+    prefix = f"Requested range: {requested_text}" if requested_text else "Requested range: not specified"
+
+    loaded_start_ts = pd.to_datetime(loaded_start, errors="coerce") if loaded_start is not None else pd.NaT
+    loaded_end_ts = pd.to_datetime(loaded_end, errors="coerce") if loaded_end is not None else pd.NaT
+    if pd.notna(loaded_start_ts) and pd.notna(loaded_end_ts):
+        st.caption(
+            f"{prefix} | {label}: {loaded_start_ts.strftime('%Y-%m-%d %H:%M')} to {loaded_end_ts.strftime('%Y-%m-%d %H:%M')}"
+        )
+    else:
+        st.caption(f"{prefix} | {label}: dates are not available in the current result.")
 
 
 def render_footer():

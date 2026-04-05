@@ -1,5 +1,11 @@
-import streamlit as st
 import os
+
+import streamlit as st
+
+from FrontEnd.utils.config import APP_TITLE, PRIMARY_NAV
+from FrontEnd.utils.error_handler import ERROR_LOG_FILE, get_logs, log_error
+from FrontEnd.utils.state import init_state, save_state
+
 
 _original_dataframe = st.dataframe
 
@@ -9,10 +15,10 @@ def _numbered_dataframe(data, *args, **kwargs):
         import pandas as pd
 
         if isinstance(data, pd.DataFrame) or isinstance(data, pd.Series):
-            d = data.copy()
-            if len(d) > 0:
-                d.index = range(1, len(d) + 1)
-            return _original_dataframe(d, *args, **kwargs)
+            copied = data.copy()
+            if len(copied) > 0:
+                copied.index = range(1, len(copied) + 1)
+            return _original_dataframe(copied, *args, **kwargs)
     except Exception:
         pass
     return _original_dataframe(data, *args, **kwargs)
@@ -21,37 +27,30 @@ def _numbered_dataframe(data, *args, **kwargs):
 st.dataframe = _numbered_dataframe
 
 st.set_page_config(
-    page_title="Automation Pivot",
+    page_title=APP_TITLE,
     page_icon="AP",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 
-def run_app():
-    # Lazy imports keep bootstrap resilient on cloud when a module has runtime incompatibilities.
-    from FrontEnd.pages import render_customer_insight_tab
-    from FrontEnd.pages import render_dashboard_tab
-    from FrontEnd.pages.system_health import render_system_health_tab
-    from FrontEnd.utils.error_handler import get_logs, log_error
-    from FrontEnd.utils.state import init_state, save_state
-    from FrontEnd.pages import render_live_tab, render_woocommerce_tab
-    from FrontEnd.components import (
-        inject_base_styles,
-        render_header,
-        render_footer,
-        render_sidebar_branding,
-        section_card,
-    )
-    from FrontEnd.utils.config import PRIMARY_NAV
-    from FrontEnd.utils.error_handler import ERROR_LOG_FILE
+def _clear_error_logs():
+    if os.path.exists(ERROR_LOG_FILE):
+        os.remove(ERROR_LOG_FILE)
 
-    init_state()
-    inject_base_styles()
+
+def _render_workspace_sidebar():
+    from FrontEnd.components import render_sidebar_branding
+    from FrontEnd.pages import get_primary_pages
 
     with st.sidebar:
         render_sidebar_branding()
         st.subheader("Workspace")
+        st.caption(f"Working directory: `{os.getcwd()}`")
+        with st.expander("Workspace Views", expanded=False):
+            for page in get_primary_pages():
+                st.markdown(f"**{page.label}**")
+                st.caption(page.description)
 
         if st.button("Save session state", use_container_width=True):
             save_state()
@@ -68,7 +67,7 @@ def run_app():
                 if st.button("Reset Tool Now", use_container_width=True, type="primary"):
                     registered[tool_to_wipe]["fn"]()
                     st.session_state.confirm_tool_reset = False
-                    st.success("Cleaned!")
+                    st.success("Selected tool state was reset.")
                     st.rerun()
 
         st.divider()
@@ -76,7 +75,7 @@ def run_app():
             st.session_state.confirm_app_reset = True
 
         if st.session_state.get("confirm_app_reset"):
-            st.warning("⚠️ Wipe EVERYTHING?")
+            st.warning("This clears saved session state and all active tool data for this app session.")
             c1, c2 = st.columns(2)
             if c1.button("Yes", type="primary", use_container_width=True):
                 from FrontEnd.utils.state import STATE_FILE
@@ -89,48 +88,50 @@ def run_app():
                 st.session_state.confirm_app_reset = False
                 st.rerun()
 
-        with st.expander("System Logs", expanded=False):
-            logs = get_logs()
-            if not logs:
-                st.info("No system events logged.")
-            else:
-                for log in reversed(logs[-8:]):
-                    st.caption(f"**{log.get('timestamp')}** | {log.get('context')}")
-                    st.text(log.get("error"))
-                    st.divider()
-                if st.button("Clear logs", use_container_width=True):
-                    if os.path.exists(ERROR_LOG_FILE):
-                        os.remove(ERROR_LOG_FILE)
-                    st.rerun()
+        _render_system_logs()
 
-    render_header()
 
+def _render_system_logs():
+    with st.sidebar.expander("System Logs", expanded=False):
+        logs = get_logs()
+        if not logs:
+            st.info("No system events logged.")
+            return
+
+        for log in reversed(logs[-8:]):
+            st.caption(f"**{log.get('timestamp')}** | {log.get('context')}")
+            st.text(log.get("error"))
+            st.divider()
+
+        if st.button("Clear logs", use_container_width=True):
+            _clear_error_logs()
+            st.rerun()
+
+
+def _render_primary_navigation():
+    from FrontEnd.pages import get_primary_pages
+
+    pages = get_primary_pages()
     nav_tabs = st.tabs(PRIMARY_NAV)
+    for tab, page in zip(nav_tabs, pages):
+        with tab:
+            page.render()
 
-    with nav_tabs[0]:
-        render_dashboard_tab()
 
-    with nav_tabs[1]:
-        render_live_tab()
+def run_app():
+    from FrontEnd.components import inject_base_styles, render_footer, render_header
 
-    with nav_tabs[2]:
-        render_customer_insight_tab()
-
-    with nav_tabs[3]:
-        render_woocommerce_tab()
-
-    with nav_tabs[4]:
-        render_system_health_tab()
-
+    init_state()
+    inject_base_styles()
+    _render_workspace_sidebar()
+    render_header()
+    _render_primary_navigation()
     render_footer()
 
 
 try:
     run_app()
 except Exception as exc:
-    # Failsafe to prevent full redacted crash pages on Streamlit Cloud.
-    from FrontEnd.utils.error_handler import log_error
-
     log_error(exc, context="App Bootstrap")
     st.error("Application failed to render. Check 'More Tools -> System Logs' for details.")
     st.code(str(exc))

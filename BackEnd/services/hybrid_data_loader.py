@@ -27,6 +27,7 @@ COMPARISON_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTOiRkyb
 WOO_CACHE_TTL_MINUTES = 360
 STOCK_CACHE_TTL_MINUTES = 20
 REFRESH_LOCK_TTL_MINUTES = 90
+FULL_HISTORY_SYNC_DAYS = 36500
 
 
 def _local_user_slug() -> str:
@@ -197,6 +198,35 @@ def _build_orders_cache_status(start_date: Optional[str], end_date: Optional[str
     }
 
 
+def _build_full_history_sync_status(end_date: Optional[str] = None) -> dict:
+    meta = _read_json(_cache_file("woo_orders_meta.json"))
+    status_meta = _read_json(_refresh_status_path("full_history"))
+    cache_exists = _cache_file("woo_orders.parquet").exists()
+    is_running = _refresh_is_running("full_history")
+    is_complete = bool(meta.get("full_history_complete"))
+    last_full_sync = meta.get("last_full_sync_at") or status_meta.get("updated_at")
+
+    if is_complete:
+        message = "Lifetime WooCommerce history is available in local cache."
+    elif is_running:
+        message = "A one-time full WooCommerce history sync is running in the background."
+    elif cache_exists:
+        message = "Partial WooCommerce history is available. A one-time full sync can complete the lifetime cache."
+    else:
+        message = "No lifetime WooCommerce history cache exists yet. A one-time full sync will build it."
+
+    return {
+        "kind": "full_history",
+        "cache_exists": cache_exists,
+        "is_running": is_running,
+        "is_complete": is_complete,
+        "last_full_sync": last_full_sync,
+        "status_message": message,
+        "needs_sync": not is_complete,
+        "end_date": end_date,
+    }
+
+
 def _build_stock_cache_status() -> dict:
     cache_path = _cache_file("woo_stock.parquet")
     meta = _read_json(_cache_file("woo_stock_meta.json"))
@@ -239,6 +269,10 @@ def get_woocommerce_stock_cache_status() -> dict:
     return _build_stock_cache_status()
 
 
+def get_woocommerce_full_history_status(end_date: Optional[str] = None) -> dict:
+    return _build_full_history_sync_status(end_date=end_date)
+
+
 def estimate_woocommerce_load_time(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
@@ -263,6 +297,29 @@ def load_cached_woocommerce_live_data(
 
 def load_cached_woocommerce_stock_data() -> pd.DataFrame:
     return _read_parquet(_cache_file("woo_stock.parquet"))
+
+
+def load_cached_woocommerce_history() -> pd.DataFrame:
+    return ensure_sales_schema(_read_parquet(_cache_file("woo_orders.parquet")))
+
+
+def load_full_woocommerce_history(end_date: Optional[str] = None) -> pd.DataFrame:
+    historical = load_historical_data()
+    cached = load_cached_woocommerce_history()
+    frames = [df for df in [historical, cached] if df is not None and not df.empty]
+    if not frames:
+        return pd.DataFrame()
+
+    merged = ensure_sales_schema(pd.concat(frames, ignore_index=True, sort=False))
+    merged = _dedupe_orders(merged)
+    if "source" in merged.columns:
+        source_mask = merged["source"].astype(str).str.contains("woocommerce", case=False, na=False)
+        merged = merged[source_mask].copy()
+    if end_date:
+        end_ts = pd.to_datetime(end_date, errors="coerce")
+        if pd.notna(end_ts):
+            merged = merged[merged["order_date"] <= end_ts + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)]
+    return merged.sort_values("order_date", ascending=False, na_position="last").reset_index(drop=True)
 
 
 def _spawn_refresh_worker(kind: str, start_date: Optional[str] = None, end_date: Optional[str] = None, days: int = 30) -> bool:
@@ -350,10 +407,48 @@ def start_stock_background_refresh(force: bool = False) -> bool:
         return False
 
 
+def start_full_history_background_refresh(
+    end_date: Optional[str] = None,
+    force: bool = False,
+) -> bool:
+    if not get_woocommerce_credentials():
+        return False
+    status = get_woocommerce_full_history_status(end_date=end_date)
+    if status["is_running"]:
+        return False
+    if not force and not status["needs_sync"]:
+        return False
+    _set_refresh_lock(
+        "full_history",
+        {
+            "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "end_date": end_date,
+        },
+    )
+    _mark_refresh_status("full_history", "queued", end_date=end_date)
+    try:
+        started = _spawn_refresh_worker(
+            "full_history",
+            start_date=None,
+            end_date=end_date,
+            days=FULL_HISTORY_SYNC_DAYS,
+        )
+        if not started:
+            _clear_refresh_lock("full_history")
+            _mark_refresh_status("full_history", "failed", error="Unable to start full history refresh worker.")
+        return started
+    except Exception as exc:
+        _clear_refresh_lock("full_history")
+        _mark_refresh_status("full_history", "failed", error=str(exc))
+        log_error(exc, context="Background Full History Refresh Spawn")
+        return False
+
+
 def refresh_woocommerce_orders_cache(
     days: int = 30,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    full_sync: bool = False,
 ) -> pd.DataFrame:
     if not get_woocommerce_credentials():
         return pd.DataFrame()
@@ -361,16 +456,18 @@ def refresh_woocommerce_orders_cache(
     start_ts, end_ts = _normalize_bounds(start_date, end_date, days)
     cache_path = _cache_file("woo_orders.parquet")
     meta_path = _cache_file("woo_orders_meta.json")
+    refresh_kind = "full_history" if full_sync else "orders"
     _set_refresh_lock(
-        "orders",
+        refresh_kind,
         {
             "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "start_date": start_date,
             "end_date": end_date,
             "days": days,
+            "full_sync": full_sync,
         },
     )
-    _mark_refresh_status("orders", "running", start_date=start_date, end_date=end_date, days=days)
+    _mark_refresh_status(refresh_kind, "running", start_date=start_date, end_date=end_date, days=days, full_sync=full_sync)
 
     try:
         from BackEnd.services.woocommerce_service import WooCommerceService
@@ -381,7 +478,7 @@ def refresh_woocommerce_orders_cache(
         cached_end = pd.to_datetime(meta.get("cached_end"), errors="coerce")
 
         wc_service = WooCommerceService(ui_enabled=False)
-        after = start_ts.strftime("%Y-%m-%dT00:00:00Z")
+        after = None if full_sync else start_ts.strftime("%Y-%m-%dT00:00:00Z")
         before = end_ts.strftime("%Y-%m-%dT%H:%M:%SZ")
         fetched_df = wc_service.fetch_all_historical_orders(
             after=after,
@@ -391,7 +488,7 @@ def refresh_woocommerce_orders_cache(
             show_errors=False,
         )
         if fetched_df.empty:
-            _mark_refresh_status("orders", "completed", rows=0, fetched_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            _mark_refresh_status(refresh_kind, "completed", rows=0, fetched_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), full_sync=full_sync)
             return _filter_by_date_range(cached_df, start_ts, end_ts) if not cached_df.empty else fetched_df
 
         fetched_df["_source"] = fetched_df.get("_source", "woocommerce_live")
@@ -402,30 +499,39 @@ def refresh_woocommerce_orders_cache(
         merged_cache = _dedupe_orders(merged_cache)
         merged_cache.to_parquet(cache_path, index=False)
 
-        new_cached_start = min(start_ts, cached_start) if not pd.isna(cached_start) else start_ts
+        fetched_start = pd.to_datetime(fetched_df["order_date"], errors="coerce").min()
+        fetched_start = fetched_start if pd.notna(fetched_start) else start_ts
+        new_cached_start = min(fetched_start, cached_start) if not pd.isna(cached_start) else fetched_start
         new_cached_end = max(end_ts, cached_end) if not pd.isna(cached_end) else end_ts
         fetched_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        meta_payload = {
+            "cached_start": new_cached_start.strftime("%Y-%m-%d %H:%M:%S"),
+            "cached_end": new_cached_end.strftime("%Y-%m-%d %H:%M:%S"),
+            "fetched_at": fetched_at,
+            "user": _local_user_slug(),
+        }
+        if full_sync:
+            meta_payload["full_history_complete"] = True
+            meta_payload["last_full_sync_at"] = fetched_at
+        elif "full_history_complete" in meta:
+            meta_payload["full_history_complete"] = meta.get("full_history_complete")
+            meta_payload["last_full_sync_at"] = meta.get("last_full_sync_at")
         _write_json(
             meta_path,
-            {
-                "cached_start": new_cached_start.strftime("%Y-%m-%d %H:%M:%S"),
-                "cached_end": new_cached_end.strftime("%Y-%m-%d %H:%M:%S"),
-                "fetched_at": fetched_at,
-                "user": _local_user_slug(),
-            },
+            meta_payload,
         )
-        _mark_refresh_status("orders", "completed", rows=int(len(merged_cache)), fetched_at=fetched_at)
+        _mark_refresh_status(refresh_kind, "completed", rows=int(len(merged_cache)), fetched_at=fetched_at, full_sync=full_sync)
         return _filter_by_date_range(merged_cache, start_ts, end_ts)
     except Exception as exc:
-        _mark_refresh_status("orders", "failed", error=str(exc))
+        _mark_refresh_status(refresh_kind, "failed", error=str(exc), full_sync=full_sync)
         log_error(
             exc,
             context="Hybrid Loader - Orders Refresh",
-            details={"days": days, "start_date": start_date, "end_date": end_date},
+            details={"days": days, "start_date": start_date, "end_date": end_date, "full_sync": full_sync},
         )
         return pd.DataFrame()
     finally:
-        _clear_refresh_lock("orders")
+        _clear_refresh_lock(refresh_kind)
 
 
 def refresh_woocommerce_stock_cache() -> pd.DataFrame:

@@ -1,37 +1,98 @@
-# Automation Hub Pro v9.0
+# Automation Pivot
 
-Automation Hub Pro is a streamlined Streamlit workspace for sales analysis, order processing, inventory distribution, and messaging.
+Automation Pivot is a WooCommerce-first Streamlit business intelligence workspace for e-commerce sales, customer intelligence, inventory visibility, live stream monitoring, and operational diagnostics.
 
-## Main Navigation
+The current app is organized around five primary workspaces:
 
-- **Dashboard**: Live Sales Dashboard from Google Sheets / GDrive.
-- **Sales Data Ingestion**: Manual sales file upload and analysis tool.
-- **Bulk Order Processor**: Pathao order repair and formatting tool.
-- **Delivery Data Parser**: Copy-paste courier text parser (Standard & Fuzzy).
-- **Inventory Distribution**: Consolidated stock analyzer and distribution hub.
-- **WhatsApp Messaging**: Personalized verification link generator with live data support.
+- `Business Intelligence`: executive KPIs, sales analysis, customer behavior, inventory, forecasts, and data-audit views
+- `Stream Monitor`: live stream sales visibility from the locked stream sheet
+- `Customer Intelligence`: lifetime customer metrics, RFM segmentation, and retention context
+- `Commerce Hub`: WooCommerce order sync, inventory fetch, previews, and local storage utilities
+- `System Health`: logs, diagnostics, and operational trust tools
 
-## Key Updates in v9.0
+## Product Direction
 
-- **Unified Navigation**: 6 independent main tabs for faster access (no nested sub-tabs).
-- **Scrubbing Engine**: Improved live data processing that auto-filters dashboard analytics from raw exports.
-- **1-Based Indexing**: All data previews now start at row 1 for easier manual verification.
-- **No Guided Mode**: Simplified interface removes the toggle in favor of direct action buttons.
-- **Live-Link Verified**: WhatsApp messaging now supports "Pull from Live Dash" natively.
-- **System Logs**: Moved to the Sidebar for instant diagnostic access.
+This codebase now follows a few key principles:
+
+- WooCommerce is the primary operational source for orders, customers, and inventory
+- local cache is treated as a first-class runtime layer for speed
+- long-running refresh work happens in the background whenever possible
+- customer lifecycle metrics use full available WooCommerce history, not just the visible date range
+- UI components and date handling are shared across pages for a more homogeneous product feel
 
 ## Quick Start
+
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Project Structure
+## Date Defaults
 
-- `app.py`: Application shell, sidebar settings, and navigation.
-- `app_modules/sales_dashboard.py`: Core logic for live/manual sales analytics.
-- `app_modules/pathao_tab.py`: Optimized bulk order processing.
-- `app_modules/fuzzy_parser_tab.py`: Advanced text-to-data extraction.
-- `app_modules/distribution_tab.py`: Inventory and distribution management.
-- `app_modules/wp_tab.py`: WhatsApp link generation and live integration.
-- `app_modules/persistence.py`: Session state saving and file handling.
+Across the app, date selectors are standardized to:
+
+- start date: `2022-08-01`
+- end date: latest available day (`today`)
+
+## Core Architecture
+
+### Frontend
+
+- [app.py](H:/Analysis/Automation-Pivot/app.py): thin application shell, sidebar controls, page registry rendering
+- [FrontEnd/pages/__init__.py](H:/Analysis/Automation-Pivot/FrontEnd/pages/__init__.py): primary page registry and page metadata
+- [FrontEnd/components/ui_components.py](H:/Analysis/Automation-Pivot/FrontEnd/components/ui_components.py): shared design system, highlight cards, commentary blocks, and loaded-date context helpers
+
+### Backend
+
+- [BackEnd/services/hybrid_data_loader.py](H:/Analysis/Automation-Pivot/BackEnd/services/hybrid_data_loader.py): hybrid loading, local cache management, background refresh jobs, full-history sync status
+- [BackEnd/services/woocommerce_service.py](H:/Analysis/Automation-Pivot/BackEnd/services/woocommerce_service.py): WooCommerce API access for orders and stock
+- [BackEnd/services/customer_insights.py](H:/Analysis/Automation-Pivot/BackEnd/services/customer_insights.py): customer normalization, lifetime metrics, RFM segmentation, and first-order logic
+- [BackEnd/services/ml_insights.py](H:/Analysis/Automation-Pivot/BackEnd/services/ml_insights.py): demand forecast, churn-risk scoring, anomaly detection
+- [BackEnd/utils/sales_schema.py](H:/Analysis/Automation-Pivot/BackEnd/utils/sales_schema.py): canonical sales schema normalization
+
+## Data Strategy
+
+The app uses a hybrid local-first strategy:
+
+1. historical local data is loaded from parquet
+2. WooCommerce order and stock cache is read first for fast UI response
+3. stale or missing WooCommerce cache is refreshed in the background
+4. lifetime WooCommerce history can be built through a one-time full sync
+5. live stream views use the locked Google Sheet sources for stream-only reporting
+
+## Customer and Revenue Counting
+
+### Revenue
+
+- dashboard and BI revenue uses one `order_total` per distinct `order_id`
+- this avoids double-counting multi-item orders in flattened line-item datasets
+- product analysis uses estimated line revenue instead of repeated full-order totals
+
+### Customers
+
+- `Unique Customers` means distinct normalized customers inside the visible filter
+- `New Customers` means customers whose first-ever WooCommerce order falls inside the relevant period
+- lifetime customer metrics use full available WooCommerce history from local cache plus stored historical Woo data
+
+## Working with the Codebase
+
+Recommended areas for future work:
+
+- add more small helpers in `FrontEnd/components/ui_components.py` before duplicating UI markup in pages
+- keep page-specific rendering in `FrontEnd/pages/`
+- keep data retrieval, cache management, and model logic in `BackEnd/services/`
+- keep schema normalization and cross-source cleanup in `BackEnd/utils/`
+- prefer extending the page registry in `FrontEnd/pages/__init__.py` instead of wiring page tabs directly in `app.py`
+
+## Legacy / Archived Areas
+
+Some older modules still exist in the repository for backward reference or recovery work, including AI assistant and older operational tools. They are not part of the current primary navigation and should be treated as secondary unless explicitly reintroduced.
+
+## Verification
+
+Typical local verification commands:
+
+```bash
+python -m py_compile app.py FrontEnd\pages\dashboard.py FrontEnd\pages\customer_insights.py FrontEnd\pages\live_stream.py FrontEnd\pages\woocommerce.py
+python -m unittest tests.test_hybrid_data_loader tests.test_customer_history tests.test_dashboard_revenue
+```

@@ -9,7 +9,17 @@ from BackEnd.services.customer_insights import (
     get_segment_summary,
     search_customers,
 )
-from FrontEnd.components.ui_components import render_section_card, to_excel_bytes
+from BackEnd.services.hybrid_data_loader import (
+    get_woocommerce_full_history_status,
+    start_full_history_background_refresh,
+)
+from FrontEnd.components.ui_components import (
+    render_highlight_stat,
+    render_loaded_date_context,
+    render_section_card,
+    to_excel_bytes,
+)
+from FrontEnd.utils.config import APP_DATA_START_DATE
 from FrontEnd.utils.error_handler import log_error
 
 
@@ -27,12 +37,31 @@ def render_customer_insight_tab():
 
     col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
-        start_date = st.date_input("From", value=date(2022, 8, 1), key="insight_start_date")
+        start_date = st.date_input(
+            "From",
+            value=APP_DATA_START_DATE,
+            min_value=APP_DATA_START_DATE,
+            max_value=date.today(),
+            key="insight_start_date",
+        )
     with col2:
-        end_date = st.date_input("To", value=date.today(), key="insight_end_date")
+        end_date = st.date_input(
+            "To",
+            value=date.today(),
+            min_value=APP_DATA_START_DATE,
+            max_value=date.today(),
+            key="insight_end_date",
+        )
     with col3:
         st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
         load_clicked = st.button("Refresh Insights", use_container_width=True, type="primary")
+
+    end_date_str = end_date.strftime("%Y-%m-%d")
+    history_status = get_woocommerce_full_history_status(end_date=end_date_str)
+    history_started = start_full_history_background_refresh(end_date=end_date_str, force=load_clicked)
+    if history_started:
+        history_status = get_woocommerce_full_history_status(end_date=end_date_str)
+    st.caption(history_status.get("status_message", ""))
 
     search_col1, search_col2 = st.columns([3, 1])
     with search_col1:
@@ -52,7 +81,7 @@ def render_customer_insight_tab():
         try:
             df_insights = generate_customer_insights(
                 start_date=start_date.strftime("%Y-%m-%d"),
-                end_date=end_date.strftime("%Y-%m-%d"),
+                end_date=end_date_str,
                 include_woocommerce=include_woo,
             )
             if df_insights.empty:
@@ -77,14 +106,30 @@ def render_customer_insight_tab():
         st.info("No customers found matching your filters.")
         return
 
-    m1, m2, m3, m4 = st.columns(4)
+    render_highlight_stat(
+        "Total Unique Customers",
+        f"{len(df):,}",
+        "This is the distinct customer count in the current result after search, segment filters, and customer identity normalization.",
+    )
+
+    current_first_col = "current_first_order" if "current_first_order" in df.columns else "first_order"
+    current_last_col = "current_last_order" if "current_last_order" in df.columns else "last_order"
+    loaded_start = pd.to_datetime(df.get(current_first_col), errors="coerce").min()
+    loaded_end = pd.to_datetime(df.get(current_last_col), errors="coerce").max()
+    render_loaded_date_context(
+        requested_start=start_date,
+        requested_end=end_date,
+        loaded_start=loaded_start,
+        loaded_end=loaded_end,
+        label="Loaded customer activity",
+    )
+
+    m1, m2, m3 = st.columns(3)
     with m1:
-        st.metric("Total Customers", f"{len(df):,}")
-    with m2:
         st.metric("Revenue", f"TK {df['total_revenue'].sum():,.0f}")
-    with m3:
+    with m2:
         st.metric("Avg Orders", f"{df['total_orders'].mean():.1f}")
-    with m4:
+    with m3:
         st.metric("Avg AOV", f"TK {df['avg_order_value'].mean():,.0f}")
 
     st.caption(f"Total Customers shows the distinct customer count in the current date range and active filters: {len(df):,}.")

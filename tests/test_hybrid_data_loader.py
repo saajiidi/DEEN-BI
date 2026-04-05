@@ -243,6 +243,35 @@ class TestHybridDataLoader(unittest.TestCase):
             mock_spawn.assert_called_once()
             self.assertTrue((cache_dir / "orders_refresh.lock").exists())
 
+    def test_start_full_history_background_refresh_spawns_worker_when_needed(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir)
+            with (
+                patch.object(hybrid_data_loader, "_cache_file", side_effect=lambda name: cache_dir / name),
+                patch.object(
+                    hybrid_data_loader,
+                    "get_woocommerce_credentials",
+                    return_value={
+                        "store_url": "https://example.com",
+                        "consumer_key": "ck_test",
+                        "consumer_secret": "cs_test",
+                    },
+                ),
+                patch.object(
+                    hybrid_data_loader,
+                    "get_woocommerce_full_history_status",
+                    return_value={"is_running": False, "needs_sync": True},
+                ),
+                patch.object(hybrid_data_loader, "_spawn_refresh_worker", return_value=True) as mock_spawn,
+            ):
+                started = hybrid_data_loader.start_full_history_background_refresh(
+                    end_date="2026-04-05",
+                )
+
+            self.assertTrue(started)
+            mock_spawn.assert_called_once()
+            self.assertTrue((cache_dir / "full_history_refresh.lock").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

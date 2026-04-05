@@ -1,13 +1,44 @@
+from datetime import date
+
 APP_TITLE = "Automation Pivot"
 APP_VERSION = "v2.5.0"
+APP_DATA_START_DATE = date(2022, 8, 1)
 
-PRIMARY_NAV = [
+PRIMARY_NAV = (
     "Business Intelligence",
     "Stream Monitor",
     "Customer Intelligence",
     "Commerce Hub",
     "System Health",
-]
+)
+
+PRIMARY_PAGE_CONFIG = (
+    {
+        "key": "business_intelligence",
+        "label": "Business Intelligence",
+        "description": "Executive KPIs, sales analysis, customer behavior, inventory, and forecasts.",
+    },
+    {
+        "key": "stream_monitor",
+        "label": "Stream Monitor",
+        "description": "Live stream sales view with rapid visibility into active performance.",
+    },
+    {
+        "key": "customer_intelligence",
+        "label": "Customer Intelligence",
+        "description": "Lifetime customer metrics, RFM segmentation, and retention context.",
+    },
+    {
+        "key": "commerce_hub",
+        "label": "Commerce Hub",
+        "description": "WooCommerce order sync, inventory fetch, and operational previews.",
+    },
+    {
+        "key": "system_health",
+        "label": "System Health",
+        "description": "Diagnostics, logs, and operational confidence checks.",
+    },
+)
 
 MORE_TOOLS = [
     "System Logs",
