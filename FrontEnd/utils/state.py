@@ -5,7 +5,9 @@ import pandas as pd
 import tempfile
 import logging
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+# Use unified data directory from root
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DATA_DIR = os.path.join(REPO_ROOT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 STATE_FILE = os.path.join(DATA_DIR, "session_state.json")
 

@@ -50,7 +50,13 @@ def load_partitioned_data(year: Optional[int] = None) -> pd.DataFrame:
             FROM read_parquet('{DATA_FOLDER}/**/*.parquet', hive_partitioning=1)
         """
 
-    df = con.execute(query).fetchdf()
+    try:
+        df = con.execute(query).fetchdf()
+    except Exception as e:
+        if "No files found" in str(e) or "does not exist" in str(e):
+            df = pd.DataFrame()
+        else:
+            raise e
     con.close()
     return df
 
@@ -85,7 +91,13 @@ def search_customers(query: str, year: Optional[int] = None) -> pd.DataFrame:
         ORDER BY total_spent DESC
     """
 
-    df = con.execute(sql).fetchdf()
+    try:
+        df = con.execute(sql).fetchdf()
+    except Exception as e:
+        if "No files found" in str(e) or "does not exist" in str(e):
+            df = pd.DataFrame()
+        else:
+            raise e
     con.close()
     return df
 
@@ -111,7 +123,13 @@ def get_data_completeness() -> pd.DataFrame:
         ORDER BY year
     """
 
-    df = con.execute(query).fetchdf()
+    try:
+        df = con.execute(query).fetchdf()
+    except Exception as e:
+        if "No files found" in str(e) or "does not exist" in str(e):
+            df = pd.DataFrame()
+        else:
+            raise e
     con.close()
     return df
 
@@ -142,7 +160,13 @@ def get_yearly_summary(year: int) -> dict:
         WHERE year = {year}
     """
 
-    df = con.execute(query).fetchdf()
+    try:
+        df = con.execute(query).fetchdf()
+    except Exception as e:
+        if "No files found" in str(e) or "does not exist" in str(e):
+            df = pd.DataFrame()
+        else:
+            raise e
     con.close()
 
     if df.empty:
