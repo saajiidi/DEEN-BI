@@ -102,6 +102,63 @@ def _build_dashboard_customer_insights(
         )
 
 
+def _render_dashboard_story(df_sales: pd.DataFrame, df_customers: pd.DataFrame, ml_bundle: dict):
+    """Translates raw data into a human-readable narrative story."""
+    if df_sales.empty:
+        return
+    
+    # Simple metrics
+    total_revenue = _sum_order_level_revenue(df_sales)
+    order_df = _build_order_level_dataset(df_sales)
+    total_orders = order_df["order_id"].nunique()
+    aov = total_revenue / total_orders if total_orders else 0
+    
+    # 7-day trend
+    sales_7d = df_sales[df_sales["order_date"] >= (pd.Timestamp.now() - pd.Timedelta(days=7))]
+    rev_7d = _sum_order_level_revenue(sales_7d)
+    
+    # Narrative creation
+    narrative = []
+    
+    # 1. Broad Trend
+    if rev_7d > 0:
+        avg_daily = rev_7d / 7
+        narrative.append(f"In the last 7 days, your store has generated <b>TK {rev_7d:,.0f}</b> in revenue, averaging <b>TK {avg_daily:,.0f}</b> per day.")
+    
+    # 2. Customer Activity
+    if not df_customers.empty and "segment" in df_customers.columns:
+        vips = len(df_customers[df_customers["segment"] == "VIP"])
+        if vips > 0:
+            narrative.append(f"Your <b>{vips} VIP customers</b> continue to represent the most stable growth lever in this window.")
+            
+    # 3. Forecast insights
+    forecast = ml_bundle.get("forecast", pd.DataFrame())
+    if not forecast.empty and "forecast_7d_revenue" in forecast.columns:
+        next_week_rev = forecast["forecast_7d_revenue"].sum()
+        narrative.append(f"The ML engine predicts a rolling 7-day revenue outlook of <b>TK {next_week_rev:,.0f}</b> based on current trajectories.")
+
+    # 4. Anomalies
+    anomalies = ml_bundle.get("anomalies", pd.DataFrame())
+    if not anomalies.empty:
+        spike_count = len(anomalies[anomalies["is_anomaly"]])
+        if spike_count > 0:
+            narrative.append(f"Detected <b>{spike_count} unexpected traffic/sales spikes</b> which should be cross-referenced with your marketing schedule.")
+
+    st.markdown(
+        f"""
+        <div class="bi-commentary">
+            <div class="bi-commentary-label">Operational Storytelling</div>
+            <div class="bi-audit-body">
+                {'<br><br>'.join(narrative)}
+            </div>
+            <div class="bi-kpi-note" style="margin-top:1.2rem; background:rgba(79, 70, 229, 0.05); border:1px dashed rgba(79, 70, 229, 0.2);">
+                💡 Tip: Revenue is counted using order-level totals to ensure 100% accuracy in multi-item checkouts.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 def _build_order_level_dataset(df: pd.DataFrame) -> pd.DataFrame:
     sales = ensure_sales_schema(df)
     if sales.empty:
@@ -493,6 +550,10 @@ def render_dashboard_tab():
         )
 
     st.caption("Core business pulse with the most important WooCommerce metrics only.")
+    
+    # New Storytelling Layer
+    _render_dashboard_story(df_sales, df_customers, ml_bundle)
+    
     render_executive_summary(df_sales, df_customers, summary)
     st.divider()
     render_business_intelligence(df_sales, df_customers)

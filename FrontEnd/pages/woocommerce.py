@@ -338,8 +338,22 @@ def _render_inventory_sync(wc_service: WooCommerceService):
 
 def render_woocommerce_tab():
     """Render the WooCommerce operations page."""
-    st.ui.page_header("Commerce Hub")
-    st.caption("Use this workspace to connect WooCommerce, fetch order data, review previews, and manage inventory sync in separate tabs.")
+    ui.page_header("Commerce Hub")
+    
+    st.markdown(
+        """
+        <div class="bi-commentary">
+            <div class="bi-commentary-label">Pipeline Intelligence</div>
+            <p class="bi-audit-body">
+                The Commerce Hub is the bridge between your live WooCommerce store and the BI engine. 
+                Data flows from the API into your <b>local cache</b>, which powers the high-speed dashboard.
+            </p>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+    
+    st.caption("Sync orders, monitor inventory levels, and manage data completeness from this operational command center.")
 
     credentials = get_woocommerce_credentials()
     if not credentials:
