@@ -11,12 +11,10 @@ from email.utils import parsedate_to_datetime
 from urllib.request import Request, urlopen
 from urllib.parse import parse_qs, urlparse
 from FrontEnd.components.ui_components import (
-    render_loaded_date_context,
-    render_section_card,
-    render_action_bar,
-    render_reset_confirm,
+    loaded_date_context,
+    section_card,
+    reset_confirm,
 )
-from FrontEnd.utils.config import APP_DATA_START_DATE
 
 
 def render_snapshot_button(marker_id="snapshot-target"):
@@ -898,7 +896,6 @@ def render_dashboard_output(drill, summ, top, timeframe, basket, source_name, la
 def render_manual_tab():
     """Sales Data Ingestion with date range selector and hybrid data loading."""
     from datetime import date
-    from pathlib import Path
 
     st.markdown("## Sales Data Ingestion")
     st.caption("Analyze historical + live 2026 data using hybrid loading system")
@@ -1036,7 +1033,7 @@ def render_live_tab():
         st.session_state.live_sync_time = None
         st.session_state.live_res = None
 
-    render_reset_confirm("Live Dashboard", "live", _reset_live_state)
+    reset_confirm("Live Dashboard", "live", _reset_live_state)
     """Always running dashboard from selected source."""
     tz_bd = timezone(timedelta(hours=6))
     current_t = datetime.now(tz_bd).strftime("%B %d, %Y %I:%M %p")
@@ -1063,7 +1060,7 @@ def render_live_tab():
         </a>
     </div>
     """
-    render_section_card("", welcome_msg)
+    section_card("", welcome_msg)
 
     source_mode = "Live Stream Sheet"
     st.caption("This page is locked to the dedicated Live Stream Google Sheet for consistency.")
@@ -1098,7 +1095,7 @@ def render_live_tab():
         }
 
         loaded_dates = pd.to_datetime(df_live[live_mapping["date"]], errors="coerce") if live_mapping.get("date") in df_live.columns else pd.Series(dtype="datetime64[ns]")
-        render_loaded_date_context(
+        loaded_date_context(
             requested_start=None,
             requested_end=None,
             loaded_start=loaded_dates.min() if not loaded_dates.empty and loaded_dates.notna().any() else None,

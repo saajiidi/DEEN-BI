@@ -1,8 +1,6 @@
 import pandas as pd
 import streamlit as st
 import duckdb
-import os
-from pathlib import Path
 from BackEnd.core.paths import DATA_DIR
 
 # Placeholder for the Live Google Sheet CSV URL

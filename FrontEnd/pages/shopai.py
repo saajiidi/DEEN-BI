@@ -16,13 +16,13 @@ except Exception:  # pragma: no cover - optional dependency at runtime
 
 from FrontEnd.components.ui_components import (
     apply_plotly_theme,
-    build_adaptive_donut,
-    build_spotlight_bar,
-    render_audit_card,
-    render_bi_hero,
-    render_commentary_panel,
-    render_highlight_stat,
-    render_kpi_note,
+    adaptive_donut,
+    spotlight_bar,
+    audit_card,
+    bi_hero,
+    commentary_panel,
+    highlight_stat,
+    kpi_note,
 )
 
 
@@ -289,11 +289,11 @@ def render_shopai_crm_snapshot(customers_df: pd.DataFrame | None = None):
     metric_cols[1].metric("Resolution Rate", f"{kpis['resolution_rate']:.0f}%")
     metric_cols[2].metric("Avg Response", f"{kpis['avg_response_minutes']:.1f} min")
     metric_cols[3].metric("Needs Attention", f"{kpis['needs_attention']:,}")
-    render_commentary_panel("CRM signals", crm["recommendations"][:3])
+    commentary_panel("CRM signals", crm["recommendations"][:3])
 
     chart_cols = st.columns(2)
     with chart_cols[0]:
-        status_chart = build_adaptive_donut(
+        status_chart = adaptive_donut(
             crm["status_mix"],
             values="Conversations",
             names="Status",
@@ -301,7 +301,7 @@ def render_shopai_crm_snapshot(customers_df: pd.DataFrame | None = None):
         )
         st.plotly_chart(status_chart, use_container_width=True)
     with chart_cols[1]:
-        platform_chart = build_spotlight_bar(
+        platform_chart = spotlight_bar(
             crm["platform_mix"].sort_values("Conversations"),
             x="Conversations",
             y="Platform",
@@ -324,7 +324,7 @@ def _render_conversation_detail(conversation: dict, crm_frame: pd.DataFrame):
     matched = crm_frame[crm_frame["conversation_id"] == conversation["id"]]
     if not matched.empty:
         row = matched.iloc[0]
-        render_audit_card(
+        audit_card(
             "Customer context",
             (
                 f"Segment: {row['segment']} | Lifetime revenue: {_format_currency(row['total_revenue'])} | "
@@ -412,7 +412,7 @@ def render_shopai_tab():
     crm_frame = crm["conversations"]
     kpis = crm["kpis"]
 
-    render_bi_hero(
+    bi_hero(
         "ShopAI CRM",
         (
             "Support operations are surfaced as CRM analytics: conversation load, linked customer value, resolution pressure, "
@@ -427,26 +427,26 @@ def render_shopai_tab():
     )
 
     linked_share = (kpis["linked_customers"] / max(kpis["conversations"], 1)) * 100
-    render_highlight_stat(
+    highlight_stat(
         "CRM pressure",
         f"{kpis['needs_attention']} conversations need action",
         f"{linked_share:.0f}% of the visible queue is matched to customer intelligence.",
     )
-    render_commentary_panel("CRM narrative", crm["recommendations"])
+    commentary_panel("CRM narrative", crm["recommendations"])
 
     metric_cols = st.columns(4)
     metric_cols[0].metric("Conversations", f"{kpis['conversations']:,}")
     metric_cols[1].metric("Resolution Rate", f"{kpis['resolution_rate']:.0f}%")
     metric_cols[2].metric("Avg Response", f"{kpis['avg_response_minutes']:.1f} min")
     metric_cols[3].metric("Linked Customers", f"{kpis['linked_customers']:,}")
-    render_kpi_note("Customer linking uses phone first, then normalized name matching against customer intelligence.")
+    kpi_note("Customer linking uses phone first, then normalized name matching against customer intelligence.")
 
     tabs = st.tabs(["CRM Command", "Queue", "Agent Lab", "Commerce Context"])
 
     with tabs[0]:
         top_left, top_right = st.columns(2)
         with top_left:
-            status_chart = build_adaptive_donut(
+            status_chart = adaptive_donut(
                 crm["status_mix"],
                 values="Conversations",
                 names="Status",
@@ -454,7 +454,7 @@ def render_shopai_tab():
             )
             st.plotly_chart(status_chart, use_container_width=True)
         with top_right:
-            platform_chart = build_spotlight_bar(
+            platform_chart = spotlight_bar(
                 crm["platform_mix"].sort_values("Conversations"),
                 x="Conversations",
                 y="Platform",
@@ -467,7 +467,7 @@ def render_shopai_tab():
 
         bottom_left, bottom_right = st.columns(2)
         with bottom_left:
-            segment_chart = build_adaptive_donut(
+            segment_chart = adaptive_donut(
                 crm["segment_mix"],
                 values="Conversations",
                 names="Segment",
@@ -476,7 +476,7 @@ def render_shopai_tab():
             )
             st.plotly_chart(segment_chart, use_container_width=True)
         with bottom_right:
-            tool_chart = build_spotlight_bar(
+            tool_chart = spotlight_bar(
                 crm["tool_usage"].sort_values("Calls"),
                 x="Calls",
                 y="Tool",
@@ -586,7 +586,7 @@ def render_shopai_tab():
                     """,
                     unsafe_allow_html=True,
                 )
-            render_audit_card(
+            audit_card(
                 "Why this matters",
                 "Keep ShopAI close to order and stock context so support can resolve tracking, refund, and conversion questions without jumping between tools.",
             )

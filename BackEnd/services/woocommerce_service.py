@@ -62,7 +62,7 @@ class WooCommerceService:
                 version="wc/v3",
                 timeout=120
             )
-        except Exception as e:
+        except Exception:
             if self.ui_enabled:
                 st.error("WooCommerce API initialization failed. Please verify the store URL and API keys.")
             self.wcapi = None

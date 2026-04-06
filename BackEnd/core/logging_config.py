@@ -9,8 +9,7 @@ import json
 import logging
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 from functools import wraps
 
 from BackEnd.core.paths import LOGS_DIR

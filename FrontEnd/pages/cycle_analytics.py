@@ -19,12 +19,12 @@ from BackEnd.services.hybrid_data_loader import (
 from BackEnd.services.woocommerce_service import get_woocommerce_credentials, get_woocommerce_store_label
 from BackEnd.utils.sales_schema import ensure_sales_schema
 from FrontEnd.components.ui_components import (
-    render_audit_card,
-    render_bi_hero,
-    render_commentary_panel,
-    render_highlight_stat,
-    render_kpi_note,
-    render_loaded_date_context,
+    audit_card,
+    bi_hero,
+    commentary_panel,
+    highlight_stat,
+    kpi_note,
+    loaded_date_context,
 )
 
 BUSINESS_CUTOFF_HOUR = 17
@@ -442,7 +442,7 @@ def _render_metric_block(title: str, current_metrics: dict[str, float], previous
         st.metric("Revenue", _format_currency(current_metrics["revenue"]), _format_delta(current_metrics["revenue"], previous_metrics["revenue"], currency=True))
     with m4:
         st.metric("AOV", _format_currency(current_metrics["basket_value"]), _format_delta(current_metrics["basket_value"], previous_metrics["basket_value"], currency=True))
-    render_kpi_note(note)
+    kpi_note(note)
 
 
 def render_cycle_analytics_tab():
@@ -452,7 +452,7 @@ def render_cycle_analytics_tab():
     has_credentials = bool(credentials)
     store_label = get_woocommerce_store_label()
 
-    render_bi_hero(
+    bi_hero(
         "Business Cycles",
         (
             f"Track the latest closed operating cycles for {store_label}. "
@@ -529,7 +529,7 @@ def render_cycle_analytics_tab():
         st.warning("Cycle analytics could not build an order-level view from the loaded sales data.")
         return
 
-    render_loaded_date_context(
+    loaded_date_context(
         requested_start=history_start,
         requested_end=history_end,
         loaded_start=sales_df["order_date"],
@@ -548,7 +548,7 @@ def render_cycle_analytics_tab():
     trend_df = _build_cycle_trend_frame(orders, windows)
 
     headline_value, headline_help = _headline_text(current_new, current_shipped)
-    render_highlight_stat("Operational balance", headline_value, headline_help)
+    highlight_stat("Operational balance", headline_value, headline_help)
 
     story_bullets = _build_story_bullets(
         current_new,
@@ -558,11 +558,11 @@ def render_cycle_analytics_tab():
         top_new_items,
         top_shipped_cities,
     )
-    render_commentary_panel("Cycle story", story_bullets)
+    commentary_panel("Cycle story", story_bullets)
 
     shipped_orders_mask = orders["status_bucket"].eq("shipped")
     shipped_missing_anchor = int(shipped_orders_mask.sum() - orders.loc[shipped_orders_mask, "shipped_date"].notna().sum())
-    render_audit_card(
+    audit_card(
         "Metric logic",
         (
             "New-order metrics use order creation time. Shipped metrics use shipped timestamps and fall back to order creation time "

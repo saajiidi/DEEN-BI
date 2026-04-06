@@ -3,7 +3,7 @@ import pandas as pd
 from BackEnd.services.hybrid_data_loader import load_hybrid_data
 from BackEnd.engine.ai_query import query_app_data, generic_chat
 
-def render_floating_ai_chat():
+def floating_ai_chat():
     """Renders a floating-style AI chat box at the bottom of the page."""
     
     # 1. CSS for the floating button and chat container

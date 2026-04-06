@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
-from FrontEnd.components.ui_components import render_section_card
+from FrontEnd.components.ui_components import section_card
 from BackEnd.services.hybrid_data_loader import load_hybrid_data
 from BackEnd.engine.ai_query import query_app_data, generic_chat
 
 
 def render_ai_assistant_tab():
     """Renders the AI Assistant tab for interacting with the database."""
-    render_section_card(
+    section_card(
         "🤖 DEEN Commerce BI AI",
         "Ask natural language questions about your database and application data",
     )

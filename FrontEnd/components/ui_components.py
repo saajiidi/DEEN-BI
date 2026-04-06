@@ -456,7 +456,7 @@ def inject_base_styles():
     )
 
 
-def render_sidebar_branding():
+def sidebar_branding():
     """Elegant sidebar branding to save main screen space."""
     logo_src = "https://logo.clearbit.com/deencommerce.com"
     try:
@@ -498,7 +498,7 @@ def render_sidebar_branding():
     )
 
 
-def render_header():
+def header():
     """Minimal header for the main page content area."""
     st.markdown(
         f"""
@@ -513,7 +513,7 @@ def render_header():
     )
 
 
-def render_section_card(title: str, help_text: str = ""):
+def section_card(title: str, help_text: str = ""):
     """Render a section card with title and optional help text."""
     st.markdown(
         f"""
@@ -526,7 +526,7 @@ def render_section_card(title: str, help_text: str = ""):
     )
 
 
-def render_bi_hero(title: str, subtitle: str, chips: list[str] | None = None):
+def bi_hero(title: str, subtitle: str, chips: list[str] | None = None):
     chips_html = ""
     if chips:
         chips_html = '<div class="bi-chip-row">' + "".join(
@@ -544,7 +544,7 @@ def render_bi_hero(title: str, subtitle: str, chips: list[str] | None = None):
     )
 
 
-def render_commentary_panel(title: str, bullet_points: list[str]):
+def commentary_panel(title: str, bullet_points: list[str]):
     if not bullet_points:
         return
     items = "".join(f"<li>{point}</li>" for point in bullet_points if point)
@@ -559,13 +559,13 @@ def render_commentary_panel(title: str, bullet_points: list[str]):
     )
 
 
-def render_kpi_note(note: str):
+def kpi_note(note: str):
     if not note:
         return
     st.markdown(f'<div class="bi-kpi-note">{note}</div>', unsafe_allow_html=True)
 
 
-def render_audit_card(title: str, body: str):
+def audit_card(title: str, body: str):
     if not title or not body:
         return
     st.markdown(
@@ -579,7 +579,7 @@ def render_audit_card(title: str, body: str):
     )
 
 
-def render_highlight_stat(label: str, value: str, help_text: str = ""):
+def highlight_stat(label: str, value: str, help_text: str = ""):
     if not label or value is None:
         return
     help_block = f'<div class="bi-highlight-help">{help_text}</div>' if help_text else ""
@@ -634,7 +634,7 @@ def apply_plotly_theme(
     return fig
 
 
-def build_adaptive_donut(
+def adaptive_donut(
     df: pd.DataFrame,
     *,
     values: str,
@@ -688,7 +688,7 @@ def build_adaptive_donut(
     return apply_plotly_theme(fig, height=380, margin=dict(l=80, r=160, t=44, b=24))
 
 
-def build_spotlight_bar(
+def spotlight_bar(
     df: pd.DataFrame,
     *,
     x: str,
@@ -733,7 +733,7 @@ def _safe_datetime_series(value) -> pd.Series:
     return pd.Series([converted])
 
 
-def render_loaded_date_context(
+def loaded_date_context(
     requested_start=None,
     requested_end=None,
     loaded_start=None,
@@ -760,7 +760,7 @@ def render_loaded_date_context(
         st.caption(f"{prefix} | {label}: dates are not available in the current result.")
 
 
-def render_footer():
+def footer():
     """Renders a robust and persistent branding footer."""
     logo_src = "https://logo.clearbit.com/deencommerce.com"
     try:
@@ -791,7 +791,7 @@ def render_footer():
     )
 
 
-def render_file_summary(uploaded_file, df: pd.DataFrame | None, required_columns: list[str]):
+def file_summary(uploaded_file, df: pd.DataFrame | None, required_columns: list[str]):
     if not uploaded_file:
         st.info("No file uploaded yet.")
         return False
@@ -814,7 +814,7 @@ def render_file_summary(uploaded_file, df: pd.DataFrame | None, required_columns
     return True
 
 
-def render_action_bar(
+def action_bar(
     primary_label: str,
     primary_key: str,
     secondary_label: str | None = None,
@@ -839,7 +839,7 @@ def render_action_bar(
     return primary_clicked, secondary_clicked
 
 
-def render_reset_confirm(label: str, state_key: str, reset_fn):
+def reset_confirm(label: str, state_key: str, reset_fn):
     """
     Registers a tool's reset function for the unified sidebar.
     Doesn't render anything in the sidebar immediately to avoid duplicates.

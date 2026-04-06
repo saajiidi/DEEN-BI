@@ -6,7 +6,6 @@ from datetime import date, timedelta
 
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
 from BackEnd.services.customer_insights import generate_customer_insights_from_sales
@@ -26,16 +25,14 @@ from BackEnd.services.ml_insights import build_ml_insight_bundle, detect_sales_a
 from BackEnd.utils.sales_schema import ensure_sales_schema
 from FrontEnd.components.ui_components import (
     apply_plotly_theme,
-    build_adaptive_donut,
-    build_spotlight_bar,
-    render_audit_card,
-    render_bi_hero,
-    render_commentary_panel,
-    render_loaded_date_context,
-    render_kpi_note,
-    render_section_card,
+    adaptive_donut,
+    spotlight_bar,
+    audit_card,
+    bi_hero,
+    commentary_panel,
+    loaded_date_context,
+    kpi_note,
 )
-from FrontEnd.utils.config import APP_DATA_START_DATE
 from FrontEnd.utils.error_handler import log_error
 
 
@@ -236,7 +233,7 @@ def render_dashboard_tab():
     </style>
     """, unsafe_allow_html=True)
 
-    render_bi_hero(
+    bi_hero(
         "DEEN Commerce BI",
         "A focused BI operating view for revenue, demand, customer health, and geographic performance. The dashboard now opens on the latest 30 days of WooCommerce data so the default experience stays fast and practical.",
         chips=[
@@ -474,7 +471,7 @@ def render_dashboard_tab():
     st.caption(data.get("stock_cache_hint", ""))
     st.caption(data.get("full_history_hint", ""))
     loaded_dates = pd.to_datetime(df_sales.get("order_date"), errors="coerce")
-    render_loaded_date_context(
+    loaded_date_context(
         requested_start=start_date,
         requested_end=end_date,
         loaded_start=loaded_dates.min() if loaded_dates is not None and not loaded_dates.empty and loaded_dates.notna().any() else None,
@@ -949,21 +946,21 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame):
     ]
     if "_imported_at" in inventory.columns and inventory["_imported_at"].notna().any():
         notes.append(f"Latest stock sync in this session: {inventory['_imported_at'].dropna().max()}.")
-    render_commentary_panel("Inventory Commentary", notes)
+    commentary_panel("Inventory Commentary", notes)
 
     m1, m2, m3, m4 = st.columns(4)
     with m1:
         st.metric("Products", f"{len(inventory):,}")
-        render_kpi_note("Counting mode: WooCommerce product rows")
+        kpi_note("Counting mode: WooCommerce product rows")
     with m2:
         st.metric("Low Stock", f"{len(low_stock_df):,}")
-        render_kpi_note("Counting mode: stock quantity <= 5")
+        kpi_note("Counting mode: stock quantity <= 5")
     with m3:
         st.metric("Out of Stock", f"{len(out_of_stock_df):,}")
-        render_kpi_note("Counting mode: stock_status = outofstock")
+        kpi_note("Counting mode: stock_status = outofstock")
     with m4:
         st.metric("Inventory Value", f"TK {inventory['Inventory Value'].sum():,.0f}")
-        render_kpi_note("Counting mode: stock quantity x price")
+        kpi_note("Counting mode: stock quantity x price")
 
     c1, c2 = st.columns([1.2, 1])
     with c1:
@@ -1053,36 +1050,36 @@ def render_executive_summary(df_sales: pd.DataFrame, df_customers: pd.DataFrame,
     k1, k2, k3, k4, k5 = st.columns(5)
     with k1:
         st.metric("Revenue", f"TK {total_revenue:,.0f}")
-        render_kpi_note("Counting mode: one order_total per distinct order_id")
+        kpi_note("Counting mode: one order_total per distinct order_id")
     with k2:
         st.metric("Orders", f"{total_orders:,}")
-        render_kpi_note("Counting mode: distinct normalized order_id")
+        kpi_note("Counting mode: distinct normalized order_id")
     with k3:
         overall_aov = total_revenue / total_orders if total_orders else 0
         st.metric("AOV", f"TK {overall_aov:,.0f}")
-        render_kpi_note("Counting mode: order-level revenue / distinct orders")
+        kpi_note("Counting mode: order-level revenue / distinct orders")
     with k4:
         st.metric("Customers", f"{active_customers:,}")
-        render_kpi_note("Counting mode: distinct customer_key")
+        kpi_note("Counting mode: distinct customer_key")
     with k5:
         st.metric("Pending", f"{pending_count:,}", "Needs action" if pending_count > 5 else "Healthy")
-        render_kpi_note("Counting mode: pending, processing, on-hold")
+        kpi_note("Counting mode: pending, processing, on-hold")
 
     s1, s2, s3 = st.columns(3)
     with s1:
         st.metric("Items Sold", f"{total_items:,.0f}")
-        render_kpi_note("Counting mode: summed qty from visible rows")
+        kpi_note("Counting mode: summed qty from visible rows")
         st.caption(f"WooCommerce rows in cache: {summary.get('woocommerce_live', 0):,} | Inventory rows: {summary.get('stock_rows', 0):,}")
     with s2:
         repeat_rate = 0.0
         if isinstance(df_customers, pd.DataFrame) and not df_customers.empty and "total_orders" in df_customers.columns:
             repeat_rate = float((df_customers["total_orders"] > 1).mean() * 100)
         st.metric("Repeat Rate", f"{repeat_rate:.1f}%")
-        render_kpi_note("Counting mode: customers with total_orders > 1")
+        kpi_note("Counting mode: customers with total_orders > 1")
     with s3:
         latest_date = df["order_date"].max()
         st.metric("Latest Order", latest_date.strftime("%Y-%m-%d %H:%M") if pd.notna(latest_date) else "N/A")
-        render_kpi_note("Counting mode: max order_date in filter")
+        kpi_note("Counting mode: max order_date in filter")
 
     insights = []
     if pending_count > 10:
@@ -1099,7 +1096,7 @@ def render_executive_summary(df_sales: pd.DataFrame, df_customers: pd.DataFrame,
             insights.append(f"{vip_count} customers are in the VIP segment. Protect them with priority support, early launches, and higher-touch campaigns.")
     if not insights:
         insights.append("The core metrics look stable. The biggest next upside will likely come from retention programs and inventory planning.")
-    render_commentary_panel("Intelligence Commentary", insights)
+    commentary_panel("Intelligence Commentary", insights)
     render_data_trust_panel(df_sales)
 
 
@@ -1172,16 +1169,16 @@ def render_data_audit(
         intro.append(
             f"The actual timestamps present in the loaded data run from {min_ts.strftime('%Y-%m-%d %H:%M')} to {max_ts.strftime('%Y-%m-%d %H:%M')}."
         )
-    render_commentary_panel("Audit Guidance", intro)
+    commentary_panel("Audit Guidance", intro)
 
     a1, a2 = st.columns(2)
     with a1:
-        render_audit_card(
+        audit_card(
             "How Order Counting Works",
             "Orders are counted using distinct normalized order_id values. If one checkout contains multiple products, it appears as multiple line items but one order.",
         )
     with a2:
-        render_audit_card(
+        audit_card(
             "How Revenue Counting Works",
             "Revenue is counted once per distinct order_id using order-level totals, so multi-item orders do not multiply revenue in KPI cards and BI comparisons.",
         )
@@ -1189,19 +1186,19 @@ def render_data_audit(
     metrics = st.columns(5)
     with metrics[0]:
         st.metric("Line Items", f"{line_items:,}")
-        render_kpi_note("Every visible row after normalization")
+        kpi_note("Every visible row after normalization")
     with metrics[1]:
         st.metric("Unique Orders", f"{unique_orders:,}")
-        render_kpi_note("Distinct order_id values")
+        kpi_note("Distinct order_id values")
     with metrics[2]:
         st.metric("Unique Customers", f"{unique_customers:,}")
-        render_kpi_note("Distinct customer_key values")
+        kpi_note("Distinct customer_key values")
     with metrics[3]:
         st.metric("Date Coverage", f"{per_day['order_day'].nunique():,}")
-        render_kpi_note("Distinct days with at least one row")
+        kpi_note("Distinct days with at least one row")
     with metrics[4]:
         st.metric("Sources", f"{audit_df['source'].replace('', pd.NA).dropna().nunique():,}")
-        render_kpi_note("Distinct active source labels")
+        kpi_note("Distinct active source labels")
 
     st.markdown("#### Validation Tables")
     c1, c2 = st.columns([1, 1.25])
@@ -1298,7 +1295,7 @@ def render_sales_trends(df: pd.DataFrame):
             commentary.append(
                 f"Recent run-rate is about TK {recent_avg:,.0f} per day based on the latest visible period."
             )
-    render_commentary_panel("Trend Commentary", commentary)
+    commentary_panel("Trend Commentary", commentary)
 
     c1, c2 = st.columns(2)
     day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -1352,11 +1349,11 @@ def render_product_performance(df: pd.DataFrame):
         product_notes.append(
             f"The top 10 products contribute {concentration * 100:.1f}% of visible estimated item revenue, which helps show catalog concentration risk."
         )
-    render_commentary_panel("Merchandising Commentary", product_notes)
+    commentary_panel("Merchandising Commentary", product_notes)
 
     c1, c2 = st.columns(2)
     with c1:
-        fig_top = build_spotlight_bar(
+        fig_top = spotlight_bar(
             top_products.sort_values("Revenue"),
             x="Revenue",
             y="item_name",
@@ -1367,7 +1364,7 @@ def render_product_performance(df: pd.DataFrame):
         )
         st.plotly_chart(fig_top, use_container_width=True)
     with c2:
-        fig_units = build_spotlight_bar(
+        fig_units = spotlight_bar(
             top_products.sort_values("Units"),
             x="Units",
             y="item_name",
@@ -1413,7 +1410,7 @@ def render_customer_behavior(
         customer_notes.append(
             f"{churned} customers are flagged as churned, which makes retention automation a high-value next feature."
         )
-    render_commentary_panel("Retention Commentary", customer_notes)
+    commentary_panel("Retention Commentary", customer_notes)
 
     c1, c2 = st.columns(2)
     with c1:
@@ -1423,7 +1420,7 @@ def render_customer_behavior(
                 "Customers": [new_customers, returning_customers],
             }
         )
-        fig_donut = build_adaptive_donut(
+        fig_donut = adaptive_donut(
             donut_df,
             values="Customers",
             names="Customer Type",
@@ -1434,7 +1431,7 @@ def render_customer_behavior(
     with c2:
         segment_counts = df_customers["segment"].value_counts().reset_index()
         segment_counts.columns = ["Segment", "Count"]
-        fig_segments = build_spotlight_bar(
+        fig_segments = spotlight_bar(
             segment_counts.sort_values("Count"),
             x="Count",
             y="Segment",
@@ -1481,10 +1478,10 @@ def render_geographic_insights(df: pd.DataFrame):
         geo_notes.append(
             "Use this view to prioritize delivery reliability, ad targeting, and stock placement by region."
         )
-    render_commentary_panel("Regional Commentary", geo_notes)
+    commentary_panel("Regional Commentary", geo_notes)
     c1, c2 = st.columns(2)
     with c1:
-        fig_geo = build_spotlight_bar(
+        fig_geo = spotlight_bar(
             geo_sales.sort_values("Revenue"),
             x="Revenue",
             y="region",
@@ -1495,7 +1492,7 @@ def render_geographic_insights(df: pd.DataFrame):
         )
         st.plotly_chart(fig_geo, use_container_width=True)
     with c2:
-        fig_orders = build_spotlight_bar(
+        fig_orders = spotlight_bar(
             geo_sales.sort_values("Orders"),
             x="Orders",
             y="region",
@@ -1530,7 +1527,7 @@ def render_forecast_and_alerts(ml_bundle: dict[str, pd.DataFrame]):
         )
     if not overview_notes:
         overview_notes.append("No predictive signals are available yet. More clean sales history will improve forecast and risk quality.")
-    render_commentary_panel("Predictive Commentary", overview_notes)
+    commentary_panel("Predictive Commentary", overview_notes)
 
     top_row = st.columns(3)
     with top_row[0]:
@@ -1628,7 +1625,7 @@ def render_data_trust_panel(df_sales: pd.DataFrame):
     total_revenue = float(pd.to_numeric(order_df.get("order_total", 0), errors="coerce").fillna(0).sum()) if not order_df.empty else 0.0
 
     trust_notes = [
-        f"Unique orders are counted using distinct `order_id` values after source normalization and deduplication.",
+        "Unique orders are counted using distinct `order_id` values after source normalization and deduplication.",
         f"Revenue is counted once per order using order-level totals: TK {total_revenue:,.0f} in the current filter.",
         f"Visible line items in the current filter: {line_items:,}.",
         f"Visible unique orders in the current filter: {unique_orders:,}.",
@@ -1641,20 +1638,20 @@ def render_data_trust_panel(df_sales: pd.DataFrame):
         trust_notes.append(f"Active sources in this view: {', '.join(active_sources)}.")
 
     with st.expander("Data Trust Panel", expanded=False):
-        render_commentary_panel("How This Dashboard Counts Data", trust_notes)
+        commentary_panel("How This Dashboard Counts Data", trust_notes)
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             st.metric("Line Items", f"{line_items:,}")
-            render_kpi_note("Visible normalized rows")
+            kpi_note("Visible normalized rows")
         with c2:
             st.metric("Unique Orders", f"{unique_orders:,}")
-            render_kpi_note("Distinct order_id")
+            kpi_note("Distinct order_id")
         with c3:
             st.metric("Unique Customers", f"{unique_customers:,}")
-            render_kpi_note("Distinct customer_key")
+            kpi_note("Distinct customer_key")
         with c4:
             st.metric("Sources", f"{len(active_sources):,}")
-            render_kpi_note("Active source labels")
+            kpi_note("Active source labels")
 
         preview_cols = [col for col in ["order_date", "order_id", "item_name", "qty", "order_total", "source"] if col in df.columns]
         st.caption("Sample rows from the exact filtered dataset used in the KPIs above.")

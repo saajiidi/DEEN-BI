@@ -9,7 +9,7 @@ from BackEnd.core.gsheet_archive import (
     is_archive_auto_enabled,
     sync_live_sales_archive,
 )
-from BackEnd.core.sync import LIVE_SALES_TAB_NAME, load_direct_tsv_sheet
+from BackEnd.core.sync import load_direct_tsv_sheet
 from BackEnd.data.normalized_sales import compute_sales_analytics, normalize_sales_dataframe
 
 LIVE_STREAM_REFRESH_SECONDS = 60

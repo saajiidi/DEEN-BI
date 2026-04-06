@@ -3,7 +3,7 @@ import base64
 import streamlit as st
 
 
-def render_bike_animation():
+def bike_animation():
     """
     Renders a full-screen right-to-left overlay animation of a delivery bike.
     This is extracted to a separate file to ensure it can be maintained easily.

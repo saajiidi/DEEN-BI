@@ -40,10 +40,10 @@ def _clear_error_logs():
 
 
 def _render_workspace_sidebar():
-    from FrontEnd.components import render_sidebar_branding
+    from FrontEnd.components import sidebar_branding
 
     with st.sidebar:
-        render_sidebar_branding()
+        sidebar_branding()
 
         st.caption("Move between BI, customer intelligence, business cycles, and ShopAI CRM from the primary navigation.")
 
@@ -113,14 +113,14 @@ def _render_primary_navigation():
 
 
 def run_app():
-    from FrontEnd.components import inject_base_styles, render_footer, render_header
+    from FrontEnd.components import inject_base_styles, footer, header
 
     init_state()
     inject_base_styles()
     _render_workspace_sidebar()
-    render_header()
+    header()
     _render_primary_navigation()
-    render_footer()
+    footer()
 
 
 try:

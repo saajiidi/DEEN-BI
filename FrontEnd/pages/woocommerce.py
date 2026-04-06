@@ -9,8 +9,7 @@ from BackEnd.services.woocommerce_service import (
     get_woocommerce_credentials,
     get_woocommerce_store_label,
 )
-from FrontEnd.components.ui_components import render_loaded_date_context
-from FrontEnd.utils.config import APP_DATA_START_DATE
+from FrontEnd.components.ui_components import loaded_date_context
 
 
 def _resolve_preview_columns(df: pd.DataFrame) -> list[str]:
@@ -243,7 +242,7 @@ def _render_order_sync(wc_service: WooCommerceService):
     preview_cols = _resolve_preview_columns(df)
     loaded_order_dates = pd.to_datetime(df.get("Order Date"), errors="coerce")
     has_loaded_order_dates = isinstance(loaded_order_dates, pd.Series) and not loaded_order_dates.empty and loaded_order_dates.notna().any()
-    render_loaded_date_context(
+    loaded_date_context(
         requested_start=start_date,
         requested_end=end_date,
         loaded_start=loaded_order_dates.min() if has_loaded_order_dates else None,
@@ -283,7 +282,7 @@ def _render_inventory_sync(wc_service: WooCommerceService):
     df_full["Inventory Value"] = df_full["Stock Quantity"] * df_full["Price"]
     imported_at = pd.to_datetime(df_full.get("_imported_at"), errors="coerce")
     has_imported_at = isinstance(imported_at, pd.Series) and not imported_at.empty and imported_at.notna().any()
-    render_loaded_date_context(
+    loaded_date_context(
         requested_start=None,
         requested_end=datetime.now(),
         loaded_start=imported_at.min() if has_imported_at else None,

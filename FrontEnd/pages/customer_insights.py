@@ -16,14 +16,14 @@ from BackEnd.services.hybrid_data_loader import (
 )
 from FrontEnd.components.ui_components import (
     apply_plotly_theme,
-    build_adaptive_donut,
-    build_spotlight_bar,
-    render_audit_card,
-    render_bi_hero,
-    render_commentary_panel,
-    render_highlight_stat,
-    render_kpi_note,
-    render_loaded_date_context,
+    adaptive_donut,
+    spotlight_bar,
+    audit_card,
+    bi_hero,
+    commentary_panel,
+    highlight_stat,
+    kpi_note,
+    loaded_date_context,
     to_excel_bytes,
 )
 from FrontEnd.utils.error_handler import log_error
@@ -90,7 +90,7 @@ def _crm_priority_queue(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def render_customer_insight_tab():
-    render_bi_hero(
+    bi_hero(
         "Customer Intelligence",
         (
             "A CRM-led view of the customer base: who buys, who is slipping, which segments create value, "
@@ -123,7 +123,7 @@ def render_customer_insight_tab():
     if history_started:
         history_status = get_woocommerce_full_history_status(end_date=end_date_str)
 
-    render_audit_card(
+    audit_card(
         "History readiness",
         history_status.get(
             "status_message",
@@ -172,7 +172,7 @@ def render_customer_insight_tab():
 
     current_first_col = "current_first_order" if "current_first_order" in df.columns else "first_order"
     current_last_col = "current_last_order" if "current_last_order" in df.columns else "last_order"
-    render_loaded_date_context(
+    loaded_date_context(
         requested_start=start_date,
         requested_end=end_date,
         loaded_start=pd.to_datetime(df.get(current_first_col), errors="coerce"),
@@ -186,7 +186,7 @@ def render_customer_insight_tab():
     churned_count = int((df["segment"] == "Churned").sum()) if "segment" in df.columns else 0
     repeat_share = ((df["total_orders"] > 1).sum() / max(total_customers, 1)) * 100
 
-    render_highlight_stat(
+    highlight_stat(
         "Customer story",
         f"{total_customers:,} customers in view",
         f"{repeat_share:.0f}% of the visible base has purchased more than once.",
@@ -200,14 +200,14 @@ def render_customer_insight_tab():
     if "favorite_product" in df.columns and df["favorite_product"].astype(str).str.strip().ne("").any():
         favorite = df["favorite_product"].astype(str).value_counts().idxmax()
         story_points.append(f"The most common favorite product in this cohort is {favorite}.")
-    render_commentary_panel("Customer narrative", story_points)
+    commentary_panel("Customer narrative", story_points)
 
     metric_cols = st.columns(4)
     metric_cols[0].metric("Revenue", _format_currency(float(df["total_revenue"].sum())))
     metric_cols[1].metric("Avg Orders", f"{df['total_orders'].mean():.1f}")
     metric_cols[2].metric("Avg AOV", _format_currency(float(df["avg_order_value"].mean())))
     metric_cols[3].metric("Avg Recency", f"{pd.to_numeric(df['recency_days'], errors='coerce').mean():.0f} days")
-    render_kpi_note("Metrics respect the current search and segment filters.")
+    kpi_note("Metrics respect the current search and segment filters.")
 
     tabs = st.tabs(["Customer Story", "Segments", "CRM + ShopAI", "Customer Ledger"])
 
@@ -216,7 +216,7 @@ def render_customer_insight_tab():
         segment_revenue = _segment_revenue(df)
         left_col, right_col = st.columns(2)
         with left_col:
-            segment_chart = build_adaptive_donut(
+            segment_chart = adaptive_donut(
                 segment_mix,
                 values="Customers",
                 names="Segment",
@@ -225,7 +225,7 @@ def render_customer_insight_tab():
             )
             st.plotly_chart(segment_chart, use_container_width=True)
         with right_col:
-            revenue_chart = build_spotlight_bar(
+            revenue_chart = spotlight_bar(
                 segment_revenue.sort_values("Revenue"),
                 x="Revenue",
                 y="Segment",
@@ -261,7 +261,7 @@ def render_customer_insight_tab():
                 st.info("Segment summary is not available yet.")
         with seg_right:
             if not favorite_products.empty:
-                favorite_chart = build_spotlight_bar(
+                favorite_chart = spotlight_bar(
                     favorite_products.sort_values("Customers"),
                     x="Customers",
                     y="Product",
@@ -284,7 +284,7 @@ def render_customer_insight_tab():
 
     with tabs[2]:
         priority_queue = _crm_priority_queue(df)
-        render_audit_card(
+        audit_card(
             "CRM action model",
             "Priority is based on segment risk, lifetime revenue, and recency so support and retention teams can work from the same queue.",
         )

@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from io import BytesIO
-from datetime import datetime, timedelta
 import plotly.graph_objects as go
-from BackEnd.core.categories import get_category_for_sales, get_category_for_orders
+from BackEnd.core.categories import get_category_for_sales
 from BackEnd.utils.data import find_columns as auto_find_columns
 from BackEnd.services.hybrid_data_loader import load_hybrid_data
 
