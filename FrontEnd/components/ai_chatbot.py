@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from BackEnd.services.hybrid_data_loader import load_hybrid_data
-from BackEnd.engine.ai_query import query_app_data, generic_chat
+from BackEnd.ai_engine.ai_query import query_app_data, generic_chat
 
 def floating_chat():
     """Renders a floating-style AI chat box at the bottom of the page."""

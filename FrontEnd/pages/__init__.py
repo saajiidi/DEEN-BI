@@ -11,6 +11,8 @@ from .system_health import render_system_health_tab
 from .woocommerce import render_woocommerce_tab
 from .cycle_analytics import render_cycle_analytics_tab
 from .shopai import render_shopai_tab
+from .orders_analytics import render_orders_analytics_tab
+from .operations_hub import render_operations_hub_tab
 from FrontEnd.utils.config import PRIMARY_PAGE_CONFIG
 
 
@@ -28,6 +30,8 @@ _PAGE_RENDERERS = {
     "commerce_hub": render_woocommerce_tab,
     "business_cycles": render_cycle_analytics_tab,
     "shop_ai_crm": render_shopai_tab,
+    "orders_analytics": render_orders_analytics_tab,
+    "operations_hub": render_operations_hub_tab,
     "system_health": render_system_health_tab,
 }
 
@@ -52,5 +56,7 @@ __all__ = [
     "render_woocommerce_tab",
     "render_cycle_analytics_tab",
     "render_shopai_tab",
+    "render_orders_analytics_tab",
+    "render_operations_hub_tab",
     "render_system_health_tab",
 ]

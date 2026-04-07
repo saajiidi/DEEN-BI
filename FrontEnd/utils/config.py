@@ -10,6 +10,8 @@ PRIMARY_NAV = (
     "Commerce Hub",
     "Business Cycles",
     "CRM Analytics",
+    "Orders Analytics",
+    "Operations Hub",
     "System Health",
 )
 
@@ -39,6 +41,16 @@ PRIMARY_PAGE_CONFIG = (
         "key": "shop_ai_crm",
         "label": "CRM Analytics",
         "description": "CRM analytics for support conversations, customer routing, and agent workflow testing.",
+    },
+    {
+        "key": "orders_analytics",
+        "label": "Orders Analytics",
+        "description": "Deep-dive sales analytics with 7-cluster filtering and trend insights.",
+    },
+    {
+        "key": "operations_hub",
+        "label": "Operations Hub",
+        "description": "Logistics, bulk processing, inventory distribution, and WhatsApp messaging.",
     },
     {
         "key": "system_health",

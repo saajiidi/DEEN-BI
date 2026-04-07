@@ -25,14 +25,14 @@ def card(title: str, help_text: str = ""):
 def hero(title: str, subtitle: str, chips: list[str] | None = None):
     chips_html = ""
     if chips:
-        chips_html = '<div class="bi-chip-row">' + "".join(
-            f'<span class="bi-chip">{chip}</span>' for chip in chips if chip
+        chips_html = '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;">' + "".join(
+            f'<span style="background:var(--background); border:1px solid var(--border); border-radius:100px; padding:4px 12px; font-size:12px; color:var(--text-muted);">{chip}</span>' for chip in chips if chip
         ) + "</div>"
     st.markdown(
         f"""
-        <div class="bi-hero">
-          <div class="bi-hero-title">{title}</div>
-          <div class="bi-hero-subtitle">{subtitle}</div>
+        <div class="bi-hero" style="background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:24px; margin-bottom:24px;">
+          <div style="font-size:1.75rem; font-weight:700; color:var(--text-strong); letter-spacing:-0.01em;">{title}</div>
+          <div style="color:var(--text-muted); font-size:1rem; margin-top:4px;">{subtitle}</div>
           {chips_html}
         </div>
         """,

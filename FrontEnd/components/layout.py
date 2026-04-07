@@ -10,144 +10,140 @@ def setup_theme():
     st.markdown(
         """
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         
         :root {
-            --primary: #4f46e5;      /* Indigo */
-            --primary-strong: #3730a3;
-            --accent: #0ea5e9;       /* Light Blue */
-            --gradient-1: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
-            --surface: #f8fafc;
-            --surface-raised: rgba(255, 255, 255, 0.75);
-            --surface-soft: rgba(255, 255, 255, 0.45);
-            --text-strong: #0f172a;
-            --text-muted: #64748b;
-            --border-soft: rgba(226, 232, 240, 0.6);
-            --action-surface: rgba(255, 255, 255, 0.85);
-            --card-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
-            --card-shadow-hover: 0 30px 60px rgba(15, 23, 42, 0.12);
-            --card-shadow-soft: 0 10px 25px rgba(15, 23, 42, 0.04);
-            --glass-blur: blur(16px);
+            --primary: #4f46e5;
+            --background: #f9fafb;
+            --surface: #ffffff;
+            --text-strong: #111827;
+            --text-muted: #6b7280;
+            --border: #e5e7eb;
+            --green: #10b981;
+            --red: #ef4444;
         }
+
+        [data-theme="dark"] {
+            --background: #0f172a;
+            --surface: #1e293b;
+            --text-strong: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+        }
+
         html, body, [class*="css"] {
-            font-family: 'Outfit', sans-serif !important;
+            font-family: 'Inter', sans-serif !important;
         }
+
         .stApp {
-            background: #f1f5f9;
-            background-image: 
-                radial-gradient(at 0% 0%, rgba(79, 70, 229, 0.08) 0px, transparent 40%),
-                radial-gradient(at 100% 0%, rgba(14, 165, 233, 0.08) 0px, transparent 40%);
-            background-attachment: fixed;
+            background-color: var(--background) !important;
         }
-        [data-testid="stSidebar"] {
-            background: rgba(255, 255, 255, 0.70) !important;
-            backdrop-filter: var(--glass-blur);
-            -webkit-backdrop-filter: var(--glass-blur);
-            border-right: 1px solid var(--border-soft);
-        }
-        .stButton > button {
+
+        /* Metrics Card */
+        .metric-card {
+            background: var(--surface) !important;
+            border: 1px solid var(--border) !important;
             border-radius: 12px !important;
-            border: 1px solid rgba(79, 70, 229, 0.2) !important;
-            box-shadow: 0 4px 14px rgba(79, 70, 229, 0.1) !important;
-            background: white !important;
-            color: var(--primary) !important;
-            font-weight: 600 !important;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            padding: 1.5rem !important;
+            display: flex !important;
+            align-items: center !important;
+            gap: 1rem !important;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
         }
-        .stButton > button:hover {
-            transform: translateY(-2px) !important;
-            box-shadow: 0 8px 25px rgba(79, 70, 229, 0.2) !important;
+        .metric-card:hover {
+            transform: translateY(-2px);
             border-color: var(--primary) !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
         }
-        .hub-page_footer {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            background: var(--action-surface);
-            backdrop-filter: var(--glass-blur);
-            padding: 12px 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            border-top: 1px solid var(--border-soft);
-            z-index: 999;
+        .metric-icon {
+            background: rgba(79, 70, 229, 0.08) !important;
+            color: var(--primary) !important;
+            width: 44px !important;
+            height: 44px !important;
+            border-radius: 10px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-size: 1.2rem !important;
         }
-        .hub-page_footer a {
-            color: var(--primary);
-            text-decoration: none;
-            font-weight: 500;
-            transition: color 0.2s ease;
+        .metric-label {
+            font-size: 0.75rem !important;
+            font-weight: 600 !important;
+            color: var(--text-muted) !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.025em !important;
+            margin: 0 !important;
         }
-        .hub-page_footer a:hover {
-            color: var(--accent);
+        .metric-value {
+            font-size: 1.5rem !important;
+            font-weight: 700 !important;
+            color: var(--text-strong) !important;
+            margin: 0 !important;
+            letter-spacing: -0.025em !important;
         }
+        .metric-delta {
+            font-size: 0.75rem !important;
+            font-weight: 600 !important;
+            margin-top: 2px !important;
+        }
+        .delta-up { color: var(--green) !important; }
+        .delta-down { color: var(--red) !important; }
+
+        /* Sidebar and Layout */
+        [data-testid="stSidebar"] {
+            background-color: var(--surface) !important;
+            border-right: 1px solid var(--border) !important;
+        }
+        
         .main .block-container {
-            padding-bottom: 90px !important;
-            padding-top: 1rem !important;
+            padding-top: 2rem !important;
+            padding-bottom: 5rem !important;
         }
-        .deen-logo-small {
-            vertical-align: middle;
+
+        /* Hero and Headers */
+        .bi-hero {
+            background: var(--surface) !important;
+            border: 1px solid var(--border) !important;
+            border-radius: 12px !important;
+            padding: 24px !important;
+            margin-bottom: 24px !important;
+        }
+
+        /* Live indicator */
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--green);
+            background: rgba(16, 185, 129, 0.1);
+            padding: 4px 10px;
+            border-radius: 100px;
+            margin-bottom: 20px;
+        }
+
+        .live-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--green);
+            border-radius: 50%;
             margin-right: 8px;
-            border-radius: 6px;
+            animation: pulse-dot 2s infinite;
+        }
+
+        @keyframes pulse-dot {
+            0% { transform: scale(0.95); opacity: 0.7; }
+            50% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.7; }
         }
         
-        /* Glassmorphic Components */
-        .hub-title-row, .hub-sidebar-brand, .hub-card, .bi-commentary, .bi-audit-card, [data-testid="stMetricContainer"] {
-            background: var(--surface-raised) !important;
-            backdrop-filter: var(--glass-blur) !important;
-            -webkit-backdrop-filter: var(--glass-blur) !important;
-            border: 1px solid rgba(255, 255, 255, 0.6) !important;
-            box-shadow: var(--card-shadow-soft) !important;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-        }
-        
-        .hub-card:hover, .bi-commentary:hover, [data-testid="stMetricContainer"]:hover {
-            transform: translateY(-4px) !important;
-            box-shadow: var(--card-shadow-hover) !important;
-            border-color: rgba(255, 255, 255, 0.9) !important;
-        }
-        
-        .hub-title-row {
-            padding: 1.2rem 2rem;
-            margin-bottom: 1.5rem;
-            border-radius: 20px;
-            text-align: left;
-            display: flex;
-            background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.6)) !important;
-        }
-        .hub-sidebar-brand {
-            padding: 1.2rem;
-            border-radius: 20px;
-            margin-bottom: 1.2rem;
-        }
-        .hub-sidebar-kicker {
-            font-size: 0.75rem;
-            letter-spacing: 0.15em;
-            text-transform: uppercase;
-            color: var(--primary);
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-        .hub-title {
-            margin: 0;
-            font-weight: 800;
-            font-size: 2.2rem;
-            color: var(--text-strong);
-            letter-spacing: -0.03em;
-        }
-        .hub-title span {
-            background: var(--gradient-1);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        .hub-subtitle {
-            margin: 0;
-            color: var(--text-muted);
-            font-size: 1.05rem;
-            font-weight: 400;
+        /* Tables and Charts */
+        [data-testid="stMetricContainer"] {
+            background: var(--surface) !important;
+            border: 1px solid var(--border) !important;
+            border-radius: 12px !important;
+            padding: 1.25rem !important;
         }
         .hub-card {
             border-radius: 20px;
@@ -155,19 +151,8 @@ def setup_theme():
             margin-bottom: 16px;
         }
         .bi-hero {
-            background: var(--gradient-1);
-            color: #ffffff;
-            border-radius: 24px;
-            padding: 2rem;
-            margin-bottom: 1.5rem;
-            box-shadow: var(--card-shadow);
-            position: relative;
-            overflow: hidden;
-            border: 1px solid rgba(255,255,255,0.2);
-            transition: transform 0.4s ease;
-        }
-        .bi-hero:hover {
-            transform: scale(1.01);
+            background: linear-gradient(135deg, var(--primary) 0%, #3b82f6 100%) !important;
+            color: white !important;
         }
         .bi-hero::after {
             content: "";

@@ -1,11 +1,11 @@
 import math
+import io
 import re
+from dataclasses import dataclass
 from typing import Dict, Tuple, Optional
 
 import pandas as pd
-from rapidfuzz import process as rf_process
-
-from BackEnd.utils.io import read_uploaded_file
+from fuzzywuzzy import process
 
 
 def normalize_key(val) -> str:
@@ -160,13 +160,22 @@ def add_title_size_column(
     return df
 
 
+def _read_uploaded(file_obj) -> pd.DataFrame:
+    file_obj.seek(0)
+    if getattr(file_obj, "name", "").endswith(".csv"):
+        return pd.read_csv(file_obj)
+    return pd.read_excel(file_obj)
+
+
 def load_inventory_from_uploads(uploaded_files: Dict[str, object]):
     """
     Build inventory mapping from uploaded inventory files.
     Matching is based only on 'Title - Size' (computed from Title + Size).
     """
     inventory: Dict[str, Dict[str, int]] = {}
-    sku_to_title_size: Dict[str, str] = {}  # sku_key -> Title-Size key (for SKU match validation)
+    sku_to_title_size: Dict[str, str] = (
+        {}
+    )  # sku_key -> Title-Size key (for SKU match validation)
     all_locations = list(uploaded_files.keys())
     warnings = []
     enriched_dfs: Dict[str, pd.DataFrame] = {}
@@ -175,15 +184,19 @@ def load_inventory_from_uploads(uploaded_files: Dict[str, object]):
         if file_obj is None:
             continue
         try:
-            df = read_uploaded_file(file_obj)
+            df = _read_uploaded(file_obj)
             size_col, qty_col, title_col, sku_col = identify_columns(df)
 
             if not title_col:
-                warnings.append(f"⚠️ {loc_name}: Missing 'Title/Item Name' column. Skipped.")
+                warnings.append(
+                    f"⚠️ {loc_name}: Missing 'Title/Item Name' column. Skipped."
+                )
                 continue
 
             if not qty_col:
-                warnings.append(f"⚠️ {loc_name}: Missing 'Quantity' column. Assuming 0 stock.")
+                warnings.append(
+                    f"⚠️ {loc_name}: Missing 'Quantity' column. Assuming 0 stock."
+                )
 
             df = add_title_size_column(df, title_col=title_col, size_col=size_col)
             enriched_dfs[loc_name] = df
@@ -217,7 +230,9 @@ def load_inventory_from_uploads(uploaded_files: Dict[str, object]):
                         if sku_key not in inventory:
                             inventory[sku_key] = {loc: 0 for loc in all_locations}
                         inventory[sku_key][loc_name] += qty
-                        sku_to_title_size[sku_key] = key  # SKU -> Title-Size key for this row
+                        sku_to_title_size[sku_key] = (
+                            key  # SKU -> Title-Size key for this row
+                        )
 
         except Exception as e:
             warnings.append(f"❌ Error in {loc_name}: {e}")
@@ -241,7 +256,6 @@ def add_stock_columns_from_inventory(
     df = product_df.copy()
     matched = set()
     sku_to_inv_key = sku_to_title_size or {}
-    name_keys = [k for k in inventory.keys() if k not in sku_to_inv_key]
 
     # Pre-calculate match status and stock keys for each row
     match_statuses = []
@@ -286,7 +300,7 @@ def add_stock_columns_from_inventory(
                         status = (
                             "Perfect Match (Name + SKU)"
                             if sku_to_inv_key[pl_sku] == pl_key
-                            else "Name Match (SKU mismatch)"
+                            else f"Name Match (SKU mismatch)"
                         )
                     else:
                         status = "Name Match (SKU not in Inv)"
@@ -299,13 +313,14 @@ def add_stock_columns_from_inventory(
             # Priority 3: Fuzzy Name Match (Correction for typos)
             elif pl_key:
                 # We only fuzzy match against non-SKU keys (Title-Size keys)
+                name_keys = [k for k in inventory.keys() if k not in sku_to_inv_key]
                 if name_keys:
-                    best_match, score, _ = rf_process.extractOne(pl_key, name_keys)
-                    if score >= 85:
+                    best_match, score = process.extractOne(pl_key, name_keys)
+                    if score >= 85:  # Require high confidence for auto-match
                         inv_key = best_match
-                        status = f"Fuzzy Match ({int(score)}%) -> {best_match}"
+                        status = f"Fuzzy Match ({score}%) -> {best_match}"
                     else:
-                        status = f"No Match (Closest: {best_match} @ {int(score)}%)"
+                        status = f"No Match (Closest: {best_match} @ {score}%)"
                 else:
                     status = "No Match"
             else:
@@ -368,7 +383,9 @@ def add_stock_columns_from_inventory(
         # Create a helper for quantities
         qty_needed = [1] * len(df)
         if qty_to_buy_col and qty_to_buy_col in df.columns:
-            qty_needed = [int(float(x)) if pd.notna(x) else 1 for x in df[qty_to_buy_col]]
+            qty_needed = [
+                int(float(x)) if pd.notna(x) else 1 for x in df[qty_to_buy_col]
+            ]
 
         # Group data to optimize per order
         for _, group_indices in df.groupby(group_col).groups.items():
@@ -382,7 +399,9 @@ def add_stock_columns_from_inventory(
                 for idx in group_indices:
                     source_key = stock_sources[idx]
                     needed = qty_needed[idx]
-                    avail = inventory.get(source_key, {}).get(loc, 0) if source_key else 0
+                    avail = (
+                        inventory.get(source_key, {}).get(loc, 0) if source_key else 0
+                    )
                     if avail < needed:
                         all_match = False
                         break
@@ -405,7 +424,11 @@ def add_stock_columns_from_inventory(
                         for idx in remaining_indices:
                             source_key = stock_sources[idx]
                             needed = qty_needed[idx]
-                            avail = inventory.get(source_key, {}).get(loc, 0) if source_key else 0
+                            avail = (
+                                inventory.get(source_key, {}).get(loc, 0)
+                                if source_key
+                                else 0
+                            )
                             if avail >= needed:
                                 current_covered.append(idx)
 

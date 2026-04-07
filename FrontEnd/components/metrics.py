@@ -24,15 +24,36 @@ def badge(note: str):
 
 
 
+def icon_metric(label: str, value: str, icon: str = "📊", delta: str = "", delta_val: float = 0):
+    delta_class = "delta-up" if delta_val >= 0 else "delta-down"
+    delta_icon = "↑" if delta_val >= 0 else "↓"
+    delta_prefix = "+" if delta_val > 0 else ""
+    delta_html = f'<div class="metric-delta {delta_class}">{delta_icon} {delta_prefix}{delta}</div>' if delta else ""
+    
+    st.markdown(
+        f"""
+        <div class="metric-card">
+          <div class="metric-icon">{icon}</div>
+          <div class="metric-content">
+            <div class="metric-label">{label}</div>
+            <div class="metric-value">{value}</div>
+            {delta_html}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def metric_highlight(label: str, value: str, help_text: str = ""):
     if not label or value is None:
         return
-    help_block = f'<div class="bi-highlight-help">{help_text}</div>' if help_text else ""
+    help_block = f'<div class="bi-highlight-help" style="color:var(--text-muted); font-size:0.9rem; margin-top:4px;">{help_text}</div>' if help_text else ""
     st.markdown(
         f"""
-        <div class="bi-highlight-stat">
-          <div class="bi-highlight-label">{label}</div>
-          <div class="bi-highlight-value">{value}</div>
+        <div class="stMetricContainer" style="background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:1.5rem; border-left:4px solid var(--primary);">
+          <div style="font-size:0.85rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">{label}</div>
+          <div style="font-size:2.2rem; font-weight:700; color:var(--text-strong); margin-top:8px;">{value}</div>
           {help_block}
         </div>
         """,

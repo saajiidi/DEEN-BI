@@ -57,7 +57,9 @@ class WhatsAppOrderProcessor:
             for part in parts:
                 if not part:
                     continue
-                formatted_parts.append(" ".join(capitalize_word(w) for w in part.split()))
+                formatted_parts.append(
+                    " ".join(capitalize_word(w) for w in part.split())
+                )
             return ", ".join(formatted_parts)
 
         # Handle regular text
@@ -68,7 +70,11 @@ class WhatsAppOrderProcessor:
         return self.format_text(str(name)) if pd.notna(name) else ""
 
     def format_address(self, *address_parts):
-        parts = [self.format_text(str(p)) for p in address_parts if pd.notna(p) and str(p).strip()]
+        parts = [
+            self.format_text(str(p))
+            for p in address_parts
+            if pd.notna(p) and str(p).strip()
+        ]
         return "\n".join(parts)
 
     def detect_gender_salutation(self, name: str) -> str:
@@ -182,7 +188,9 @@ class WhatsAppOrderProcessor:
 
         # Validate core required columns are present
         required = ["phone_col", "name_col", "product_col"]
-        missing = [self.config[col] for col in required if self.config[col] not in df.columns]
+        missing = [
+            self.config[col] for col in required if self.config[col] not in df.columns
+        ]
         if missing:
             raise ValueError(
                 f"Required data columns not found. Partial match failed for: {missing}"
@@ -192,7 +200,9 @@ class WhatsAppOrderProcessor:
 
         # Clean data
         df[phone_col] = df[phone_col].apply(self.clean_phone_number)
-        df[self.config["name_col"]] = df[self.config["name_col"]].apply(self.format_name)
+        df[self.config["name_col"]] = df[self.config["name_col"]].apply(
+            self.format_name
+        )
 
         # Format address columns
         for col_type in ["address_col", "city_col"]:
@@ -217,19 +227,11 @@ class WhatsAppOrderProcessor:
         # Aggregation rules
         agg_funcs = {
             self.config["name_col"]: "first",
+            self.config["order_id_col"]: lambda x: ", ".join(map(str, x.unique())),
             self.config["product_col"]: lambda x: "\n- ".join(x),
+            self.config["quantity_col"]: lambda x: "\n- ".join(map(str, x)),
+            self.config["price_col"]: lambda x: "\n- ".join(map(str, x)),
         }
-
-        order_id_col = self.config.get("order_id_col")
-        quantity_col = self.config.get("quantity_col")
-        price_col = self.config.get("price_col")
-
-        if order_id_col in df.columns:
-            agg_funcs[order_id_col] = lambda x: ", ".join(map(str, x.unique()))
-        if quantity_col in df.columns:
-            agg_funcs[quantity_col] = lambda x: "\n- ".join(map(str, x))
-        if price_col in df.columns:
-            agg_funcs[price_col] = lambda x: "\n- ".join(map(str, x))
 
         # Add optional columns to aggregation
         for key in ["address_col", "city_col", "payment_method_col"]:
@@ -239,56 +241,30 @@ class WhatsAppOrderProcessor:
 
         grouped_df = df.groupby(phone_col, as_index=False).agg(agg_funcs)
 
-        for col in [order_id_col, quantity_col, price_col]:
-            if col and col not in grouped_df.columns:
-                grouped_df[col] = ""
-
         # Calculate correct total amount (sum of unique order totals per phone)
         # This prevents summing the "Order Total" multiple times for multi-item orders
         total_col = self.config["order_total_col"]
         if total_col in df.columns:
             # Get one row per order to capture the Order Total once
-            if order_id_col in df.columns:
-                unique_orders = df[[phone_col, order_id_col, total_col]].drop_duplicates(
-                    subset=[order_id_col]
-                )
-            else:
-                unique_orders = df[[phone_col, total_col]].drop_duplicates()
-
+            # We use drop_duplicates on Order ID to ensure we only take the total once per order
+            unique_orders = df[
+                [phone_col, self.config["order_id_col"], total_col]
+            ].drop_duplicates(subset=[self.config["order_id_col"]])
+            # Sum the unique order totals for each phone number
             phone_totals = unique_orders.groupby(phone_col)[total_col].sum()
-            grouped_df[total_col] = grouped_df[phone_col].map(phone_totals).fillna(0)
-        elif price_col in df.columns and quantity_col in df.columns:
-            price_num = pd.to_numeric(df[price_col], errors="coerce").fillna(0)
-            qty_num = pd.to_numeric(df[quantity_col], errors="coerce").fillna(0)
-            line_total = price_num * qty_num
-            phone_totals = line_total.groupby(df[phone_col]).sum()
-            grouped_df[total_col] = grouped_df[phone_col].map(phone_totals).fillna(0)
-        else:
-            grouped_df[total_col] = 0
+            # Map the calculated totals back to the grouped dataframe
+            grouped_df[total_col] = grouped_df[phone_col].map(phone_totals)
 
         return grouped_df
 
     def create_whatsapp_links(
-        self,
-        df: pd.DataFrame,
-        custom_intro: str = None,
-        custom_footer: str = None,
-        progress_callback: Optional[callable] = None,
-        shorten_urls: bool = False,
+        self, df: pd.DataFrame, custom_template: str = None
     ) -> pd.DataFrame:
         """Generate formatted WhatsApp messages and links."""
         df["whatsapp_link"] = None
         phone_col = self.config["phone_col"]
-        total_rows = len(df)
-
-        import pyshorteners
-
-        shortener = pyshorteners.Shortener() if shorten_urls else None
 
         for idx, row in df.iterrows():
-            if progress_callback:
-                progress_callback(idx + 1, total_rows)
-
             phone = row[phone_col]
             if not phone:
                 continue
@@ -296,6 +272,7 @@ class WhatsAppOrderProcessor:
             # Determine Salutation
             name = row[self.config["name_col"]]
             salutation = self.detect_gender_salutation(name)
+            order_id = str(row[self.config["order_id_col"]])
 
             # Format Address
             formatted_address = self.format_address(
@@ -303,39 +280,11 @@ class WhatsAppOrderProcessor:
                 row.get(self.config.get("city_col"), ""),
             )
 
-            # Build Message Intro
-            order_id_val = row.get(self.config.get("order_id_col"), "")
-            if custom_intro:
-                intro_text = (
-                    custom_intro.replace("{name}", str(name))
-                    .replace("{salutation}", salutation)
-                    .replace("{order_id}", str(order_id_val))
-                )
-                lines = [intro_text]
-                lines.extend(["", "*Your Order:*"])
-            else:
-                lines = [
-                    "*Order Verification From DEEN Commerce*",
-                    "",
-                    f"Assalamu Alaikum, {salutation}!",
-                    "",
-                    f"Dear {name},",
-                    "",
-                    "Please verify your order details:",
-                    "",
-                    f"*Order ID:* {order_id_val}",
-                    "",
-                    "*Your Order:*",
-                ]
-
-            # Products
-            products = str(row.get(self.config.get("product_col"), "")).split("\n- ")
-            quantities = []
-            if self.config.get("quantity_col"):
-                quantities = str(row.get(self.config.get("quantity_col"), "")).split("\n- ")
-            prices = []
-            if self.config.get("price_col"):
-                prices = str(row.get(self.config.get("price_col"), "")).split("\n- ")
+            # Build Product List & Totals for template use
+            product_list = []
+            products = str(row[self.config["product_col"]]).split("\n- ")
+            quantities = str(row[self.config["quantity_col"]]).split("\n- ")
+            prices = str(row[self.config["price_col"]]).split("\n- ")
 
             for i, prod in enumerate(products):
                 item_line = f"- {prod.strip()}"
@@ -343,62 +292,82 @@ class WhatsAppOrderProcessor:
                     item_line += f" - Qty: {quantities[i].strip()}"
                 if i < len(prices):
                     item_line += f" - Price: {prices[i].strip()} BDT"
-                lines.append(item_line)
+                product_list.append(item_line)
 
-            # Totals & Payment Logic
-            total_col = self.config.get("order_total_col")
-            raw_total = row.get(total_col, 0)
-            total_amount = pd.to_numeric(raw_total, errors="coerce")
-            total_amount = 0.0 if pd.isna(total_amount) else float(total_amount)
+            products_str = "\n".join(product_list)
+
+            total_amount = float(row[self.config["order_total_col"]])
             collectable_amount = total_amount
-
             payment_col = self.config.get("payment_method_col")
+            is_paid = False
             if payment_col and payment_col in row and pd.notna(row[payment_col]):
                 method = str(row[payment_col]).lower()
                 if any(x in method for x in ["bkash", "online", "ssl", "paid"]):
                     collectable_amount = 0
+                    is_paid = True
 
-            lines.append("")
-            if collectable_amount == 0:
-                lines.append(f"*Total Amount:* {total_amount:.2f} BDT (PAID)")
-                lines.append("*Collectable Amount:* 0 BDT")
+            total_str = f"{total_amount:.2f} BDT"
+            if is_paid:
+                total_str += " (PAID)"
+            elif collectable_amount != total_amount:
+                total_str += f" (Collectable: {collectable_amount:.2f} BDT)"
+
+            if custom_template:
+                message = (
+                    custom_template.replace("{name}", str(name))
+                    .replace("{salutation}", salutation)
+                    .replace("{order_id}", order_id)
+                    .replace("{products_list}", products_str)
+                    .replace("{total}", total_str)
+                    .replace("{address}", formatted_address)
+                )
             else:
-                lines.append(f"*Total Amount:* {total_amount:.2f} BDT")
-
-            lines.extend(
-                [
+                lines = [
+                    f"*Order Verification From DEEN Commerce*",
+                    "",
+                    f"Assalamu Alaikum, {salutation}!",
+                    "",
+                    f"Dear {name},",
+                    "",
+                    "Please verify your order details:",
+                    "",
+                    f"*Order ID:* {order_id}",
+                    "",
+                    "*Your Order:*",
+                    products_str,
+                    "",
+                    f"*Total Amount:* {total_str}",
                     "",
                     "*Shipping Address:*",
                     formatted_address,
                     "",
+                    "Please confirm the order and address.",
+                    "If any correction is needed, please let us know the possible adjustment.",
+                    "",
+                    "*Delivery fees apply for returns.*",
+                    "",
+                    "Thank you for shopping with DEEN Commerce! Grab our latest collection on: https://deencommerce.com/",
                 ]
+                message = "\n".join(lines)
+            encoded_message = urllib.parse.quote(message)
+            df.at[idx, "whatsapp_link"] = (
+                f"https://wa.me/+88{phone}?text={encoded_message}"
             )
 
-            if custom_footer:
-                lines.extend(custom_footer.split("\n"))
-            else:
-                lines.extend(
-                    [
-                        "Please confirm the order and address.",
-                        "If any correction is needed, please let us know the possible adjustment.",
-                        "",
-                        "*Delivery fees apply for returns.*",
-                        "",
-                        "Thank you for shopping with DEEN Commerce! Grab our latest collection on: https://deencommerce.com/",
-                    ]
-                )
+            # Simple Summary for copy-pasting
+            summary_parts = []
+            products = str(row[self.config["product_col"]]).split("\n- ")
+            total_qty = 0
+            for prod in products:
+                summary_parts.append(prod.strip())
 
-            message = "\n".join(lines)
-            encoded_message = urllib.parse.quote(message)
-            full_link = f"https://wa.me/+88{phone}?text={encoded_message}"
-
-            if shorten_urls:
-                try:
-                    full_link = shortener.tinyurl.short(full_link)
-                except:
-                    pass  # Fallback to long link if shortening fails
-
-            df.at[idx, "whatsapp_link"] = full_link
+            summary_text = f"Order {row[self.config['order_id_col']]}: " + ", ".join(
+                summary_parts
+            )
+            summary_text += (
+                f" | Total: {float(row[self.config['order_total_col']]):.0f} BDT"
+            )
+            df.at[idx, "order_summary"] = summary_text
 
         return df
 
@@ -410,7 +379,9 @@ class WhatsAppOrderProcessor:
             worksheet = writer.sheets["Orders"]
 
             # Styles
-            header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+            header_fill = PatternFill(
+                start_color="4F81BD", end_color="4F81BD", fill_type="solid"
+            )
             header_font = Font(color="FFFFFF", bold=True)
             link_font = Font(color="0000FF", underline="single")
             center_align = Alignment(horizontal="center")
@@ -443,6 +414,8 @@ class WhatsAppOrderProcessor:
                             max_length = len(str(cell.value))
                     except:
                         pass
-                worksheet.column_dimensions[column_letter].width = min((max_length + 2) * 1.2, 50)
+                worksheet.column_dimensions[column_letter].width = min(
+                    (max_length + 2) * 1.2, 50
+                )
 
         return output.getvalue()

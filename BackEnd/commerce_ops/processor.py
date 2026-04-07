@@ -1,7 +1,7 @@
 import pandas as pd
-from BackEnd.core.categories import get_category_for_orders
-from BackEnd.core.zones import KNOWN_ZONES
-from BackEnd.utils.data import normalize_city_name, extract_best_zone, format_address_logic
+import re
+from BackEnd.commerce_ops.utils import get_category_from_name, normalize_city_name
+from fuzzywuzzy import process
 
 
 def clean_dataframe(df):
@@ -18,18 +18,12 @@ def clean_dataframe(df):
     # Clean Item Cost
     if "Item Cost" in df.columns:
         if df["Item Cost"].dtype == "object":
-            df["Item Cost"] = df["Item Cost"].astype(str).str.replace(r"[^\d.]", "", regex=True)
-        df["Item Cost"] = pd.to_numeric(df.get("Item Cost", 0), errors="coerce").fillna(0)
-
-    # Clean Order Total Amount
-    if "Order Total Amount" in df.columns:
-        if df["Order Total Amount"].dtype == "object":
-            df["Order Total Amount"] = (
-                df["Order Total Amount"].astype(str).str.replace(r"[^\d.]", "", regex=True)
+            df["Item Cost"] = (
+                df["Item Cost"].astype(str).str.replace(r"[^\d.]", "", regex=True)
             )
-        df["Order Total Amount"] = pd.to_numeric(
-            df.get("Order Total Amount", 0), errors="coerce"
-        ).fillna(0)
+        df["Item Cost"] = pd.to_numeric(df.get("Item Cost", 0), errors="coerce").fillna(
+            0
+        )
 
     # Clean string columns
     string_cols = [
@@ -39,6 +33,7 @@ def clean_dataframe(df):
         "First Name (Shipping)",
         "State Name (Billing)",
         "Order Number",
+        "Order ID",
     ]
     for col in string_cols:
         if col in df.columns:
@@ -70,15 +65,29 @@ def identify_columns(df):
                 cols["trx_col"] = c
                 break
 
+    # Order Number Column
+    cols["order_col"] = "Order Number"
+    if "Order Number" not in df.columns:
+        for c in df.columns:
+            if c.lower() in ["order number", "order id", "id", "order #", "order_id"]:
+                cols["order_col"] = c
+                break
+
     return cols
 
 
 def process_single_order_group(phone, group, data_cols):
     """
     Processes a group of rows belonging to a single order (phone number).
-    If multiple unique Order Numbers are found, their collection amounts are summed.
     """
-    unique_orders = group.drop_duplicates(subset=["Order Number"])
+    order_col = data_cols.get("order_col", "Order Number")
+    
+    if order_col in group.columns:
+        unique_orders = group.drop_duplicates(subset=[order_col])
+    else:
+        # Fallback if no order identification column is found
+        unique_orders = group.head(1)
+
     first_row = group.iloc[0]
     total_qty = group["Quantity"].sum()
 
@@ -87,7 +96,7 @@ def process_single_order_group(phone, group, data_cols):
     for _, row in group.iterrows():
         item_name = row.get("Item Name", "")
         sku = row.get("SKU", "")
-        category = get_category_for_orders(item_name)
+        category = get_category_from_name(item_name)
 
         # Format: "Item Name - SKU"
         item_str = f"{item_name} - {sku}"
@@ -176,32 +185,33 @@ def process_single_order_group(phone, group, data_cols):
 
         full_desc += f"; ({' - '.join(suffix_parts)})"
 
-    # --- Address Processing ---
+    # Address Processing
     addr_col = data_cols["addr_col"]
     raw_address = str(first_row.get(addr_col, "")).strip()
     if not raw_address or raw_address.lower() == "nan":
         raw_address = str(first_row.get("State Name (Billing)", "")).strip()
 
-    # Normalize City
+    # Normalize City & Address
     raw_city = str(first_row.get("State Name (Billing)", "")).strip()
     recipient_city = normalize_city_name(raw_city)
+    address_val = " ".join(raw_address.split()).title()
 
-    # Extract Zone
-    temp_addr_clean = " ".join(raw_address.split()).title()
-    extracted_zone = extract_best_zone(temp_addr_clean, KNOWN_ZONES)
-
-    # Format Address
-    address_val = format_address_logic(raw_address, recipient_city, extracted_zone, raw_city)
-
-    if not extracted_zone:
-        extracted_zone = "Sadar"
+    # RecipientZone: Empty as requested (no default Sadar)
+    extracted_zone = ""
 
     # Area (Null as requested)
     recipient_area = ""
 
     # Combine merchant IDs
-    order_ids = [str(x) for x in unique_orders["Order Number"].unique() if str(x).lower() != "nan"]
-    combined_merchant_id = ", ".join(order_ids)
+    if order_col in unique_orders.columns:
+        order_ids = [
+            str(x)
+            for x in unique_orders[order_col].unique()
+            if str(x).lower() != "nan"
+        ]
+        combined_merchant_id = ", ".join(order_ids)
+    else:
+        combined_merchant_id = "N/A"
 
     # --- Build Record ---
     record = {
