@@ -47,7 +47,18 @@ def _render_workspace_sidebar():
         # 1. Timeline Control
         st.session_state.time_window = st.select_slider(
             "Time Window",
-            options=["Yesterday & Today", "Last 7 Days", "Last Month", "Last Quarter", "Last Year"],
+            options=[
+                "Yesterday & Today", 
+                "Last 3 Days", 
+                "Last 7 Days", 
+                "Last Month", 
+                "MTD",
+                "Last 3 Months", 
+                "Last Quarter", 
+                "Last Half Year", 
+                "YTD",
+                "Last Year"
+            ],
             value="Last 7 Days"
         )
 
