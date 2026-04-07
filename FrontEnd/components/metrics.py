@@ -106,3 +106,26 @@ def date_context(
 
 
 
+def operational_card(title: str, order_count: int, item_count: int, revenue: float, icon: str = "📦", delta_text: str = "", delta_val: int = 0, item_label: str = "Items"):
+    """Premium multi-line operational metric card."""
+    delta_class = "delta-up" if delta_val >= 0 else "delta-down"
+    delta_icon = "↑" if delta_val >= 0 else "↓"
+    delta_html = f'<div class="metric-delta {delta_class}" style="margin-top:10px; font-size:0.85rem;">{delta_icon} {delta_text}</div>' if delta_text else ""
+    
+    st.markdown(
+        f"""
+        <div class="metric-card" style="padding: 1.2rem; min-height: 180px;">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div style="font-size: 1.1rem; font-weight: 700; color: var(--on-surface);">{title}</div>
+                <div style="font-size: 1.5rem;">{icon}</div>
+            </div>
+            <div style="margin-top: 15px;">
+                <div style="font-size: 0.85rem; color: var(--on-surface-variant); font-weight: 500;">Orders: <b>{order_count:,}</b></div>
+                <div style="font-size: 0.85rem; color: var(--on-surface-variant); font-weight: 500;">{item_label}: <b>{item_count:,}</b></div>
+                <div style="font-size: 1.4rem; font-weight: 800; color: var(--primary); margin-top: 8px;">৳ {revenue:,.0f}</div>
+                {delta_html}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )

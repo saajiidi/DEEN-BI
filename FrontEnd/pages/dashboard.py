@@ -21,13 +21,15 @@ from .dashboard_lib.data_helpers import prune_dataframe, build_order_level_datas
 from .dashboard_lib.story import render_dashboard_story
 from .dashboard_lib.bi_analytics import (
     render_today_vs_last_day_sales_chart,
-    render_last_7_days_sales_chart
+    render_last_7_days_sales_chart,
+    render_market_overview_timeseries
 )
 from .dashboard_lib.trends import render_sales_trends
 from .dashboard_lib.performance import render_product_performance
 from .dashboard_lib.inventory import render_inventory_health
 from .dashboard_lib.deep_dive import render_deep_dive_tab
 from .dashboard_lib.audit import render_data_audit, render_data_trust_panel
+from .dashboard_lib.live_dashboard import render_live_tab
 
 DASHBOARD_SALES_COLUMNS = [
     "order_id", "order_date", "order_total", "customer_key", "customer_name",
@@ -55,12 +57,13 @@ def render_intelligence_hub_page():
     }
     days_back = window_map.get(window, 7)
     
-    # Critical: Use today as the bound to include live orders
+    # Range for current view (e.g. Yesterday + Today)
     end_date_str = date.today().strftime("%Y-%m-%d")
     start_date_str = (date.today() - timedelta(days=days_back)).strftime("%Y-%m-%d")
     
-    # Previous period for comparisons
-    prev_start_date_str = (date.today() - timedelta(days=days_back * 2 + 1)).strftime("%Y-%m-%d")
+    # Range for comparative view (The block before that)
+    # If Yesterday & Today (1 day), we want the day before Yesterday to Today - 1
+    prev_start_date_str = (date.today() - timedelta(days=days_back * 2)).strftime("%Y-%m-%d")
     prev_end_date_str = (date.today() - timedelta(days=days_back + 1)).strftime("%Y-%m-%d")
 
     orders_status = get_woocommerce_orders_cache_status(start_date_str, end_date_str)
@@ -69,33 +72,37 @@ def render_intelligence_hub_page():
     should_force = global_sync or (window == "Yesterday & Today")
     start_orders_background_refresh(start_date_str, end_date_str, force=should_force)
     
-    # Store dynamic range in session to detect window change
     sync_mode = "live" if (window == "Yesterday & Today" or global_sync) else "cache_only"
-    df_sales = prune_dataframe(load_hybrid_data(start_date=start_date_str, end_date=end_date_str, woocommerce_mode=sync_mode), DASHBOARD_SALES_COLUMNS)
+    df_sales_raw = prune_dataframe(load_hybrid_data(start_date=start_date_str, end_date=end_date_str, woocommerce_mode=sync_mode), DASHBOARD_SALES_COLUMNS)
     
-    # Apply Business Rules
+    # Apply Business Rules (Logic consistency)
     from BackEnd.core.categories import get_category_for_sales
-    df_sales["Category"] = df_sales["item_name"].apply(get_category_for_sales)
+    df_sales_raw["Category"] = df_sales_raw["item_name"].apply(get_category_for_sales)
     
-    # Operational Audit: Only count Completed or Shipped orders for Revenue/Pillars
-    df_sales = df_sales[df_sales["order_status"].str.lower().isin(["completed", "shipped"])].copy()
-    
-    df_customers = generate_customer_insights_from_sales(df_sales, include_rfm=True)
-    ml_bundle = build_ml_insight_bundle(df_sales, df_customers, horizon_days=7)
+    # Fetch Previous context (Unfiltered)
+    df_prev_raw = load_hybrid_data(start_date=prev_start_date_str, end_date=prev_end_date_str, woocommerce_mode="cache_only")
+    df_prev_raw = prune_dataframe(df_prev_raw, DASHBOARD_SALES_COLUMNS)
+    df_prev_raw["Category"] = df_prev_raw["item_name"].apply(get_category_for_sales)
+
+    # SECURE ANALYTICS: Create filtered versions for high-level pillars
+    # Only "Completed" or "Shipped" are counted for the 6 Executive Pillars
+    valid_statuses = ["completed", "shipped"]
+    df_sales_exec = df_sales_raw[df_sales_raw["order_status"].str.lower().isin(valid_statuses)].copy()
+    df_prev_exec = df_prev_raw[df_prev_raw["order_status"].str.lower().isin(valid_statuses)].copy()
+
+    df_customers = generate_customer_insights_from_sales(df_sales_exec, include_rfm=True)
+    ml_bundle = build_ml_insight_bundle(df_sales_exec, df_customers, horizon_days=7)
     stock_df = load_cached_woocommerce_stock_data()
     
-    # Comparative Period (always from cache to avoid double blocking)
-    df_prev = load_hybrid_data(start_date=prev_start_date_str, end_date=prev_end_date_str, woocommerce_mode="cache_only")
-    df_prev = prune_dataframe(df_prev, DASHBOARD_SALES_COLUMNS)
-    df_prev = df_prev[df_prev["order_status"].str.lower().isin(["completed", "shipped"])].copy()
-    
     st.session_state.dashboard_data = {
-        "sales": df_sales,
-        "prev_sales": df_prev,
+        "sales": df_sales_raw,        # Operational logic needs RAW (processing/pending)
+        "sales_exec": df_sales_exec, # High-level stats use FILTERED
+        "prev_sales": df_prev_raw,
+        "prev_exec": df_prev_exec,
         "customers": df_customers,
         "ml": ml_bundle,
         "stock": stock_df,
-        "summary": {"woocommerce_live": len(df_sales), "stock_rows": len(stock_df)},
+        "summary": {"woocommerce_live": len(df_sales_raw), "stock_rows": len(stock_df)},
         "hint": orders_status.get("status_message", ""),
         "window_label": "7 days" if days_back == 7 else ("month" if days_back == 30 else f"{days_back} days")
     }
@@ -103,7 +110,7 @@ def render_intelligence_hub_page():
     data = st.session_state.dashboard_data
     
     # 1. Core Metrics (6 Pillars)
-    df_exec = data["sales"][data["sales"]["order_date"].notna()].copy()
+    df_exec = data["sales_exec"]
     exec_orders = build_order_level_dataset(df_exec)
     
     total_rev = sum_order_level_revenue(df_exec)
@@ -115,15 +122,15 @@ def render_intelligence_hub_page():
     avg_orders_per_day = (order_count / days_back) if days_back else 0
     
     # --- Comparative Logic ---
-    df_prev = data["prev_sales"]
-    prev_items = df_prev["qty"].sum() if not df_prev.empty else 0
-    prev_rev = sum_order_level_revenue(df_prev)
+    df_prev_exec = data["prev_exec"]
+    prev_items_val = df_prev_exec["qty"].sum() if not df_prev_exec.empty else 0
+    prev_rev_val = sum_order_level_revenue(df_prev_exec)
     
-    prev_orders_level = build_order_level_dataset(df_prev)
-    prev_orders = prev_orders_level["order_id"].nunique() if not prev_orders_level.empty else 0
-    prev_aov = (prev_rev / prev_orders) if prev_orders else 0
-    prev_cust = df_prev["customer_key"].nunique() if not df_prev.empty else 0
-    prev_avg_orders = (prev_orders / days_back) if days_back else 0
+    prev_orders_level = build_order_level_dataset(df_prev_exec)
+    prev_orders_val = prev_orders_level["order_id"].nunique() if not prev_orders_level.empty else 0
+    prev_aov_val = (prev_rev_val / prev_orders_val) if prev_orders_val else 0
+    prev_cust_val = df_prev_exec["customer_key"].nunique() if not df_prev_exec.empty else 0
+    prev_avg_orders_val = (prev_orders_val / days_back) if days_back else 0
 
     def calc_delta(curr, prev):
         if not prev: return "", 0
@@ -132,12 +139,12 @@ def render_intelligence_hub_page():
         label = f"{pct:+.1f}% vs last {data['window_label']}"
         return label, diff
 
-    d_items_label, d_items_val = calc_delta(total_items, prev_items)
-    d_rev_label, d_rev_val = calc_delta(total_rev, prev_rev)
-    d_orders_label, d_orders_val = calc_delta(order_count, prev_orders)
-    d_avg_label, d_avg_val = calc_delta(avg_orders_per_day, prev_avg_orders)
-    d_cust_label, d_cust_val = calc_delta(cust_count, prev_cust)
-    d_aov_label, d_aov_val = calc_delta(aov, prev_aov)
+    d_items_label, d_items_val = calc_delta(total_items, prev_items_val)
+    d_rev_label, d_rev_val = calc_delta(total_rev, prev_rev_val)
+    d_orders_label, d_orders_val = calc_delta(order_count, prev_orders_val)
+    d_avg_label, d_avg_val = calc_delta(avg_orders_per_day, prev_avg_orders_val)
+    d_cust_label, d_cust_val = calc_delta(cust_count, prev_cust_val)
+    d_aov_label, d_aov_val = calc_delta(aov, prev_aov_val)
 
     # Single-Row Metric Layout (6 Pillars)
     c1, c2, c3, c4, c5, c6 = st.columns(6)
@@ -155,7 +162,14 @@ def render_intelligence_hub_page():
 
     if selection == "💎 Market Overview":
         # Global Narrative & Summary
-        render_dashboard_story(data["sales"], data["customers"], data["ml"])
+        render_dashboard_story(data["sales_exec"], data["customers"], data["ml"])
+        
+        st.divider()
+        render_market_overview_timeseries(data["sales_exec"])
+        
+    elif selection == "🚢 Operational Live":
+        st.subheader("⚡ Live Operational Terminal")
+        render_live_tab()
     
     elif selection == "👥 Customer Behavior":
         st.subheader("Customer Intelligence")

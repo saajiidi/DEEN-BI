@@ -25,6 +25,11 @@ def query_app_data(prompt: str, df: pd.DataFrame, context: str = "") -> tuple[st
         count = df["order_id"].nunique()
         return f"You have {count:,} orders in the current view.", None
 
+    if "multi-item" in prompt_lower or "bulk" in prompt_lower or "bundled" in prompt_lower:
+        multi = df[df["qty"] > 1]
+        count = multi["order_id"].nunique()
+        return f"There are {count:,} orders containing multi-item units or bulk quantities.", multi.head(10)
+
     return generic_chat(prompt, context), None
 
 def generic_chat(prompt: str, context: str = "", history: list = None) -> str:

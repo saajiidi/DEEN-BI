@@ -100,3 +100,67 @@ def render_last_7_days_sales_chart(df_sales: pd.DataFrame, df_customers: pd.Data
         st.plotly_chart(px.bar(daily, x="day_label", y="revenue", color="revenue", title="Last 7 Days Revenue", text_auto=".2s", color_continuous_scale="Tealgrn").update_layout(height=340), use_container_width=True)
     with c2:
         st.plotly_chart(px.line(daily.melt(id_vars=["day_label"], value_vars=["orders", "unique_customers", "new_customers"], var_name="metric", value_name="value"), x="day_label", y="value", color="metric", markers=True, title="Last 7 Days Orders and Customers").update_layout(height=340), use_container_width=True)
+def render_market_overview_timeseries(df_sales: pd.DataFrame):
+    """Renders high-fidelity time-series analysis for Market Overview."""
+    st.markdown("#### 📈 Time-Series Performance Analysis")
+    sales = ensure_sales_schema(df_sales).copy()
+    sales = sales[sales["order_date"].notna()].copy()
+    if sales.empty:
+        st.info("Insufficient data for time-series analysis.")
+        return
+
+    # Aggregate by day
+    sales["order_day"] = sales["order_date"].dt.normalize()
+    daily = build_order_level_dataset(sales).groupby("order_day", as_index=False).agg(
+        revenue=("order_total", "sum"),
+        orders=("order_id", "nunique"),
+        units=("qty", "sum"),
+        avg_basket=("order_total", "mean")
+    ).sort_values("order_day")
+
+    if daily.empty:
+        st.info("No daily data points found.")
+        return
+
+    c1, c2 = st.columns(2)
+    with c1:
+        # Revenue Time Series
+        fig_rev = px.line(daily, x="order_day", y="revenue", 
+                          title="Daily Revenue Trend (TK)",
+                          markers=True, line_shape="spline",
+                          color_discrete_sequence=["#4F46E5"])
+        fig_rev.update_layout(height=300, margin=dict(l=0, r=0, t=40, b=0), 
+                              hovermode="x unified", template="plotly_white")
+        st.plotly_chart(fig_rev, use_container_width=True)
+
+    with c2:
+        # Order Count Time Series
+        fig_ord = px.line(daily, x="order_day", y="orders", 
+                          title="Daily Order Volume",
+                          markers=True, line_shape="spline",
+                          color_discrete_sequence=["#10B981"])
+        fig_ord.update_layout(height=300, margin=dict(l=0, r=0, t=40, b=0), 
+                              hovermode="x unified", template="plotly_white")
+        st.plotly_chart(fig_ord, use_container_width=True)
+
+    c3, c4 = st.columns(2)
+    with c3:
+        # Item Sold Time Series
+        fig_units = px.line(daily, x="order_day", y="units", 
+                          title="Daily Items Sold (Volume)",
+                          markers=True, line_shape="spline",
+                          color_discrete_sequence=["#F59E0B"])
+        fig_units.update_layout(height=300, margin=dict(l=0, r=0, t=40, b=0), 
+                              hovermode="x unified", template="plotly_white")
+        st.plotly_chart(fig_units, use_container_width=True)
+
+    with c4:
+        # AOV (Basket Value) Time Series - SUGGESTED
+        daily["aov"] = daily["revenue"] / daily["orders"].replace(0, 1)
+        fig_aov = px.line(daily, x="order_day", y="aov", 
+                          title="Average Order Value (AOV) Trend",
+                          markers=True, line_shape="spline",
+                          color_discrete_sequence=["#EC4899"])
+        fig_aov.update_layout(height=300, margin=dict(l=0, r=0, t=40, b=0), 
+                              hovermode="x unified", template="plotly_white")
+        st.plotly_chart(fig_aov, use_container_width=True)

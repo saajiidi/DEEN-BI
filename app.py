@@ -58,6 +58,7 @@ def _render_workspace_sidebar():
             "Executive Dashboard",
             [
                 "💎 Market Overview",
+                "🚢 Operational Live",
                 "👥 Customer Behavior",
                 "🔍 Deep-Dive Clusters",
                 "📦 Inventory Health",

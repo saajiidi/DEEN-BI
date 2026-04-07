@@ -101,3 +101,24 @@ def get_category_for_sales(name) -> str:
         return "FS Shirt" if _has_any(fs_keywords, name_str) else "HS Shirt"
 
     return "Others"
+    
+
+def parse_sku_variants(name: str) -> tuple[str, str]:
+    """Extracts Color and Size from an e-commerce product name string."""
+    # Heuristic: usually formatted as "Product Name - Color - Size"
+    # But "T-Shirt - Red - XL" has multiple dashes. 
+    # Use split but prioritize trailing items for size/color.
+    parts = [p.strip() for p in str(name).split("-") if p.strip()]
+    
+    if len(parts) >= 3:
+        # Check if 1st part is name, then color, then size
+        # Example: ["Basic Premium Tee", "Black", "XL"]
+        # Example: ["Men's T", "Shirt", "Blue", "M"]
+        size = parts[-1]
+        color = parts[-2]
+        return color, size
+    elif len(parts) == 2:
+        # Example: ["Basic Tee", "XL"]
+        return "Unknown", parts[1]
+        
+    return "Unknown", "Unknown"

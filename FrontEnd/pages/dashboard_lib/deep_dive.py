@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 from FrontEnd.components import ui
+from BackEnd.core.categories import parse_sku_variants
 
 def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
     """Exhaustive Advanced Filtering for Deep-Dive Clusters."""
@@ -10,15 +11,8 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
         return
 
     # PRE-PROCESSING: Parsing Product Variants & Local Trends
-    # --- Variant Logic (Name-based parsing) ---
-    def parse_variants(name):
-        parts = str(name).split("-")
-        color = parts[1].strip() if len(parts) > 2 else "Unknown"
-        size = parts[-1].strip() if len(parts) > 1 else "Unknown"
-        return color, size
-
     if "_variant_parsed" not in df_sales.columns:
-        df_sales[["_color", "_size"]] = df_sales["item_name"].apply(lambda x: pd.Series(parse_variants(x)))
+        df_sales[["_color", "_size"]] = df_sales["item_name"].apply(lambda x: pd.Series(parse_sku_variants(x)))
         df_sales["_variant_parsed"] = True
 
     # --- Trend Type Logic ---
@@ -115,7 +109,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
     # VISUALIZATION SUITE
     st.markdown(f"**Found {len(w_df)} records matching these constraints**")
     
-    cluster_t1, cluster_t2, cluster_t3 = st.tabs(["📊 Performance Mix", "🔍 Variant Analysis", "📋 Cluster Data Ledger"])
+    cluster_t1, cluster_t2, cluster_t3, cluster_t4 = st.tabs(["📊 Performance Mix", "🔍 Variant Analysis", "🛒 Basket Context", "📋 Cluster Data Ledger"])
     
     with cluster_t1:
         c1, c2 = st.columns(2)
@@ -149,6 +143,22 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
             st.plotly_chart(fig, use_container_width=True)
 
     with cluster_t3:
+        b_c1, b_c2 = st.columns(2)
+        with b_c1:
+            # Quantity Distribution (Basket logic)
+            q_dist = w_df.groupby("qty")["order_id"].nunique().reset_index()
+            q_dist.columns = ["Items in Line", "Orders"]
+            fig = px.bar(q_dist, x="Items in Line", y="Orders", title="Bulk Purchase Propensity",
+                         text_auto=True, color_discrete_sequence=["#F59E0B"])
+            st.plotly_chart(fig, use_container_width=True)
+        with b_c2:
+            # City Mix within this cluster
+            city_mix = w_df.groupby("city")["item_revenue"].sum().reset_index().sort_values("item_revenue", ascending=False).head(8)
+            fig = px.bar(city_mix, x="item_revenue", y="city", title="Market Hotspots", 
+                         orientation='h', color="item_revenue", color_continuous_scale="Agsunset")
+            st.plotly_chart(fig, use_container_width=True)
+
+    with cluster_t4:
         st.dataframe(
             w_df[["order_id", "order_date", "item_name", "sku", "qty", "item_revenue", "Trend", "Coupons", "source", "city"]],
             use_container_width=True, hide_index=True
