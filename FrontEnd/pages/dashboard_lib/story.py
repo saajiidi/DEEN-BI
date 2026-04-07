@@ -73,57 +73,59 @@ def render_dashboard_story(df_sales: pd.DataFrame, df_customers: pd.DataFrame, m
     narrative_hash = hashlib.md5(combined_narrative.encode()).hexdigest()[:8]
     typing_duration = max(8, len(combined_narrative) // 12)
 
-    # Layout for Typewriter + Icon (Balanced ratio to prevent overlap)
-    story_col, icon_col = st.columns([12, 1])
-    
-    with story_col:
-        st.markdown(
-            f"""
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap');
+    # Layout for Typewriter
+    st.markdown(
+        f"""
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap');
 
-                .orthodox-typewriter {{
-                    font-family: 'JetBrains Mono', monospace;
-                    font-size: 0.9rem;
-                    background: var(--surface);
-                    padding: 12px 18px;
-                    border-radius: 4px;
-                    border-left: 4px solid #F59E0B;
-                    overflow-x: auto;
-                    white-space: nowrap;
-                    display: block;
-                    width: 100%;
-                    scrollbar-width: thin;
-                    animation: 
-                        typing_{narrative_hash} {typing_duration}s steps({len(combined_narrative)}, end) forwards,
-                        blink-caret .75s step-end infinite;
-                }}
+            .orthodox-typewriter {{
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 0.9rem;
+                background: var(--surface);
+                padding: 12px 18px;
+                border-radius: 4px;
+                border-left: 4px solid #F59E0B;
+                overflow-x: auto;
+                white-space: nowrap;
+                display: block;
+                width: 100%;
+                scrollbar-width: thin;
+                margin-bottom: 8px;
+                animation: 
+                    typing_{narrative_hash} {typing_duration}s steps({len(combined_narrative)}, end) forwards,
+                    blink-caret .75s step-end infinite;
+            }}
 
-                /* Light/Dark adaptive colors */
-                @media (prefers-color-scheme: light) {{ .orthodox-typewriter {{ color: #000000; border-left-color: #000000; }} }}
-                @media (prefers-color-scheme: dark) {{ .orthodox-typewriter {{ color: #F59E0B; border-left-color: #F59E0B; }} }}
+            /* Light/Dark adaptive colors */
+            @media (prefers-color-scheme: light) {{ .orthodox-typewriter {{ color: #000000; border-left-color: #000000; }} }}
+            @media (prefers-color-scheme: dark) {{ .orthodox-typewriter {{ color: #F59E0B; border-left-color: #F59E0B; }} }}
 
-                @keyframes typing_{narrative_hash} {{ from {{ width: 0 }} to {{ width: 100% }} }}
-                @keyframes blink-caret {{ from, to {{ border-color: transparent }} 50% {{ border-color: inherit; }} }}
-            </style>
-            <div class="orthodox-typewriter" id="story-typewriter-{narrative_hash}">
-                {combined_narrative}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+            @keyframes typing_{narrative_hash} {{ from {{ width: 0 }} to {{ width: 100% }} }}
+            @keyframes blink-caret {{ from, to {{ border-color: transparent }} 50% {{ border-color: inherit; }} }}
+        </style>
+        <div class="orthodox-typewriter" id="story-typewriter-{narrative_hash}">
+            {combined_narrative}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # 7. Anomaly & Discovery Calculations
     daily_vol = df_sales.groupby(df_sales["order_date"].dt.date)["order_id"].nunique()
     avg_vol = daily_vol.mean()
     spikes = daily_vol[daily_vol > (avg_vol * 1.5)]
     
-    # 8. Interactive Discovery Tools (Icon Bar)
+    # 8. Interactive Discovery Tools (Icon Bar - Now on Next Line)
     # Ensure icons appear if any insight is available (Spikes, VIP Churn, or Bundles)
     has_insights = not spikes.empty or not at_risk_vips.empty or bool(bundle_suggestions)
     
     if has_insights:
-        with icon_col:
+        # Create a row of icons below the typewriter
+        btn_col, _ = st.columns([2, 5])
+        with btn_col:
+            # Use nested columns for horizontal buttons
+            ic1, ic2, ic3 = st.columns(3)
             # Use a container with a delayed fade-in to match typing duration
             st.markdown(
                 f"""
@@ -132,32 +134,31 @@ def render_dashboard_story(df_sales: pd.DataFrame, df_customers: pd.DataFrame, m
                         animation: fadeIn 0.5s ease-in forwards;
                         animation-delay: {typing_duration}s;
                         opacity: 0;
-                        display: flex;
-                        gap: 8px;
                     }}
                     @keyframes fadeIn {{
                         from {{ opacity: 0; }}
                         to {{ opacity: 1; }}
                     }}
                 </style>
-                <div class="delayed-icon">
                 """,
                 unsafe_allow_html=True
             )
             
-            if not spikes.empty:
-                if st.button("🔍", key="btn_spike_analysis", help="Deep-Dive Spike Analysis"):
-                    st.session_state.show_spike_analysis = not st.session_state.get("show_spike_analysis", False)
+            # Icons now appear in horizontal sequence after the typing delay
+            with ic1:
+                if bundle_suggestions:
+                    if st.button("💎", key="btn_bundle_suggest", help="View Bundle Strategy"):
+                        st.session_state.show_bundle_suggest = not st.session_state.get("show_bundle_suggest", False)
             
-            if not at_risk_vips.empty:
-                if st.button("👥", key="btn_vip_churn", help="View At-Risk VIPs"):
-                    st.session_state.show_vip_churn = not st.session_state.get("show_vip_churn", False)
+            with ic2:
+                if not at_risk_vips.empty:
+                    if st.button("👥", key="btn_vip_churn", help="View At-Risk VIPs"):
+                        st.session_state.show_vip_churn = not st.session_state.get("show_vip_churn", False)
 
-            if bundle_suggestions:
-                if st.button("💎", key="btn_bundle_suggest", help="View Bundle Strategy"):
-                    st.session_state.show_bundle_suggest = not st.session_state.get("show_bundle_suggest", False)
-
-            st.markdown("</div>", unsafe_allow_html=True)
+            with ic3:
+                if not spikes.empty:
+                    if st.button("🔍", key="btn_spike_analysis", help="Deep-Dive Spike Analysis"):
+                        st.session_state.show_spike_analysis = not st.session_state.get("show_spike_analysis", False)
             
             if st.session_state.get("show_spike_analysis"):
                 st.markdown("---")
