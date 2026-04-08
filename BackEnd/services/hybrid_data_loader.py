@@ -100,7 +100,9 @@ def _normalize_bounds(start_date: Optional[str], end_date: Optional[str], days: 
         start_ts = pd.Timestamp.now().normalize() - pd.Timedelta(days=days)
     if pd.isna(end_ts):
         end_ts = pd.Timestamp.now()
-    return start_ts.normalize(), end_ts.normalize() + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+    
+    # Preserve time if it exists in the original strings, otherwise start_ts is normalized and end_ts is now
+    return start_ts, end_ts
 
 
 def _filter_by_date_range(df: pd.DataFrame, start_ts: pd.Timestamp, end_ts: pd.Timestamp) -> pd.DataFrame:
@@ -469,7 +471,8 @@ def refresh_woocommerce_orders_cache(
         cached_end = pd.to_datetime(meta.get("cached_end"), errors="coerce")
 
         wc_service = WooCommerceService(ui_enabled=False)
-        after = None if full_sync else start_ts.strftime("%Y-%m-%dT00:00:00Z")
+        # Use full ISO format to preserve time components
+        after = None if full_sync else start_ts.strftime("%Y-%m-%dT%H:%M:%SZ")
         before = end_ts.strftime("%Y-%m-%dT%H:%M:%SZ")
         fetched_df = wc_service.fetch_all_historical_orders(
             after=after,

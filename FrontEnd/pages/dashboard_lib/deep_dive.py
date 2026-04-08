@@ -42,6 +42,42 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
     if "Coupons" not in df_sales.columns:
         df_sales["Coupons"] = "None"
 
+    # --- Market Regions Mapping (Official BD Districts) ---
+    bd_states = {
+        "BD-01": "Bandarban", "BD-02": "Barguna", "BD-03": "Bogura",
+        "BD-04": "Brahmanbaria", "BD-05": "Bagerhat", "BD-06": "Barishal",
+        "BD-07": "Bhola", "BD-08": "Cumilla", "BD-09": "Chandpur",
+        "BD-10": "Chattogram", "BD-11": "Cox's Bazar", "BD-12": "Chuadanga",
+        "BD-13": "Dhaka", "BD-14": "Dinajpur", "BD-15": "Faridpur",
+        "BD-16": "Feni", "BD-17": "Gopalganj", "BD-18": "Gazipur",
+        "BD-19": "Gaibandha", "BD-20": "Habiganj", "BD-21": "Jamalpur",
+        "BD-22": "Jashore", "BD-23": "Jhenaidah", "BD-24": "Joypurhat",
+        "BD-25": "Jhalokathi", "BD-26": "Kishoreganj", "BD-27": "Khulna",
+        "BD-28": "Kurigram", "BD-29": "Khagrachhari", "BD-30": "Kushtia",
+        "BD-31": "Lakshmipur", "BD-32": "Lalmonirhat", "BD-33": "Manikganj",
+        "BD-34": "Mymensingh", "BD-35": "Munshiganj", "BD-36": "Madaripur",
+        "BD-37": "Magura", "BD-38": "Moulvibazar", "BD-39": "Meherpur",
+        "BD-40": "Narayanganj", "BD-41": "Netrakona", "BD-42": "Narsingdi",
+        "BD-43": "Narail", "BD-44": "Natore", "BD-45": "Chapai Nawabganj",
+        "BD-46": "Nilphamari", "BD-47": "Noakhali", "BD-48": "Naogaon",
+        "BD-49": "Pabna", "BD-50": "Pirojpur", "BD-51": "Patuakhali",
+        "BD-52": "Panchagarh", "BD-53": "Rajbari", "BD-54": "Rajshahi",
+        "BD-55": "Rangpur", "BD-56": "Rangamati", "BD-57": "Sherpur",
+        "BD-58": "Satkhira", "BD-59": "Sirajganj", "BD-60": "Sylhet",
+        "BD-61": "Sunamganj", "BD-62": "Shariatpur", "BD-63": "Tangail",
+        "BD-64": "Thakurgaon"
+    }
+    
+    # Pre-map regions for display
+    def get_region_name(row):
+        code = str(row.get("state", "")).strip()
+        if code in bd_states: return bd_states[code]
+        city = str(row.get("city", "")).strip()
+        # Fallback to city or stay as code
+        return bd_states.get(city, city if city else code)
+
+    df_sales["_region_display"] = df_sales.apply(get_region_name, axis=1)
+
     # MAIN UI LAYOUT
     st.markdown("### 🔍 Advanced Market Deep-Dive")
     
@@ -86,7 +122,11 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
         with f_c3:
             st.markdown("**📍 Platform & Geo**")
             sel_sources = st.multiselect("Platform/Source", sorted(df_sales["source"].unique()))
-            sel_cities = st.multiselect("Market Regions", sorted(df_sales["city"].unique()))
+            
+            # Market Regions using the dynamic names
+            valid_districts = set(bd_states.values())
+            avail_regions = sorted([r for r in df_sales["_region_display"].unique() if r in valid_districts])
+            sel_regions = st.multiselect("Market Regions", avail_regions)
             
             # Sub-window Filtering (Zoom within range)
             st.markdown("**⏱️ Local Time Frame**")
@@ -121,7 +161,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
     w_df = w_df[(w_df["price"] >= price_range[0]) & (w_df["price"] <= price_range[1])]
     if sel_trends: w_df = w_df[w_df["Trend"].isin(sel_trends)]
     if sel_sources: w_df = w_df[w_df["source"].isin(sel_sources)]
-    if sel_cities: w_df = w_df[w_df["city"].isin(sel_cities)]
+    if sel_regions: w_df = w_df[w_df["_region_display"].isin(sel_regions)]
     if sel_coupons: w_df = w_df[w_df["Coupons"].isin(sel_coupons)]
     if is_disc: 
         # Check if item_revenue per unit is less than price (price is usually regular_price in WC)

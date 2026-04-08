@@ -100,35 +100,59 @@ class WooCommerceService:
         show_progress: bool = True,
         show_errors: bool = True,
     ) -> pd.DataFrame:
-        """Fetch all historical orders recursively."""
-        all_orders = []
-        page = 1
-        progress_bar = st.progress(0) if self.ui_enabled and show_progress else None
-        status_text = st.empty() if self.ui_enabled and show_progress else None
+        """Fetch all historical orders incrementally to stay within memory limits."""
+        import gc
         
+        all_dfs = []
+        page = 1
+        
+        status_container = st.empty() if self.ui_enabled and show_progress else None
+        
+        if status_container:
+            status_container.info(f"Initializing Smart Sync for status: {status}...")
+
         while True:
-            if status_text is not None:
-                status_text.text(f"Fetching page {page} with status '{status}'...")
-            orders = self.fetch_orders(
+            orders_json = self.fetch_orders(
                 page=page,
                 after=after,
                 before=before,
                 status=status,
                 show_errors=show_errors,
             )
-            if not orders:
-                break
-                
-            all_orders.extend(orders)
-            page += 1
             
-            # Simple progress cap for safety or infinite loop prevention
-            if page > 1000: 
+            if not orders_json:
                 break
+            
+            # 1. Process this page immediately to a lean DataFrame
+            page_df = self.process_orders_to_df(orders_json)
+            
+            # 2. Append the lean DF
+            all_dfs.append(page_df)
+            
+            # 3. CRITICAL: Clear the raw JSON from memory
+            del orders_json
+            gc.collect() 
+            
+            if status_container:
+                status_container.text(f"Synced {page * 100} orders... (Memory Safe Mode)")
+            
+            page += 1
+            if page > 1000: break # Safety cap
+            
+        if not all_dfs:
+            return pd.DataFrame()
+
+        # Final concatenation
+        final_df = pd.concat(all_dfs, ignore_index=True)
         
-        if status_text is not None:
-            status_text.text(f"Processing {len(all_orders)} orders...")
-        return self.process_orders_to_df(all_orders)
+        # Optimize dtypes for efficiency
+        if not final_df.empty:
+            if "Order Status" in final_df.columns:
+                final_df["Order Status"] = final_df["Order Status"].astype("category")
+            if "Payment Method Title" in final_df.columns:
+                final_df["Payment Method Title"] = final_df["Payment Method Title"].astype("category")
+
+        return final_df
 
     def process_orders_to_df(self, orders: List[Dict[str, Any]]) -> pd.DataFrame:
         """Flatten WooCommerce order JSON into the application's standard dataframe format."""

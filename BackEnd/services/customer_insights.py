@@ -373,3 +373,35 @@ def get_segment_summary(df: pd.DataFrame) -> pd.DataFrame:
             "Avg_M_Score": "Avg M Score",
         }
     ).sort_values("Total Revenue", ascending=False)
+
+
+def generate_cohort_matrix(df: pd.DataFrame, period: str = 'M') -> pd.DataFrame:
+    """
+    Generates a retention cohort matrix.
+    period: 'M' for monthly, 'W' for weekly.
+    """
+    if df.empty:
+        return pd.DataFrame()
+        
+    df = df.copy()
+    df['order_date'] = pd.to_datetime(df['order_date'])
+    # Need a consistent primary key for grouping
+    if 'customer_id' not in df.columns:
+        # Fallback to customer_key or hashing phone
+        df['customer_id'] = df.apply(lambda row: row.get('customer_key', row.get('phone', 'anon')), axis=1)
+
+    df['cohort'] = df.groupby('customer_id')['order_date'].transform('min').dt.to_period(period)
+    df['order_period'] = df['order_date'].dt.to_period(period)
+    
+    cohort_group = df.groupby(['cohort', 'order_period']).agg(n_customers=('customer_id', 'nunique')).reset_index()
+    
+    # Calculate period offset (Month 0, Month 1, etc.)
+    cohort_group['period_number'] = (cohort_group.order_period.view(dtype='int64') - cohort_group.cohort.view(dtype='int64'))
+    
+    cohort_pivot = cohort_group.pivot_table(index='cohort', columns='period_number', values='n_customers')
+    
+    # Calculate percentage
+    cohort_size = cohort_pivot.iloc[:, 0]
+    retention_matrix = cohort_pivot.divide(cohort_size, axis=0) * 100
+    
+    return retention_matrix

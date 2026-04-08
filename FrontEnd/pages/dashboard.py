@@ -3,6 +3,7 @@
 from __future__ import annotations
 from datetime import date, timedelta, datetime
 import pandas as pd
+import numpy as np
 import streamlit as st
 
 from BackEnd.services.customer_insights import generate_customer_insights_from_sales
@@ -29,7 +30,9 @@ from .dashboard_lib.performance import render_product_performance
 from .dashboard_lib.inventory import render_inventory_health
 from .dashboard_lib.deep_dive import render_deep_dive_tab
 from .dashboard_lib.audit import render_data_audit, render_data_trust_panel
-from .dashboard_lib.live_dashboard import render_live_tab
+from .dashboard_lib.acquisition import render_acquisition_analytics
+from .dashboard_lib.operations import render_operational_health
+from BackEnd.services.customer_insights import generate_cohort_matrix
 
 DASHBOARD_SALES_COLUMNS = [
     "order_id", "order_date", "order_total", "customer_key", "customer_name",
@@ -57,13 +60,24 @@ def render_intelligence_hub_page():
     elif window == "YTD":
         days_back = (today - today.replace(month=1, day=1)).days
     elif window == "Custom Date Range":
-        custom_dates = st.session_state.get("custom_timestamp_range", None)
-        if custom_dates and len(custom_dates) == 2:
-            start_dt, end_dt = custom_dates
+        s_date = st.session_state.get("wc_sync_start_date")
+        s_time = st.session_state.get("wc_sync_start_time")
+        e_date = st.session_state.get("wc_sync_end_date")
+        e_time = st.session_state.get("wc_sync_end_time")
+        
+        if s_date and s_time and e_date and e_time:
+            # Construct ISO strings with time components
+            start_date_str = f"{s_date}T{s_time.strftime('%H:%M:%S')}"
+            end_date_str = f"{e_date}T{e_time.strftime('%H:%M:%S')}"
+            
+            # For metrics calculations that need pure Dates
+            start_dt = s_date
+            end_dt = e_date
             days_back = (end_dt - start_dt).days
         else:
-            start_dt = custom_dates[0] if custom_dates else today
-            end_dt = start_dt
+            start_dt = end_dt = today
+            start_date_str = start_dt.strftime("%Y-%m-%d")
+            end_date_str = end_dt.strftime("%Y-%m-%d")
             days_back = 0
     else:
         window_map = {
@@ -203,14 +217,19 @@ def render_intelligence_hub_page():
     if selection == "💎 Market Overview":
         # Global Narrative & Summary
         render_dashboard_story(data["sales_exec"], data["customers"], data["ml"], window)
-        
         st.divider()
         render_market_overview_timeseries(data["sales_exec"])
-        
-    elif selection == "🚢 Operational Live":
-        st.subheader("⚡ Live Operational Terminal")
-        render_live_tab()
+
+        # Geospatial Intelligence Layer (Moved under ML Forecasts)
+        from FrontEnd.pages.dashboard_lib.geo_viz import render_district_map
+        render_district_map(data["sales"])
     
+    elif selection == "📊 Traffic & Acquisition":
+        render_acquisition_analytics(data["sales"])
+        
+    elif selection == "📋 Operational Health":
+        render_operational_health(data["sales"], data["stock"])
+
     elif selection == "👥 Customer Behavior":
         st.subheader("Customer Intelligence")
         # Pass raw sales for Identity Search (requires phone/email)
@@ -243,7 +262,7 @@ def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts
         return
 
     # Visual Segments
-    t1, t2, t3, t_search, t4 = st.tabs(["📊 Value Segments", "🎯 Priority Outreach", "🔐 Account Registrations", "🔍 Identity Search", "🔍 Identity Ledger"])
+    t1, t2, t3, t_cohort, t_search, t4 = st.tabs(["📊 Value Segments", "🎯 Priority Outreach", "🔐 Account Registrations", "📈 Cohort Retention", "🔍 Identity Search", "🔍 Identity Ledger"])
     
     with t1:
         # Segment Mix
@@ -308,6 +327,32 @@ def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts
                 "AOV": [reg_aov, gst_aov]
             })
             st.plotly_chart(ui.bar_chart(aov_df, x="AOV", y="Account Type", title="Average Order Value Comparison"), use_container_width=True)
+
+    with t_cohort:
+        st.markdown("#### 📈 Customer Retention Cohorts")
+        st.caption("Tracking how cohorts of new customers return and purchase in subsequent months.")
+        
+        cohort_matrix = generate_cohort_matrix(df_sales)
+        if not cohort_matrix.empty:
+            import plotly.graph_objects as go
+            
+            # Heatmap representation
+            fig = go.Figure(data=go.Heatmap(
+                z=cohort_matrix.values,
+                x=[f"Month {i}" for i in cohort_matrix.columns],
+                y=[str(i) for i in cohort_matrix.index],
+                colorscale='YlGnBu',
+                text=np.around(cohort_matrix.values, decimals=1),
+                texttemplate="%{text}%",
+                hoverinfo='z'
+            ))
+            fig.update_layout(title="Monthly Retention Matrix (%)", xaxis_title="Retention Month", yaxis_title="Cohort Month")
+            st.plotly_chart(fig, use_container_width=True)
+            
+            with st.expander("📝 Understanding Cohorts"):
+                st.info("Each row represents a 'Cohort' of customers who made their first purchase in that month. The columns show the percentage of those customers who returned to buy in subsequent months.")
+        else:
+            st.info("Insufficient longitudinal data to generate a cohort matrix.")
 
     with t_search:
         st.markdown("#### 🔍 Customer Identity 360")

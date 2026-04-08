@@ -180,6 +180,51 @@ def setup_theme():
         .delta-up { color: var(--green) !important; font-weight: 700 !important; font-size: 0.85rem !important; margin-top: 4px; }
         .delta-down { color: var(--red) !important; font-weight: 700 !important; font-size: 0.85rem !important; margin-top: 4px; }
 
+        /* --- Sidebar Premium Enhancements --- */
+        .sidebar-group-label {
+            font-size: 0.7rem;
+            font-weight: 800;
+            color: var(--on-surface-variant);
+            opacity: 0.6;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin: 24px 0 12px 0;
+            padding-left: 4px;
+        }
+
+        .heartbeat-card {
+            background: rgba(var(--primary-rgb), 0.05);
+            border-left: 3px solid var(--primary);
+            border-radius: 12px;
+            padding: 12px;
+            margin-top: 24px;
+        }
+
+        .pulse-text {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--on-surface);
+        }
+
+        @keyframes heartbeat {
+            0% { transform: scale(0.95); opacity: 0.5; }
+            50% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.5; }
+        }
+
+        .heartbeat-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: heartbeat 1.5s infinite;
+        }
+
+        /* --- END Sidebar Enhancements --- */
+
         @keyframes pulse-dot {
             0% { transform: scale(0.95); opacity: 0.7; }
             50% { transform: scale(1.05); opacity: 1; }
@@ -526,16 +571,23 @@ def setup_theme():
         
         /* Fixed Bottom Footer */
         .hub-page_footer {
-            position: fixed;
-            left: 0;
-            bottom: 0;
+            margin-top: 40px;
             width: 100%;
             background: var(--background);
             opacity: 0.98;
             backdrop-filter: blur(8px);
             border-top: 1px solid var(--surface-variant);
-            padding: 12px 0;
+            padding: 20px 0;
             z-index: 1000;
+        }
+
+        @media (min-width: 769px) {
+            .hub-page_footer {
+                position: fixed;
+                left: 0;
+                bottom: 0;
+                padding: 12px 0;
+            }
         }
         
         /* Ensure content doesn't get hidden behind the fixed footer */
@@ -614,6 +666,7 @@ def page_header():
 
 
 
+
 def page_footer():
     """Renders a robust and persistent branding page_footer."""
     logo_src = "https://logo.clearbit.com/deencommerce.com"
@@ -631,13 +684,19 @@ def page_footer():
     st.markdown(
         f"""
         <div class="hub-page_footer">
-            <div style="width:100%; text-align:center;">
-                <span style="color:var(--text-muted); margin-right:12px;">© 2026 <a href="https://github.com/saajiidi" target="_blank" style="color:var(--primary);">Sajid Islam</a>. All rights reserved.</span>
-                <span style="color:var(--text-muted); margin:0 12px; opacity:0.5;">|</span>
-                <a href="https://deencommerce.com/" target="_blank" style="color:var(--primary); text-decoration:none;">
-                    <img src="{logo_src}" width="20" class="deen-logo-small" onerror="this.style.display='none'">
-                    Powered by <b>DEEN Commerce Ltd.</b>
-                </a>
+            <div style="width:100%; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;">
+                <div style="display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:8px;">
+                    <span style="color:var(--on-surface-variant); font-size:0.85rem; opacity:0.8;">© 2026</span>
+                    <a href="https://github.com/saajiidi" target="_blank" style="color:var(--primary); font-size:0.85rem; text-decoration:none; font-weight:600;">Sajid Islam</a>
+                    <span style="color:var(--outline); opacity:0.3; margin:0 4px;">|</span>
+                    <span style="color:var(--on-surface-variant); font-size:0.85rem; opacity:0.8;">v9.8 Vision Pro</span>
+                </div>
+                <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+                    <a href="https://deencommerce.com/" target="_blank" style="color:var(--on-surface); text-decoration:none; display:flex; align-items:center; gap:8px;">
+                        <img src="{logo_src}" width="18" height="18" style="border-radius:4px;" onerror="this.style.display='none'">
+                        <span style="font-size:0.9rem; opacity:0.9;">Powered by <b>DEEN Commerce Ltd.</b></span>
+                    </a>
+                </div>
             </div>
         </div>
         """,

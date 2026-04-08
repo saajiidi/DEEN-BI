@@ -1,7 +1,9 @@
 import os
-import datetime
-
+from datetime import datetime, timedelta
+import pandas as pd
 import streamlit as st
+import numpy as np
+from streamlit_autorefresh import st_autorefresh
 
 from FrontEnd.utils.config import APP_TITLE
 from FrontEnd.utils.error_handler import ERROR_LOG_FILE, get_logs, log_error
@@ -48,62 +50,139 @@ def _render_workspace_sidebar():
         if "time_window" not in st.session_state:
             st.session_state.time_window = "Last 7 Days"
 
+        st.markdown('<div class="sidebar-group-label">⏱️ Operational Range</div>', unsafe_allow_html=True)
         st.select_slider(
             "Time Window",
             options=[
-                "Yesterday & Today", 
-                "Last 3 Days", 
-                "Last 7 Days", 
-                "Last Month", 
-                "MTD",
-                "Last 3 Months", 
-                "Last Quarter", 
-                "Last Half Year", 
-                "YTD",
-                "Last Year",
-                "Custom Date Range"
+                "Last Day", "Last 3 Days", "Last 7 Days", "Last 15 Days", "Last Month",
+                "Last 3 Months", "Last Quarter", "Last Half Year", "Last 9 Months", "Last Year", "Custom Date Range"
             ],
-            key="time_window"
+            key="time_window", label_visibility="collapsed"
         )
         
-        if st.session_state.get("time_window") == "Custom Date Range":
-            st.date_input(
-                "Select Date Range",
-                value=(datetime.date.today() - datetime.timedelta(days=7), datetime.date.today()),
-                min_value=datetime.date(2022, 8, 1),
-                max_value=datetime.date.today(),
-                key="custom_timestamp_range"
-            )
 
+        # Smart Shift Logic
+        now = datetime.now()
+        shift_cutoff = now.replace(hour=17, minute=30, second=0, microsecond=0)
+        is_after_cutoff = now >= shift_cutoff
+        
+        shift_label = "Night Shift (Post-Cutoff)" if is_after_cutoff else "Day Shift (Processing)"
+        cycle_start = shift_cutoff if is_after_cutoff else (shift_cutoff - timedelta(days=1))
+        
+        if st.session_state.get("time_window") == "Custom Date Range":
+            col1, col2 = st.columns(2)
+            with col1:
+                st.date_input("Start Date", value=datetime.now().date() - timedelta(days=7), key="wc_sync_start_date")
+                
+            with col2:
+                st.date_input("End Date", value=datetime.now().date(), key="wc_sync_end_date")
+                
         st.divider()
 
-        # 2. Executive Dashboard Navigation
-        st.session_state.active_section = st.radio(
-            "Executive Dashboard",
-            [
-                "💎 Market Overview",
-                "🚢 Operational Live",
-                "👥 Customer Behavior",
-                "🔍 Deep-Dive Clusters",
-                "📦 Inventory Health",
-                "🛡️ Data Trust"
-            ],
-            index=0
+        # 1. Fetch live metrics for Spark-Alerts
+        stats = {"proc": 0, "low": 0}
+        if "dashboard_data" in st.session_state:
+            data = st.session_state.dashboard_data
+            df_raw = data.get("sales", pd.DataFrame())
+            stock = data.get("stock", pd.DataFrame())
+            if not df_raw.empty:
+                stats["proc"] = df_raw[df_raw["order_status"].str.lower() == "processing"]["order_id"].nunique()
+            if not stock.empty:
+                stats["low"] = len(stock[stock["Stock Quantity"] <= 5])
+
+        # 1. Fetch live metrics for alerts
+        stats = {"low": 0}
+        if "dashboard_data" in st.session_state:
+            data = st.session_state.dashboard_data
+            stock = data.get("stock", pd.DataFrame())
+            if not stock.empty:
+                stats["low"] = len(stock[stock["Stock Quantity"] <= 5])
+
+        # 2. Unified Navigation (Single Stack for Smooth Performance)
+        st.markdown('<div class="sidebar-group-label">⚡ NAVIGATION HUB</div>', unsafe_allow_html=True)
+        
+        inv_label = f"📦 Inventory Health [{stats['low']}!] " if stats['low'] > 0 else "📦 Inventory Health"
+        
+        nav_map = {
+            "💎 Market Overview": "💎 Market Overview",
+            "📊 Traffic & Acquisition": "📊 Traffic & Acquisition",
+            "👥 Customer Behavior": "👥 Customer Behavior",
+            "🔍 Deep-Dive Clusters": "🔍 Deep-Dive Clusters",
+            inv_label: "📦 Inventory Health",
+            "📋 Operational Health": "📋 Operational Health",
+            "🛡️ Data Trust": "🛡️ Data Trust"
+        }
+
+        # Initialize section if not set
+        if "active_section" not in st.session_state:
+            st.session_state.active_section = "💎 Market Overview"
+
+        # Find the index of the active section in the labels list
+        # Map values back to display labels to find the index
+        reverse_map = {v: k for k, v in nav_map.items()}
+        current_label = reverse_map.get(st.session_state.active_section, "💎 Market Overview")
+        
+        labels = list(nav_map.keys())
+        try:
+            current_index = labels.index(current_label)
+        except ValueError:
+            current_index = 0
+
+        selection = st.radio(
+            "Navigation",
+            labels,
+            index=current_index,
+            key="main_nav",
+            label_visibility="collapsed"
         )
+        
+        # Update formal state
+        st.session_state.active_section = nav_map[selection]
+
+        st.markdown(f'<div style="font-size:0.75rem; opacity:0.6; padding-left:4px; margin-top:8px;">Operational Cell: <b>Active</b></div>', unsafe_allow_html=True)
         st.markdown("[🔗 Open OPS BI Terminal](https://deen-ops.streamlit.app/)")
 
         st.divider()
 
-        # 2. Global Sync Trigger
+        # 3. Global Sync Trigger
         if st.button("🔄 Sync Operations", type="primary", use_container_width=True):
             st.session_state["global_sync_request"] = True
             st.rerun()
+            
+        # 4. Global Export & Utilities
+        with st.expander("🛠️ Advanced Controls"):
+            auto_refresh = st.toggle("Auto-Refresh (15m)", value=False)
+            if auto_refresh:
+                st_autorefresh(interval=15 * 60 * 1000, key="global_refresh")
+                
+            if "dashboard_data" in st.session_state:
+                csv = st.session_state.dashboard_data["sales"].to_csv(index=False)
+                st.download_button("📥 Download Analysis (CSV)", csv, "deen_analysis_export.csv", "text/csv", use_container_width=True)
 
-        # 3. Status Indicator
-        st.markdown("""
-            <div style="background:rgba(16, 185, 129, 0.1); border-radius:12px; padding:12px; margin-top:16px;">
-                <div style="font-size:0.75rem; color:var(--green); font-weight:700;">LIVE SYSTEM STATUS</div>
-                <div style="font-size:0.85rem; color:var(--on-surface);">Connected to WooCommerce</div>
+        # 5. Anomaly Detection (Toasts)
+        if "dashboard_data" in st.session_state:
+            df_curr = st.session_state.dashboard_data["sales"]
+            refund_count = len(df_curr[df_curr["order_status"].str.lower() == "refunded"])
+            if refund_count > 5:
+                st.toast("🚨 Unusual refund activity detected in the current window!", icon="⚠️")
+
+        # 4. System Heartbeat Widget (Suggestion 3)
+        sync_time = "Just now"
+        if st.session_state.get("live_sync_time"):
+            diff = datetime.now() - st.session_state.live_sync_time
+            mins = int(diff.total_seconds() / 60)
+            sync_time = f"{mins}m ago" if mins > 0 else "Just now"
+
+        st.markdown(f"""
+            <div class="heartbeat-card">
+                <div class="pulse-text">
+                    <div class="heartbeat-dot"></div>
+                    SYSTEM HEARTBEAT
+                </div>
+                <div style="font-size:0.8rem; color:var(--on-surface-variant); margin-top:8px;">
+                    <b>Sync Fidelity:</b> {sync_time}<br>
+                    <span style="opacity:0.7;">Sajid | Executive Data Stream</span>
+                </div>
             </div>
         """, unsafe_allow_html=True)
 
