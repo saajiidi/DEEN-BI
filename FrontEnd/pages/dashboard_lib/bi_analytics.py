@@ -18,8 +18,8 @@ def build_period_business_metrics(df_sales: pd.DataFrame, df_customers: pd.DataF
     order_metrics["period_label"] = order_metrics["period"].astype(str)
     metrics = order_metrics.groupby(["period", "period_label"], as_index=False).agg(
         revenue=("order_total", "sum"),
-        orders=("order_id", lambda s: s.replace("", pd.NA).dropna().nunique()),
-        unique_customers=("customer_key", lambda s: s.replace("", pd.NA).dropna().nunique()),
+        orders=("order_id", "nunique"),
+        unique_customers=("customer_key", "nunique"),
     ).sort_values("period").reset_index(drop=True)
     if isinstance(df_customers, pd.DataFrame) and not df_customers.empty and "first_order" in df_customers.columns:
         customer_df = df_customers.copy()
@@ -56,8 +56,8 @@ def render_today_vs_last_day_sales_chart(df_sales: pd.DataFrame, df_customers: p
     sales["order_day"] = sales["order_date"].dt.normalize()
     order_daily = build_order_level_dataset(sales).groupby("order_day", as_index=False).agg(
         revenue=("order_total", "sum"),
-        orders=("order_id", lambda s: s.replace("", pd.NA).dropna().nunique()),
-        unique_customers=("customer_key", lambda s: s.replace("", pd.NA).dropna().nunique()),
+        orders=("order_id", "nunique"),
+        unique_customers=("customer_key", "nunique"),
         units=("qty", "sum"),
     ).sort_values("order_day").tail(2).reset_index(drop=True)
     if order_daily.empty: return
@@ -82,8 +82,8 @@ def render_last_7_days_sales_chart(df_sales: pd.DataFrame, df_customers: pd.Data
     if sales.empty: return
     daily = build_order_level_dataset(sales.assign(order_day=sales["order_date"].dt.normalize())).groupby("order_day", as_index=False).agg(
         revenue=("order_total", "sum"),
-        orders=("order_id", lambda s: s.replace("", pd.NA).dropna().nunique()),
-        unique_customers=("customer_key", lambda s: s.replace("", pd.NA).dropna().nunique()),
+        orders=("order_id", "nunique"),
+        unique_customers=("customer_key", "nunique"),
         units=("qty", "sum"),
     ).sort_values("order_day").tail(7).reset_index(drop=True)
     if daily.empty: return
@@ -171,8 +171,11 @@ def render_ml_forecast_charts(daily: pd.DataFrame):
     
     try:
         from BackEnd.services.ts_forecast import generate_forecasts
-    except ImportError:
-        st.warning("Time-series forecasting module not loaded.")
+    except ImportError as e:
+        st.warning(f"Time-series forecasting module not loaded: {e}")
+        return
+    except Exception as e:
+        st.error(f"Error initializing forecasting module: {e}")
         return
         
     metrics_to_forecast = {

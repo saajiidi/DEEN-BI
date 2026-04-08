@@ -1,19 +1,26 @@
 import pandas as pd
 import numpy as np
-from statsmodels.tsa.arima.model import ARIMA
-from statsmodels.tsa.statespace.sarimax import SARIMAX
-from statsmodels.tsa.holtwinters import ExponentialSmoothing
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
 import warnings
+# Heavy ML imports moved inside functions to allow the module to load even if dependencies are missing during bootstrap.
 
 warnings.filterwarnings("ignore")
 
 def generate_forecasts(daily_df: pd.DataFrame, metric: str = "revenue", horizon: int = 7) -> dict:
     if len(daily_df) < 14:
         return {"error": "Insufficient data points for robust ML prediction. Switch to 'Last Month' or a longer Custom Date Range (needs at least 14 days of history)."}
+
+    # Try-load heavy dependencies
+    try:
+        from statsmodels.tsa.arima.model import ARIMA
+        from statsmodels.tsa.statespace.sarimax import SARIMAX
+        from statsmodels.tsa.holtwinters import ExponentialSmoothing
+        from sklearn.linear_model import LinearRegression
+        from sklearn.metrics import mean_squared_error
+    except ImportError as e:
+        return {"error": f"ML dependencies (statsmodels/scikit-learn) are not installed: {e}"}
     
     df = daily_df.sort_values("order_day").copy()
+
     df.set_index("order_day", inplace=True)
     # Fill missing days
     df = df.asfreq('D', fill_value=0)
