@@ -193,11 +193,11 @@ def render_intelligence_hub_page():
 
     data = st.session_state.dashboard_data
     
-    # 1. Core Metrics (6 Pillars)
+    # 1. Core Metrics (6 Pillars) - PRE-CALCULATE ONCE
     df_exec = data["sales_exec"]
     exec_orders = build_order_level_dataset(df_exec)
     
-    total_rev = sum_order_level_revenue(df_exec)
+    total_rev = sum_order_level_revenue(df_exec, order_df=exec_orders)
     order_count = exec_orders["order_id"].nunique() if not exec_orders.empty else 0
     cust_count = df_exec["customer_key"].nunique()
     total_items = df_exec["qty"].sum()
@@ -207,10 +207,11 @@ def render_intelligence_hub_page():
     
     # --- Comparative Logic ---
     df_prev_exec = data["prev_exec"]
-    prev_items_val = df_prev_exec["qty"].sum() if not df_prev_exec.empty else 0
-    prev_rev_val = sum_order_level_revenue(df_prev_exec)
-    
     prev_orders_level = build_order_level_dataset(df_prev_exec)
+    
+    prev_items_val = df_prev_exec["qty"].sum() if not df_prev_exec.empty else 0
+    prev_rev_val = sum_order_level_revenue(df_prev_exec, order_df=prev_orders_level)
+    
     prev_orders_val = prev_orders_level["order_id"].nunique() if not prev_orders_level.empty else 0
     prev_aov_val = (prev_rev_val / prev_orders_val) if prev_orders_val else 0
     prev_cust_val = df_prev_exec["customer_key"].nunique() if not df_prev_exec.empty else 0

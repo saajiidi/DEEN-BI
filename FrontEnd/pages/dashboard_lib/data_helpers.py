@@ -17,39 +17,63 @@ def build_order_level_dataset(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
 
     optional_columns = [col for col in ["order_day", "day_name", "day_num", "hour", "region", "_import_time"] if col in sales.columns]
-    order_rows = sales[sales["order_id"].replace("", pd.NA).notna()].copy()
-    no_order_id_rows = sales[sales["order_id"].replace("", pd.NA).isna()].copy()
+    
+    # 1. Clean order IDs and separate rows
+    sales["order_id"] = sales["order_id"].astype(str).str.strip().replace(["", "nan", "None", "NaN"], pd.NA)
+    order_rows = sales[sales["order_id"].notna()].copy()
+    no_order_id_rows = sales[sales["order_id"].isna()].copy()
 
     grouped_orders = pd.DataFrame()
     if not order_rows.empty:
+        # Pre-sort to ensure 'first' picks the earliest date/status
+        order_rows = order_rows.sort_values("order_date", ascending=True)
+        
+        # Identify non-numeric columns to use 'first' (picking non-null)
+        meta_cols = ["order_date", "customer_key", "customer_name", "order_status", "source", "city", "state"]
+        
+        # Core aggregations (Vectorized)
         aggregations = {
-            "order_date": ("order_date", "min"),
-            "order_total": ("order_total", "max"),
-            "customer_key": ("customer_key", lambda s: next((v for v in s if str(v).strip()), "")),
-            "customer_name": ("customer_name", lambda s: next((v for v in s if str(v).strip()), "")),
-            "order_status": ("order_status", lambda s: next((v for v in s if str(v).strip()), "")),
-            "source": ("source", lambda s: ", ".join(sorted({str(v) for v in s if str(v).strip()}))),
-            "city": ("city", lambda s: next((v for v in s if str(v).strip()), "")),
-            "state": ("state", lambda s: next((v for v in s if str(v).strip()), "")),
-            "qty": ("qty", "sum"),
+            "order_date": "min",
+            "order_total": "max",
+            "qty": "sum",
         }
         for col in optional_columns:
-            aggregations[col] = (col, "first")
-        grouped_orders = order_rows.sort_values("order_date").groupby("order_id", as_index=False).agg(**aggregations)
+            aggregations[col] = "first"
+
+        # Group numeric totals (Dictionary-based aggregation for stability)
+        grouped_orders = order_rows.groupby("order_id", as_index=False).agg(aggregations)
+        
+        # Group metadata (Picking the first non-null/non-empty value per order)
+        # We can optimize this by replacing empty strings with pd.NA first
+        meta_df = order_rows[["order_id"] + meta_cols].copy()
+        for col in meta_cols:
+             meta_df[col] = meta_df[col].astype(str).str.strip().replace(["", "nan", "None", "NaN"], pd.NA)
+        
+        meta_grouped = meta_df.groupby("order_id", as_index=False).first().fillna("")
+        
+        # Merge back
+        grouped_orders = grouped_orders.merge(meta_grouped, on="order_id", how="left")
 
     passthrough_rows = pd.DataFrame()
     if not no_order_id_rows.empty:
-        passthrough_rows = no_order_id_rows[
-            ["order_id", "order_date", "order_total", "customer_key", "customer_name", "order_status", "source", "city", "state", "qty"] + optional_columns
-        ].copy()
+        available_cols = ["order_id", "order_date", "order_total", "customer_key", "customer_name", "order_status", "source", "city", "state", "qty"] + optional_columns
+        passthrough_rows = no_order_id_rows[[c for c in available_cols if c in no_order_id_rows.columns]].copy()
 
     frames = [frame for frame in [grouped_orders, passthrough_rows] if not frame.empty]
     if not frames:
         return pd.DataFrame(columns=["order_id", "order_date", "order_total", "customer_key", "customer_name", "order_status", "source", "city", "state", "qty"] + optional_columns)
-    return pd.concat(frames, ignore_index=True, sort=False)
+    
+    final_df = pd.concat(frames, ignore_index=True, sort=False)
+    # Ensure consistency in common types
+    if "order_total" in final_df.columns:
+        final_df["order_total"] = pd.to_numeric(final_df["order_total"], errors="coerce").fillna(0.0)
+    if "qty" in final_df.columns:
+        final_df["qty"] = pd.to_numeric(final_df["qty"], errors="coerce").fillna(0).astype(int)
+        
+    return final_df
 
-def sum_order_level_revenue(df: pd.DataFrame) -> float:
-    orders = build_order_level_dataset(df)
+def sum_order_level_revenue(df: pd.DataFrame, order_df: pd.DataFrame = None) -> float:
+    orders = order_df if order_df is not None else build_order_level_dataset(df)
     if orders.empty:
         return 0.0
     return float(pd.to_numeric(orders["order_total"], errors="coerce").fillna(0).sum())
