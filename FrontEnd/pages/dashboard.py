@@ -50,10 +50,21 @@ def render_intelligence_hub_page():
     window = st.session_state.get("time_window", "Last 7 Days")
     
     today = date.today()
+    start_dt = end_dt = today
+    
     if window == "MTD":
         days_back = (today - today.replace(day=1)).days
     elif window == "YTD":
         days_back = (today - today.replace(month=1, day=1)).days
+    elif window == "Custom Date Range":
+        custom_dates = st.session_state.get("custom_timestamp_range", None)
+        if custom_dates and len(custom_dates) == 2:
+            start_dt, end_dt = custom_dates
+            days_back = (end_dt - start_dt).days
+        else:
+            start_dt = custom_dates[0] if custom_dates else today
+            end_dt = start_dt
+            days_back = 0
     else:
         window_map = {
             "Yesterday & Today": 1,
@@ -61,25 +72,32 @@ def render_intelligence_hub_page():
             "Last 7 Days": 7,
             "Last Month": 30,
             "Last 3 Months": 90,
-            "Last Quarter": 120, # 4 Months as requested
+            "Last Quarter": 120,
             "Last Half Year": 180,
             "Last Year": 365
         }
         days_back = window_map.get(window, 7)
     
-    # Range for current view (e.g. Yesterday + Today)
-    end_date_str = date.today().strftime("%Y-%m-%d")
-    start_date_str = (date.today() - timedelta(days=days_back)).strftime("%Y-%m-%d")
-    
-    # Range for comparative view (The block before that)
-    # If Yesterday & Today (1 day), we want the day before Yesterday to Today - 1
-    prev_start_date_str = (date.today() - timedelta(days=days_back * 2)).strftime("%Y-%m-%d")
-    prev_end_date_str = (date.today() - timedelta(days=days_back + 1)).strftime("%Y-%m-%d")
+    if window == "Custom Date Range":
+        end_date_str = end_dt.strftime("%Y-%m-%d")
+        start_date_str = start_dt.strftime("%Y-%m-%d")
+        duration = max(1, days_back)
+        prev_end_date_str = (start_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+        prev_start_date_str = (start_dt - timedelta(days=duration)).strftime("%Y-%m-%d")
+    else:
+        end_date_str = today.strftime("%Y-%m-%d")
+        start_date_str = (today - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        prev_start_date_str = (today - timedelta(days=days_back * 2)).strftime("%Y-%m-%d")
+        prev_end_date_str = (today - timedelta(days=days_back + 1)).strftime("%Y-%m-%d")
 
     orders_status = get_woocommerce_orders_cache_status(start_date_str, end_date_str)
     
+    needs_history = window == "Custom Date Range" and not orders_status.get("is_covered", True)
+    if needs_history:
+        st.warning(f"⏳ Connecting to WooCommerce Live to sync deep archival history ({start_date_str} to {end_date_str}). This runs seamlessly in the background and may take a few minutes. Your metrics will automatically populate once caching finishes!")
+
     # Force a sync for current-day data requests
-    should_force = global_sync or (window == "Yesterday & Today")
+    should_force = global_sync or (window == "Yesterday & Today") or needs_history
     start_orders_background_refresh(start_date_str, end_date_str, force=should_force)
     
     sync_mode = "live" if (window == "Yesterday & Today" or global_sync) else "cache_only"
@@ -225,6 +243,16 @@ def render_customer_insight_tab():
         with c2:
             rev_df = df.groupby("segment")["total_revenue"].sum().reset_index().sort_values("total_revenue", ascending=False)
             st.plotly_chart(ui.bar_chart(rev_df, x="total_revenue", y="segment", title="Revenue by Segment", color_scale="Tealgrn"), use_container_width=True)
+
+        c3, c4 = st.columns(2)
+        with c3:
+            cycle_df = df.groupby("segment")["purchase_cycle_days"].mean().reset_index().dropna()
+            if not cycle_df.empty:
+                st.plotly_chart(ui.bar_chart(cycle_df, x="purchase_cycle_days", y="segment", title="Avg Days Between Purchases", color_scale="Plasma"), use_container_width=True)
+        with c4:
+            clv_df = df.groupby("segment")["clv"].mean().reset_index().dropna()
+            if not clv_df.empty:
+                st.plotly_chart(ui.bar_chart(clv_df, x="clv", y="segment", title="Avg Customer Lifetime Value (CLV)", color_scale="Purpor"), use_container_width=True)
 
     with t2:
         # CRM Queue

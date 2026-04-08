@@ -11,6 +11,13 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
         return
 
     # PRE-PROCESSING: Parsing Product Variants & Local Trends
+    if "item_revenue" not in df_sales.columns:
+        df_sales["item_revenue"] = pd.to_numeric(df_sales.get("line_total", df_sales.get("order_total", 0)), errors="coerce").fillna(0)
+        
+    if "price" not in df_sales.columns:
+        df_sales["price"] = pd.to_numeric(df_sales["item_revenue"], errors="coerce") / pd.to_numeric(df_sales["qty"], errors="coerce").clip(lower=1)
+        df_sales["price"] = df_sales["price"].fillna(0)
+        
     if "_variant_parsed" not in df_sales.columns:
         df_sales[["_color", "_size"]] = df_sales["item_name"].apply(lambda x: pd.Series(parse_sku_variants(x)))
         df_sales["_variant_parsed"] = True
@@ -44,10 +51,28 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
         
         with f_c1:
             st.markdown("**📦 Product & Variants**")
-            sel_cats = st.multiselect("Categories", sorted(df_sales["Category"].unique()))
-            sel_skus = st.text_input("SKU Search (Exact or Comma-list)")
-            sel_colors = st.multiselect("Colors", sorted([c for c in df_sales["_color"].unique() if c != "Unknown"]))
-            sel_sizes = st.multiselect("Sizes", sorted([s for s in df_sales["_size"].unique() if s != "Unknown"]))
+            # 1. Category
+            cat_list = sorted([str(c) for c in df_sales["Category"].dropna().unique() if str(c).strip()])
+            sel_cats = st.multiselect("Categories", ["All"] + cat_list, default=["All"])
+            active_cats = [] if "All" in sel_cats or not sel_cats else sel_cats
+            
+            # Cascade for SKUs
+            sku_options = df_sales[df_sales["Category"].isin(active_cats)] if active_cats else df_sales
+            avail_skus = sorted([str(s) for s in sku_options["sku"].unique() if str(s).strip() and s != "Unknown"])
+            sel_skus = st.multiselect("SKUs", ["All"] + avail_skus, default=["All"])
+            active_skus = [] if "All" in sel_skus or not sel_skus else sel_skus
+            
+            # Cascade for Colors
+            color_options = sku_options[sku_options["sku"].astype(str).isin(active_skus)] if active_skus else sku_options
+            avail_colors = sorted([str(c) for c in color_options["_color"].unique() if str(c).strip() and c != "Unknown"])
+            sel_colors = st.multiselect("Colors", ["All"] + avail_colors, default=["All"])
+            active_colors = [] if "All" in sel_colors or not sel_colors else sel_colors
+            
+            # Cascade for Sizes
+            size_options = color_options[color_options["_color"].isin(active_colors)] if active_colors else color_options
+            avail_sizes = sorted([str(s) for s in size_options["_size"].unique() if str(s).strip() and s != "Unknown"])
+            sel_sizes = st.multiselect("Sizes", ["All"] + avail_sizes, default=["All"])
+            active_sizes = [] if "All" in sel_sizes or not sel_sizes else sel_sizes
 
         with f_c2:
             st.markdown("**💰 Financials**")
@@ -88,12 +113,10 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
     w_df = w_df[(w_df["order_date"].dt.date >= start_f) & (w_df["order_date"].dt.date <= end_f)]
     
     # Logic Filters
-    if sel_cats: w_df = w_df[w_df["Category"].isin(sel_cats)]
-    if sel_colors: w_df = w_df[w_df["_color"].isin(sel_colors)]
-    if sel_sizes: w_df = w_df[w_df["_size"].isin(sel_sizes)]
-    if sel_skus:
-        sku_list = [s.strip().lower() for s in sel_skus.split(",") if s.strip()]
-        w_df = w_df[w_df["sku"].str.lower().isin(sku_list)]
+    if active_cats: w_df = w_df[w_df["Category"].isin(active_cats)]
+    if active_colors: w_df = w_df[w_df["_color"].isin(active_colors)]
+    if active_sizes: w_df = w_df[w_df["_size"].isin(active_sizes)]
+    if active_skus: w_df = w_df[w_df["sku"].astype(str).isin(active_skus)]
     
     w_df = w_df[(w_df["price"] >= price_range[0]) & (w_df["price"] <= price_range[1])]
     if sel_trends: w_df = w_df[w_df["Trend"].isin(sel_trends)]

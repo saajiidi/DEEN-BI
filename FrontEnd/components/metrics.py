@@ -50,7 +50,7 @@ def metric_highlight(label: str, value: str, help_text: str = ""):
     help_block = f'<div class="bi-highlight-help" style="color:var(--text-muted); font-size:0.9rem; margin-top:4px;">{help_text}</div>' if help_text else ""
     st.markdown(
         f"""
-        <div class="stMetricContainer" style="background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:1.5rem; border-left:4px solid var(--primary);">
+        <div class="stMetricContainer" style="background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:1.5rem; border-left:4px solid var(--primary); height:100%; min-height:120px; display:flex; flex-direction:column; justify-content:center;">
           <div style="font-size:0.85rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">{label}</div>
           <div style="font-size:2.2rem; font-weight:700; color:var(--text-strong); margin-top:8px;">{value}</div>
           {help_block}

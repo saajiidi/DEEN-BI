@@ -44,7 +44,9 @@ def _render_workspace_sidebar():
     with st.sidebar:
         ui.sidebar_branding()
         
-        # 1. Timeline Control
+        if "time_window" not in st.session_state:
+            st.session_state.time_window = "Last 7 Days"
+
         st.select_slider(
             "Time Window",
             options=[
@@ -57,11 +59,21 @@ def _render_workspace_sidebar():
                 "Last Quarter", 
                 "Last Half Year", 
                 "YTD",
-                "Last Year"
+                "Last Year",
+                "Custom Date Range"
             ],
-            value="Last 7 Days",
             key="time_window"
         )
+        
+        if st.session_state.get("time_window") == "Custom Date Range":
+            import datetime
+            st.date_input(
+                "Select Date Range",
+                value=(datetime.date.today() - datetime.timedelta(days=7), datetime.date.today()),
+                min_value=datetime.date(2022, 8, 1),
+                max_value=datetime.date.today(),
+                key="custom_timestamp_range"
+            )
 
         st.divider()
 
