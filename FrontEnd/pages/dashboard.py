@@ -259,19 +259,14 @@ def render_intelligence_hub_page():
         st.divider()
         render_market_overview_timeseries(data["sales_exec"], ml_bundle=data["ml"])
 
-        # Geospatial Intelligence Layer (Moved under ML Forecasts)
-        # Use dedicated map dataset (Always Snapshot if MAP_FORCE_SNAPSHOT enabled)
-        from FrontEnd.pages.dashboard_lib.geo_viz import render_district_map
-        render_district_map(data["sales_map"])
+        
+
     
     elif selection == "📊 Traffic & Acquisition":
         render_acquisition_analytics(data["sales"])
         
-    elif selection == "📋 Operational Health":
-        render_operational_health(data["sales"], data["stock"])
-
-    elif selection == "👥 Customer Behavior":
-        st.subheader("Customer Intelligence")
+    elif selection == "👥 Customer Insight":
+        st.subheader("Customer Insight")
         # Pass raw sales for Identity Search (requires phone/email)
         render_customer_insight_tab(reg_val, guest_val, data["customer_count"], data["sales"])
         
@@ -301,10 +296,9 @@ def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts
         st.warning("No customer segments identified in this period.")
         return
 
-    # Visual Segments
-    t1, t2, t3, t_cohort, t_search, t4 = st.tabs(["📊 Value Segments", "🎯 Priority Outreach", "🔐 Account Registrations", "📈 Cohort Retention", "🔍 Identity Search", "🔍 Identity Ledger"])
-    
-    with t1:
+    # Visual Segments sequentially rendered
+    st.markdown("### 📊 Value Segments")
+    if True:
         # Segment Mix
         mix_df = df["segment"].value_counts().reset_index()
         mix_df.columns = ["Segment", "Count"]
@@ -326,7 +320,9 @@ def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts
             if not clv_df.empty:
                 st.plotly_chart(ui.bar_chart(clv_df, x="clv", y="segment", title="Avg Customer Lifetime Value (CLV)", color_scale="Purpor"), use_container_width=True)
 
-    with t2:
+    st.divider()
+    st.markdown("### 🎯 Priority Outreach")
+    if True:
         # CRM Queue
         st.caption("Strategic segments requiring immediate attention based on recency and business value.")
         priority = df.sort_values(["total_revenue", "recency_days"], ascending=[False, True]).head(15)
@@ -337,7 +333,9 @@ def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts
             use_container_width=True, hide_index=True
         )
 
-    with t3:
+    st.divider()
+    st.markdown("### 🔐 Account Registrations")
+    if True:
         st.markdown("#### 🔐 Account Holder Intelligence")
         m1, m2, m3 = st.columns(3)
         m1.metric("Lifetime User Accounts", f"{total_accounts:,}")
@@ -368,7 +366,9 @@ def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts
             })
             st.plotly_chart(ui.bar_chart(aov_df, x="AOV", y="Account Type", title="Average Order Value Comparison"), use_container_width=True)
 
-    with t_cohort:
+    st.divider()
+    st.markdown("### 📈 Cohort Retention")
+    if True:
         st.markdown("#### 📈 Customer Retention Cohorts")
         st.caption("Tracking how cohorts of new customers return and purchase in subsequent months.")
         
@@ -394,7 +394,9 @@ def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts
         else:
             st.info("Insufficient longitudinal data to generate a cohort matrix.")
 
-    with t_search:
+    st.divider()
+    st.markdown("### 🔍 Identity Search")
+    if True:
         st.markdown("#### 🔍 Customer Identity 360")
         st.caption("Locate any customer profile by Phone, Email, Name, or Order ID.")
         
@@ -466,7 +468,9 @@ def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts
                         st.caption("Top item for this customer.")
                         st.info(f"**Most Bought:** {profile['favorite_product']}")
 
-    with t4:
+    st.divider()
+    st.markdown("### 🔍 Identity Ledger")
+    if True:
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 

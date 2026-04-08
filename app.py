@@ -50,15 +50,6 @@ def _render_workspace_sidebar():
         if "time_window" not in st.session_state:
             st.session_state.time_window = "Last 7 Days"
 
-        st.markdown('<div class="sidebar-group-label">⚡ Performance Control</div>', unsafe_allow_html=True)
-        st.segmented_control(
-            "Connection Tuning",
-            options=["High Speed", "Slow Connection"],
-            default="High Speed",
-            key="conn_speed_mode",
-            label_visibility="collapsed"
-        )
-
         st.markdown('<div class="sidebar-group-label">⏱️ Operational Range</div>', unsafe_allow_html=True)
         st.select_slider(
             "Time Window",
@@ -116,11 +107,10 @@ def _render_workspace_sidebar():
         
         nav_map = {
             "💎 Market Overview": "💎 Market Overview",
-            "📊 Traffic & Acquisition": "📊 Traffic & Acquisition",
-            "👥 Customer Behavior": "👥 Customer Behavior",
             "🔍 Deep-Dive Clusters": "🔍 Deep-Dive Clusters",
+            "📊 Traffic & Acquisition": "📊 Traffic & Acquisition",
+            "👥 Customer Insight": "👥 Customer Insight",
             inv_label: "📦 Inventory Health",
-            "📋 Operational Health": "📋 Operational Health",
             "🛡️ Data Trust": "🛡️ Data Trust"
         }
 
