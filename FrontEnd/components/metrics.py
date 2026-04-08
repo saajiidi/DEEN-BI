@@ -106,15 +106,24 @@ def date_context(
 
 
 
-def operational_card(title: str, order_count: int, item_count: int, revenue: float, icon: str = "📦", delta_text: str = "", delta_val: int = 0, item_label: str = "Items"):
-    """Premium multi-line operational metric card."""
+def operational_card(title: str, order_count: int, item_count: int, revenue: float, icon: str = "📦", delta_text: str = "", delta_val: int = 0, item_label: str = "Items", is_alert: bool = False):
+    """Premium multi-line operational metric card with optional alert pulse."""
     delta_class = "delta-up" if delta_val >= 0 else "delta-down"
     delta_icon = "↑" if delta_val >= 0 else "↓"
     delta_html = f'<div class="metric-delta {delta_class}" style="margin-top:10px; font-size:0.85rem;">{delta_icon} {delta_text}</div>' if delta_text else ""
     
+    pulse_css = "animation: pulse-amber 2s infinite;" if is_alert else ""
+    
     st.markdown(
         f"""
-        <div class="metric-card" style="padding: 1.2rem; min-height: 180px;">
+        <style>
+        @keyframes pulse-amber {{
+            0% {{ box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }}
+            70% {{ box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }}
+            100% {{ box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }}
+        }}
+        </style>
+        <div class="metric-card" style="padding: 1.2rem; min-height: 180px; {pulse_css} border: { '2px solid #F59E0B' if is_alert else '1px solid var(--border)' };">
             <div style="display: flex; justify-content: space-between; align-items: start;">
                 <div style="font-size: 1.1rem; font-weight: 700; color: var(--on-surface);">{title}</div>
                 <div style="font-size: 1.5rem;">{icon}</div>

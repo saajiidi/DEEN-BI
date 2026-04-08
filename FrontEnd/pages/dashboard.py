@@ -213,14 +213,15 @@ def render_intelligence_hub_page():
     
     elif selection == "👥 Customer Behavior":
         st.subheader("Customer Intelligence")
-        render_customer_insight_tab(reg_val, guest_val, data["customer_count"])
+        # Pass raw sales for Identity Search (requires phone/email)
+        render_customer_insight_tab(reg_val, guest_val, data["customer_count"], data["sales"])
         
     elif selection == "🔍 Deep-Dive Clusters":
         render_deep_dive_tab(data["sales"], data["stock"])
         
     elif selection == "📦 Inventory Health":
         st.subheader("Operational Forecasting")
-        render_inventory_health(data["stock"], data["ml"].get("forecast"))
+        render_inventory_health(data["stock"], data["ml"].get("forecast"), data["sales"])
         
     elif selection == "🛡️ Data Trust":
         st.subheader("System Reliability Audit")
@@ -230,7 +231,7 @@ def render_intelligence_hub_page():
 
 # --- MERGED COMPONENT LOGIC ---
 
-def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts: int):
+def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts: int, df_sales: pd.DataFrame = None):
     """Merged Customer Intelligence Component."""
     if "dashboard_data" not in st.session_state:
         st.info("Please sync data to view customer intelligence.")
@@ -242,7 +243,7 @@ def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts
         return
 
     # Visual Segments
-    t1, t2, t3, t4 = st.tabs(["📊 Value Segments", "🎯 Priority Outreach", "🔐 Account Registrations", "🔍 Identity Ledger"])
+    t1, t2, t3, t_search, t4 = st.tabs(["📊 Value Segments", "🎯 Priority Outreach", "🔐 Account Registrations", "🔍 Identity Search", "🔍 Identity Ledger"])
     
     with t1:
         # Segment Mix
@@ -307,6 +308,78 @@ def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts
                 "AOV": [reg_aov, gst_aov]
             })
             st.plotly_chart(ui.bar_chart(aov_df, x="AOV", y="Account Type", title="Average Order Value Comparison"), use_container_width=True)
+
+    with t_search:
+        st.markdown("#### 🔍 Customer Identity 360")
+        st.caption("Locate any customer profile by Phone, Email, Name, or Order ID.")
+        
+        c_search1, c_search2 = st.columns([4, 1])
+        with c_search1:
+            q = st.text_input("Search ID", placeholder="017..., user@email.com, Deen, #10234", label_visibility="collapsed", key="cust_search_input").strip()
+        with c_search2:
+            search_trigger = st.button("🔍 Search", key="btn_cust_search", use_container_width=True)
+        
+        if q or search_trigger:
+            if not q:
+                st.warning("Please enter a search term.")
+            else:
+                from BackEnd.services.customer_insights import search_customers
+            # We use the segmented dataframe 'df' for high-level search
+            results = search_customers(q, df)
+            
+            if q.startswith("#") or (q.isdigit() and len(q) > 4 and len(q) < 10):
+                # Potential Order ID search
+                oid = q.replace("#", "")
+                if df_sales is not None:
+                    match_order = df_sales[df_sales["order_id"].astype(str) == oid]
+                    if not match_order.empty:
+                        st.success(f"Found Order: #{oid}")
+                        st.dataframe(match_order[["item_name", "qty", "price", "order_status", "order_date"]], hide_index=True)
+                        # Derive customer from order
+                        name_from_order = match_order.iloc[0]["customer_name"]
+                        results = df[df["primary_name"].str.contains(name_from_order, case=False, na=False)]
+            
+            if results.empty:
+                st.info("No matching profiles found in the current intelligence cache.")
+            else:
+                if len(results) > 1:
+                    st.warning(f"Found {len(results)} potential matches. Select a profile below:")
+                    selected_name = st.selectbox("Select Profile", results["primary_name"].tolist())
+                    profile = results[results["primary_name"] == selected_name].iloc[0]
+                else:
+                    profile = results.iloc[0]
+                
+                # Render Profile
+                st.markdown(f"### Profile: {profile['primary_name']}")
+                p1, p2, p3, p4 = st.columns(4)
+                
+                reg_status = "✅ Registered" if str(profile["customer_id"]).startswith("reg_") else "👤 Guest"
+                segment = profile.get("segment", "Regular")
+                tier_colors = {"VIP": "#FDE047", "Potential Loyalist": "#10B981", "New": "#3B82F6", "At Risk": "#F87171", "Churned": "#6B7280"}
+                tier_color = tier_colors.get(segment, "#E2E8F0")
+                
+                st.markdown(f'<div style="background:{tier_color}33; color:{tier_color}; border:1px solid {tier_color}; border-radius:12px; padding:4px 12px; display:inline-block; font-weight:700; margin-bottom:12px;">🏆 {segment}</div>', unsafe_allow_html=True)
+                
+                p1.metric("Account Type", reg_status)
+                p2.metric("Lifetime Orders", f"{int(profile['total_orders'])}")
+                p3.metric("Lifetime Value (LTV)", f"৳{profile['total_revenue']:,.0f}")
+                p4.metric("Avg Basket", f"৳{profile['avg_order_value']:,.0f}")
+                
+                # Detailed Info
+                c_inf1, c_inf2 = st.columns([2, 1])
+                with c_inf1:
+                    with st.expander("📄 Identification & Contact Details", expanded=True):
+                        st.write(f"**Primary Email:** {profile.get('all_emails', 'N/A') or 'N/A'}")
+                        st.write(f"**Primary Phone:** {profile.get('all_phones', 'N/A') or 'N/A'}")
+                        st.write(f"**First Seen:** {pd.to_datetime(profile['first_order']).strftime('%d %b %Y')}")
+                        st.write(f"**Last Active:** {pd.to_datetime(profile['last_order']).strftime('%d %b %Y')} ({int(profile['recency_days'])} days ago)")
+                
+                with c_inf2:
+                    # Tweak 2: Product Affinity
+                    if "favorite_product" in profile:
+                        st.markdown("##### 🛍️ Product Affinity")
+                        st.caption("Top item for this customer.")
+                        st.info(f"**Most Bought:** {profile['favorite_product']}")
 
     with t4:
         st.dataframe(df, use_container_width=True, hide_index=True)

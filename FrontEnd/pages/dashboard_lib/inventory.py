@@ -5,8 +5,66 @@ from datetime import datetime
 from FrontEnd.components import ui
 from BackEnd.core.categories import get_category_for_sales
 
-def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame):
+def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, df_sales: pd.DataFrame = None):
     st.subheader("Inventory Health")
+    
+    # 0. Inventory Sniper (Search Engine)
+    st.markdown("#### 🎯 Inventory Sniper")
+    st.caption("Search for a specific Product Name or SKU to see variation-wise stock and sales volume.")
+    
+    c_sn1, c_sn2 = st.columns([4, 1])
+    with c_sn1:
+        sniper_q = st.text_input("Sniper Scan", placeholder="Enter Product Name or SKU...", label_visibility="collapsed", key="inventory_sniper_input").strip()
+    with c_sn2:
+        sniper_trigger = st.button("🛰️ Scan Item", key="btn_sniper_trigger", use_container_width=True)
+    
+    if sniper_q or sniper_trigger:
+        if not sniper_q:
+            st.warning("Please enter a SKU or Product Name.")
+        elif stock_df is not None:
+            # Search in stock
+            is_sku = stock_df["SKU"].astype(str) == sniper_q
+            is_name = stock_df["Name"].str.contains(sniper_q, case=False, na=False)
+            sniper_results = stock_df[is_sku | is_name].copy()
+            
+            if not sniper_results.empty:
+                st.success(f"Sniper Scan complete. Found {len(sniper_results)} matches.")
+                
+                # Cross-reference with Sales Volume if available
+                if df_sales is not None:
+                    # Match by Name or SKU in sales
+                    s_sku = df_sales["sku"].astype(str) == sniper_q
+                    s_name = df_sales["item_name"].str.contains(sniper_q, case=False, na=False)
+                    sales_match = df_sales[s_sku | s_name]
+                    
+                    total_sold = sales_match["qty"].sum()
+                    total_rev = sales_match["order_total"].sum()
+                else:
+                    total_sold = 0
+                    total_rev = 0
+                
+                k1, k2, k3 = st.columns(3)
+                k1.metric("Current Stock (Total)", f"{int(sniper_results['Stock Quantity'].sum())}")
+                k2.metric("Total items sold", f"{int(total_sold):,}")
+                k3.metric("Total sale value", f"৳{total_rev:,.0f}")
+                
+                # Tweak 1: Stock-out Countdown (Velocity Analysis)
+                avg_velocity = total_sold / 30 # Baseline 30-day velocity estimate
+                if avg_velocity > 0:
+                    days_left = sniper_results['Stock Quantity'].sum() / avg_velocity
+                    if days_left < 7:
+                        st.error(f"🚨 **Stock-out Risk**: This item is selling {avg_velocity:.1f} units/30d and will be gone in approximately **{int(days_left)} days**.")
+                    elif days_left < 15:
+                        st.warning(f"⚠️ **Restock Advised**: Approximately **{int(days_left)} days** of stock remaining.")
+                    else:
+                        st.success(f"✅ **Healthy Velocity**: **{int(days_left)} days** of stock available at current sales rate.")
+
+                st.markdown("**Variation-wise Stock Breakdown:**")
+                st.dataframe(sniper_results[["Name", "SKU", "Stock Status", "Stock Quantity", "Price"]], use_container_width=True, hide_index=True)
+                st.divider()
+            else:
+                st.info("No stock records match this scan.")
+
     if stock_df is None or stock_df.empty:
         st.info("No live stock snapshot is available yet.")
         return
@@ -27,8 +85,8 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame):
     
     low_stock = inventory[inventory["Stock Quantity"] <= 5]
     m1, m2, m3 = st.columns(3)
-    with m1: st.metric("Products", f"{len(inventory):,}")
-    with m2: st.metric("Low Stock", f"{len(low_stock):,}")
+    with m1: st.metric("Unique Records", f"{len(inventory):,}")
+    with m2: st.metric("Low Stock Items", f"{len(low_stock):,}")
     with m3: st.metric("Inventory Value", f"TK {inventory['Value'].sum():,.0f}")
     
     st.markdown("#### Inventory Strategic Analysis")

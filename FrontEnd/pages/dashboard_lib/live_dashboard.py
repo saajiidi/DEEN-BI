@@ -378,7 +378,8 @@ def render_dashboard_output(data_bundle: Dict[str, Any]):
             icon=target_icon,
             delta_text=d_text,
             delta_val=d_val,
-            item_label=i_label
+            item_label=i_label,
+            is_alert=(o_count > 50) # Pulse if backlog is heavy
         )
 
     st.markdown("<br>", unsafe_allow_html=True)
