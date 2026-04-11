@@ -74,7 +74,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
     # FILTER CONTROL CENTER
     with st.expander("🛠️ Advanced Cluster Filters", expanded=True):
         st.markdown("**📦 Category & Operations**")
-        f_c1, f_c2, f_c3, f_c4 = st.columns(4)
+        f_c1, f_c2, f_c3, f_c4, f_c5 = st.columns(5)
         
         with f_c1:
             # 1. Category
@@ -110,6 +110,17 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
             sel_trends = st.multiselect("Trend Velocity", ["All"] + avail_trends, default=["All"])
             active_trends = [] if "All" in sel_trends or not sel_trends else sel_trends
 
+        with f_c5:
+            # 5. Status Filter (Align with Executive Pillars)
+            avail_stats = sorted([str(s) for s in df_sales["order_status"].dropna().unique() if str(s).strip()])
+            
+            # Default to match executive pillars
+            default_stats = [s for s in ["completed", "shipped"] if s in avail_stats]
+            if not default_stats: default_stats = ["All"]
+            
+            sel_stats = st.multiselect("Order Status", ["All"] + avail_stats, default=default_stats)
+            active_stats = [] if "All" in sel_stats or not sel_stats else sel_stats
+
     # APPLY COMPREHENSIVE FILTERING
     w_df = df_sales.copy()
     if active_cats: w_df = w_df[w_df["Category"].isin(active_cats)]
@@ -118,6 +129,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
         w_df = w_df[w_df["_display_name"].isin(active_items)]
     if active_sizes: w_df = w_df[w_df["_size"].isin(active_sizes)]
     if active_trends: w_df = w_df[w_df["Trend"].isin(active_trends)]
+    if active_stats: w_df = w_df[w_df["order_status"].isin(active_stats)]
 
     if w_df.empty:
         st.warning("No sales data matches the active filter cluster. Adjust filters to refine your search.")

@@ -132,6 +132,10 @@ def render_intelligence_hub_page():
         from BackEnd.core.categories import get_category_for_sales
         df_sales_raw["Category"] = df_sales_raw["item_name"].apply(get_category_for_sales)
         
+    # v10.2: Ensure robust item-level revenue estimation
+    from .dashboard_lib.data_helpers import estimate_line_revenue
+    df_sales_raw["item_revenue"] = estimate_line_revenue(df_sales_raw)
+        
     # --- HYBRID MAP DATA: The map ALWAYS uses a clean snapshot to save memory ---
     if MAP_FORCE_SNAPSHOT:
         df_sales_map = load_hybrid_data(use_snapshot=True)
