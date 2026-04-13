@@ -29,12 +29,12 @@ def setup_theme():
             :root {
                 --primary: #818CF8;
                 --primary-rgb: 129, 140, 248;
-                --background: #0F172A;
-                --surface: #1E293B;
-                --surface-variant: #334155;
-                --on-surface: #F8FAFC;
-                --on-surface-variant: #94A3B8;
-                --outline: #475569;
+                --background: #000000;
+                --surface: #0A0A0A;
+                --surface-variant: #111111;
+                --on-surface: #FFFFFF;
+                --on-surface-variant: #A1A1AA;
+                --outline: #27272A;
             }
         }
 

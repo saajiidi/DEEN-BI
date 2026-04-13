@@ -18,7 +18,14 @@ from FrontEnd.components import ui
 from FrontEnd.utils.error_handler import log_error
 
 # Modular Library Imports
-from .dashboard_lib.data_helpers import prune_dataframe, build_order_level_dataset, sum_order_level_revenue, apply_global_filters
+from .dashboard_lib.data_helpers import (
+    prune_dataframe, 
+    build_order_level_dataset, 
+    sum_order_level_revenue, 
+    apply_global_filters,
+    get_available_filters
+)
+from BackEnd.core.categories import sort_categories, format_category_label, get_subcategory_name
 from .dashboard_lib.story import render_dashboard_story
 from .dashboard_lib.bi_analytics import (
     render_today_vs_last_day_sales_chart,
@@ -224,15 +231,23 @@ def render_intelligence_hub_page():
 
     data = st.session_state.dashboard_data
     
-    # 1. Core Metrics (6 Pillars) - PRE-CALCULATE ONCE
-    df_exec = data["sales_exec"]
-    exec_orders = build_order_level_dataset(df_exec)
+    # Pull filters from sidebar session state
+    segment_filter = st.session_state.get("global_categories", ["All"])
+    status_filter = st.session_state.get("global_statuses", ["All"])
+
+    # Strictly remove Cancelled/Failed from raw data pool
+    exclude_statuses = ["cancelled", "failed", "trash"]
+    df_sales_raw = df_sales_raw[~df_sales_raw["order_status"].str.lower().isin(exclude_statuses)]
     
+    # Apply user-selected filters
+    df_exec = apply_global_filters(df_sales_raw, segment_filter, status_filter)
+    
+    # Re-calculate core dataset metrics
+    exec_orders = build_order_level_dataset(df_exec)
     total_rev = sum_order_level_revenue(df_exec, order_df=exec_orders)
     order_count = exec_orders["order_id"].nunique() if not exec_orders.empty else 0
     cust_count = df_exec["customer_key"].nunique()
     total_items = df_exec["qty"].sum()
-    
     aov = (total_rev / order_count) if order_count else 0
     avg_orders_per_day = order_count / max(1, days_back)
     
@@ -248,16 +263,8 @@ def render_intelligence_hub_page():
     prev_cust_val = df_prev_exec["customer_key"].nunique() if not df_prev_exec.empty else 0
     prev_avg_orders_val = (prev_orders_val / days_back) if days_back else 0
     
-    # Registered vs. Guest identification
-    # Based on architecture: reg_ prefix in customer_id marks registered users in Insights
-    df_insight = data["customers"]
-    is_reg = df_insight["customer_id"].str.startswith("reg_", na=False)
-    reg_val = df_insight[is_reg]["total_revenue"].sum()
-    guest_val = df_insight[~is_reg]["total_revenue"].sum()
-    reg_pct = (reg_val / total_rev * 100) if total_rev else 0
-
     def calc_delta(curr, prev):
-        if not prev: return "", 0
+        if not prev or prev <= 0: return "", 0
         diff = curr - prev
         pct = (diff / prev * 100)
         label = f"{pct:+.1f}% vs last {data['window_label']}"
@@ -270,7 +277,7 @@ def render_intelligence_hub_page():
     d_cust_label, d_cust_val = calc_delta(cust_count, prev_cust_val)
     d_aov_label, d_aov_val = calc_delta(aov, prev_aov_val)
 
-    # Single-Row Metric Layout (6 Pillars)
+    # 1. Executive Summary Pillars (Global Across Tabs)
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1: ui.icon_metric("Total Item Sold", f"{total_items:,}", icon="📦", delta=d_items_label, delta_val=d_items_val)
     with c2: ui.icon_metric("Revenue", f"৳{total_rev:,.0f}", icon="💰", delta=d_rev_label, delta_val=d_rev_val)
@@ -278,6 +285,14 @@ def render_intelligence_hub_page():
     with c4: ui.icon_metric("Avg. Orders / Day", f"{avg_orders_per_day:,.0f}", icon="📅", delta=d_avg_label, delta_val=d_avg_val)
     with c5: ui.icon_metric("Customers", f"{cust_count:,}", icon="👥", delta=d_cust_label, delta_val=d_cust_val)
     with c6: ui.icon_metric("Basket Size", f"৳{aov:,.0f}", icon="💎", delta=d_aov_label, delta_val=d_aov_val)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    selection = st.session_state.get("active_section", "💎 Sales Overview")
+
+    if selection == "💎 Sales Overview":
+        # Global Narrative & Summary
+        render_dashboard_story(df_exec, data["customers"], data["ml"], window)
 
     st.markdown("<br>", unsafe_allow_html=True)
 

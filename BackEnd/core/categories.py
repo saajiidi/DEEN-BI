@@ -183,7 +183,7 @@ def get_category_for_sales(name) -> str:
         return "HS Shirt"
 
     # Wallet
-    if _has_any(["wallet"], name_str):
+    if _has_any(["wallet", "card holder", "passport holder"], name_str):
         if _has_any(["passport"], name_str): return "Wallet - Passport Holder"
         if _has_any(["card"], name_str): return "Wallet - Card Holder"
         if _has_any(["long"], name_str): return "Wallet - Long Wallet"
