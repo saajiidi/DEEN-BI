@@ -50,7 +50,7 @@ def render_intelligence_hub_page():
         st.session_state["global_sync_request"] = False # Reset
         
     # 1. Map Time Window to Query Range
-    window = st.session_state.get("time_window", "Last 7 Days")
+    window = st.session_state.get("time_window", "Last Month")
     
     today = date.today()
     start_dt = end_dt = today
@@ -82,7 +82,7 @@ def render_intelligence_hub_page():
             "Last 9 Months": 270,
             "Last Year": 365
         }
-        days_back = window_map.get(window, 7)
+        days_back = window_map.get(window, 30)
     
     if window == "Custom Date Range":
         end_date_str = end_dt.strftime("%Y-%m-%d")
@@ -140,6 +140,10 @@ def render_intelligence_hub_page():
     # v10.2: Ensure robust item-level revenue estimation
     from .dashboard_lib.data_helpers import estimate_line_revenue
     df_sales_raw["item_revenue"] = estimate_line_revenue(df_sales_raw)
+    
+    # 1.5 Geographic Intelligence (District Code Resolution)
+    from BackEnd.core.geo import get_region_display
+    df_sales_raw["_region_display"] = df_sales_raw.apply(lambda x: get_region_display(x.get("city", ""), x.get("state", "")), axis=1)
         
     # --- HYBRID MAP DATA: The map ALWAYS uses a clean snapshot to save memory ---
     if MAP_FORCE_SNAPSHOT:
@@ -162,15 +166,13 @@ def render_intelligence_hub_page():
     df_prev_raw = load_hybrid_data(start_date=prev_start_date_str, end_date=prev_end_date_str, woocommerce_mode="cache_only")
     df_prev_raw = prune_dataframe(df_prev_raw, DASHBOARD_SALES_COLUMNS)
     from BackEnd.core.categories import get_category_for_sales
+    from BackEnd.core.geo import get_region_display
     df_prev_raw["Category"] = df_prev_raw["item_name"].apply(get_category_for_sales)
+    df_prev_raw["_region_display"] = df_prev_raw.apply(lambda x: get_region_display(x.get("city", ""), x.get("state", "")), axis=1)
     df_prev_raw = apply_global_filters(df_prev_raw, global_cats, global_stats)
 
-    # SECURE ANALYTICS: Create filtered versions for high-level pillars
-    if "All" in global_stats:
-        valid_statuses = ["completed", "shipped"]
-    else:
-        valid_statuses = [s.lower() for s in global_stats]
-
+    # SECURE ANALYTICS: Force Analysis to Shipped and Completed only
+    valid_statuses = ["completed", "shipped"]
     df_sales_exec = df_sales_raw[df_sales_raw["order_status"].str.lower().isin(valid_statuses)].copy()
     df_prev_exec = df_prev_raw[df_prev_raw["order_status"].str.lower().isin(valid_statuses)].copy()
     
@@ -189,7 +191,19 @@ def render_intelligence_hub_page():
         with st.spinner("📦 Syncing Inventory levels..."):
              from BackEnd.services.hybrid_data_loader import load_woocommerce_stock_data
              stock_df = load_woocommerce_stock_data()
-        # Fetch Registered Customer Stats
+    
+    if not stock_df.empty:
+        from BackEnd.core.categories import get_category_for_sales
+        stock_df["Category"] = stock_df["Name"].apply(get_category_for_sales)
+        
+        # Apply Global Strategy Filter to Inventory
+        if global_cats and "All" not in global_cats:
+            mask = pd.Series(False, index=stock_df.index)
+            for cat in global_cats:
+                mask |= stock_df["Category"].str.startswith(cat, na=False)
+            stock_df = stock_df[mask]
+    
+    # Fetch Registered Customer Stats
     from BackEnd.services.hybrid_data_loader import load_woocommerce_customer_count
     customer_count = load_woocommerce_customer_count()
     
@@ -198,7 +212,7 @@ def render_intelligence_hub_page():
         "sales_map": df_sales_map,       # Dedicated map dataset
         "sales_exec": df_sales_exec,
         "prev_sales": df_prev_raw,
-        "prev_exec": df_prev_exec,
+        "prev_sales_exec": df_prev_exec,
         "customers": df_customers,
         "customer_count": customer_count,
         "ml": ml_bundle,
@@ -223,7 +237,7 @@ def render_intelligence_hub_page():
     avg_orders_per_day = order_count / max(1, days_back)
     
     # --- Comparative Logic ---
-    df_prev_exec = data["prev_exec"]
+    df_prev_exec = data["prev_sales_exec"]
     prev_orders_level = build_order_level_dataset(df_prev_exec)
     
     prev_items_val = df_prev_exec["qty"].sum() if not df_prev_exec.empty else 0
@@ -283,6 +297,7 @@ def render_intelligence_hub_page():
         with ex2:
             from datetime import datetime
             # Build Performance Matrix
+            from BackEnd.core.categories import get_display_category
             perf_df = data["sales_exec"].groupby("Category").agg(
                 Revenue=("item_revenue", "sum"),
                 Orders=("order_id", "nunique"),
@@ -290,8 +305,9 @@ def render_intelligence_hub_page():
             ).reset_index().sort_values("Revenue", ascending=False)
             perf_df["AOV"] = (perf_df["Revenue"] / perf_df["Orders"]).round(2)
             
-            # Clean Labels for Report as requested
-            perf_df["Category"] = perf_df["Category"].apply(lambda x: str(x).split(" - ")[1] if " - " in str(x) else x)
+            # Context-Aware Labels (Sub-category if filtered, else Parent)
+            selected_cats = st.session_state.get("global_categories", ["All"])
+            perf_df["Category"] = perf_df["Category"].apply(lambda x: get_display_category(x, selected_cats))
             
             perf_bytes = ui.export_to_excel(perf_df, "Performance Matrix")
             st.download_button(
@@ -309,15 +325,15 @@ def render_intelligence_hub_page():
 
     
     elif selection == "📊 Traffic & Acquisition":
-        render_acquisition_analytics(data["sales"])
+        render_acquisition_analytics(data["sales_exec"])
         
     elif selection == "👥 Customer Insight":
         st.subheader("Customer Insight")
-        # Pass raw sales for Identity Search (requires phone/email)
-        render_customer_insight_tab(reg_val, guest_val, data["customer_count"], data["sales"])
+        # Pass executive sales for analysis consistency
+        render_customer_insight_tab(reg_val, guest_val, data["customer_count"], data["sales_exec"])
         
     elif selection == "📥 Sales Data Ingestion":
-        render_deep_dive_tab(data["sales"], data["stock"])
+        render_deep_dive_tab(data["sales_exec"], data["stock"], data["prev_sales_exec"])
         
     elif selection == "📦 Stock Insight":
         st.subheader("Operational Forecasting")

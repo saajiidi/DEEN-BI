@@ -55,12 +55,17 @@ def get_category_for_orders(name) -> str:
 
 # Master Category Priority (Determines the 'Flow' in UI Dropdowns)
 CATEGORIES_PRIORITY = [
-    "Boxer", "Jeans", "Jeans - Slim Fit", "Jeans - Regular Fit", "Jeans - Straight Fit",
-    "T-Shirt", "T-Shirt - HS", "T-Shirt - FS", "T-Shirt - Active Wear", "T-Shirt - Tank Top",
-    "Denim Shirt", "Flannel Shirt", "Polo Shirt", "Panjabi", "Trousers", "Joggers", 
-    "Twill Chino", "Mask", "Leather Bag", "Water Bottle", "Contrast Shirt", "Turtleneck", 
-    "Drop Shoulder", "Wallet", "Kaftan Shirt", "Jersy", "Sweatshirt", "Jacket", "Belt",
-    "Sweater", "Passport Holder", "Card Holder", "Cap", "FS Shirt", "HS Shirt", "Others"
+    "Boxer", 
+    "Jeans", "Jeans - Regular Fit", "Jeans - Slim Fit", "Jeans - Straight Fit",
+    "T-Shirt", "T-Shirt - HS T-Shirt", "T-Shirt - FS T-Shirt", "T-Shirt - Drop Shoulder", "T-Shirt - Tank Top", "T-Shirt - Active Wear", "T-Shirt - Jersy",
+    "FS Shirt", "FS Shirt - Flannel Shirt", "FS Shirt - Denim Shirt", "FS Shirt - Oxford Shirt", "FS Shirt - Kaftan Shirt", "FS Shirt - FS Casual Shirt",
+    "HS Shirt", "HS Shirt - Contrast Stitch Shirt", "HS Shirt - HS Casual Shirt",
+    "Wallet", "Wallet - Passport Holder", "Wallet - Card Holder", "Wallet - Long Wallet", "Wallet - Bifold Wallet", "Wallet - Trifold Wallet",
+    "Panjabi", "Panjabi - Panjabi", "Panjabi - Old Panjabi",
+    "Twill Chino", "Twill Chino - Twill Chino Pant", "Twill Chino - Twill Joggers", "Twill Chino - Five Pockets",
+    "Trousers", "Trousers - Trousers", "Trousers - Joggers", "Trousers - Cotton Trousers",
+    "Sweatshirt", "Sweatshirt - Cotton Terry Sweatshirt", "Sweatshirt - French Terry Sweatshirt",
+    "Polo Shirt", "Turtle-Neck", "Leather Bag", "Belt", "Mask", "Water Bottle", "Bundles", "Others"
 ]
 
 def format_category_label(cat: str) -> str:
@@ -74,64 +79,147 @@ def sort_categories(cats):
     """Sorts a list of categories based on the defined priority."""
     def sort_key(cat):
         try:
+            # Match base category if sub-category not in priority
+            if cat not in CATEGORIES_PRIORITY and " - " in cat:
+                base = cat.split(" - ")[0]
+                return CATEGORIES_PRIORITY.index(base) + 0.5
             return CATEGORIES_PRIORITY.index(cat)
         except (ValueError, KeyError):
             return 999
     return sorted(cats, key=sort_key)
 
+_FUZZY_CACHE = {}
+
+def get_subcategory_name(full_cat: str) -> str:
+    """Extracts only the sub-category part for specific reporting needs."""
+    if not full_cat or full_cat == "Others": return "Others"
+    if " - " in full_cat:
+        return full_cat.split(" - ", 1)[1]
+    return full_cat
+
+def get_display_category(full_cat: str, selected_cats: list[str]) -> str:
+    """
+    Returns the appropriate name for reporting based on filter context:
+    1. If All or nothing selected, return Main Category.
+    2. If a specific sub-category is selected, return Sub-Category.
+    """
+    if not selected_cats or "All" in selected_cats:
+        # Default to main category name
+        return full_cat.split(" - ")[0] if " - " in full_cat else full_cat
+    
+    # If the exact full_cat is in selection, or if its parent is NOT in selection but it matches, 
+    # we show the sub-category part.
+    if full_cat in selected_cats:
+        return get_subcategory_name(full_cat)
+        
+    return full_cat.split(" - ")[0] if " - " in full_cat else full_cat
+
 def get_category_for_sales(name) -> str:
-    """Categorizes products based on keywords in their names (v9.5 Expert Rules)."""
+    """Categorizes products based on keywords in their names (v15.0 Category -> Sub-Category)."""
     name_str = _normalize(name)
     if not name_str:
         return "Others"
 
+    # 1. High-Priority Exceptions (Single Unique Categories - Prevent 'Shirt' overlap)
+    
+    # Sweatshirt (Must be before Shirt)
+    if _has_any(["sweatshirt", "hoodie", "pullover"], name_str):
+        if _has_any(["cotton terry"], name_str): return "Sweatshirt - Cotton Terry Sweatshirt"
+        if _has_any(["french terry"], name_str): return "Sweatshirt - French Terry Sweatshirt"
+        return "Sweatshirt"
+
+    # Polo Shirt (Must be before Shirt)
+    if _has_any(["polo"], name_str):
+        return "Polo Shirt"
+
+    # Turtle-Neck (Must be before T-Shirt)
+    if _has_any(["turtleneck", "mock neck", "turtle-neck"], name_str):
+        return "Turtle-Neck"
+
+    # Bundles
+    if "bundle" in name_str:
+        detected = []
+        if _has_any(["t-shirt", "t shirt", "tee"], name_str): detected.append("T-Shirt")
+        if _has_any(["jeans", "denim"], name_str): detected.append("Jeans")
+        if _has_any(["boxer"], name_str): detected.append("Boxer")
+        if detected:
+            return f"Bundles - {' + '.join(detected)}"
+        return "Bundles"
+
+    # 2. Main Clusters
+
+    # Jeans
+    if _has_any(["jeans"], name_str):
+        if _has_any(["regular"], name_str): return "Jeans - Regular Fit"
+        if _has_any(["slim"], name_str): return "Jeans - Slim Fit"
+        if _has_any(["straight"], name_str): return "Jeans - Straight Fit"
+        return "Jeans"
+
+    # T-Shirt
+    if _has_any(["t-shirt", "t shirt", "tee"], name_str):
+        if _has_any(["drop shoulder"], name_str): return "T-Shirt - Drop Shoulder"
+        if _has_any(["tank top"], name_str): return "T-Shirt - Tank Top"
+        if _has_any(["active wear"], name_str): return "T-Shirt - Active Wear"
+        if _has_any(["jersy", "jersey"], name_str): return "T-Shirt - Jersy"
+        
+        fs_keywords = ["full sleeve", "long sleeve", "fs", "l/s"]
+        if _has_any(fs_keywords, name_str): return "T-Shirt - FS T-Shirt"
+        return "T-Shirt - HS T-Shirt"
+
+    # FS Shirt
+    fs_keywords = ["full sleeve", "long sleeve", "fs", "l/s"]
+    if _has_any(["shirt"], name_str) and _has_any(fs_keywords, name_str):
+        if _has_any(["flannel"], name_str): return "FS Shirt - Flannel Shirt"
+        if _has_any(["denim"], name_str): return "FS Shirt - Denim Shirt"
+        if _has_any(["oxford"], name_str): return "FS Shirt - Oxford Shirt"
+        if _has_any(["kaftan"], name_str): return "FS Shirt - Kaftan Shirt"
+        if _has_any(["casual"], name_str): return "FS Shirt - FS Casual Shirt"
+        return "FS Shirt"
+
+    # HS Shirt (default if not FS)
+    if _has_any(["shirt"], name_str):
+        if _has_any(["contrast", "stitch"], name_str): return "HS Shirt - Contrast Stitch Shirt"
+        if _has_any(["casual"], name_str): return "HS Shirt - HS Casual Shirt"
+        return "HS Shirt"
+
+    # Wallet
+    if _has_any(["wallet"], name_str):
+        if _has_any(["passport"], name_str): return "Wallet - Passport Holder"
+        if _has_any(["card"], name_str): return "Wallet - Card Holder"
+        if _has_any(["long"], name_str): return "Wallet - Long Wallet"
+        if _has_any(["bifold"], name_str): return "Wallet - Bifold Wallet"
+        if _has_any(["trifold"], name_str): return "Wallet - Trifold Wallet"
+        return "Wallet"
+
+    # Panjabi
+    if _has_any(["panjabi", "punjabi"], name_str):
+        if _has_any(["embroidered cotton"], name_str): return "Panjabi - Old Panjabi"
+        return "Panjabi - Panjabi"
+
+    # Twill Chino
+    if _has_any(["twill", "chino"], name_str):
+        if _has_any(["jogger"], name_str): return "Twill Chino - Twill Joggers"
+        if _has_any(["five pocket", "5 pocket"], name_str): return "Twill Chino - Five Pockets"
+        return "Twill Chino - Twill Chino Pant"
+
+    # Trousers
+    if _has_any(["trouser", "jogger", "pants", "gabardine"], name_str):
+        if _has_any(["regular"], name_str) and _has_any(["fit"], name_str): return "Trousers - Cotton Trousers"
+        if _has_any(["jogger"], name_str): return "Trousers - Joggers"
+        return "Trousers - Trousers"
+
+    # 3. Specific Static Categories
     specific_cats = {
-        "T-Shirt - Tank Top": ["tank top"],
         "Boxer": ["boxer"],
-        "Jeans": ["jeans"],
-        "Denim Shirt": ["denim"],
-        "Flannel Shirt": ["flannel"],
-        "Polo Shirt": ["polo"],
-        "Panjabi": ["panjabi", "punjabi"],
-        "Trousers": ["trousers", "trouser"],
-        "Joggers": ["joggers", "jogger", "track pant"],
-        "Twill Chino": ["twill chino", "chino", "twill"],
-        "Mask": ["mask"],
         "Leather Bag": ["bag", "backpack"],
-        "Water Bottle": ["water bottle"],
-        "Contrast Shirt": ["contrast"],
-        "Turtleneck": ["turtleneck", "mock neck"],
-        "Drop Shoulder": ["drop", "shoulder"],
-        "Wallet": ["wallet"],
-        "Kaftan Shirt": ["kaftan"],
-        "T-Shirt - Active Wear": ["active wear"],
-        "Jersy": ["jersy"],
-        "Sweatshirt": ["sweatshirt", "hoodie", "pullover"],
-        "Jacket": ["jacket", "outerwear", "coat"],
+        "Mask": ["mask"],
+        "Water Bottle": ["bottle"],
         "Belt": ["belt"],
-        "Sweater": ["sweater", "cardigan", "knitwear"],
-        "Passport Holder": ["passport holder"],
-        "Card Holder": ["card holder"],
-        "Cap": ["cap"],
     }
 
     for cat, keywords in specific_cats.items():
         if _has_any(keywords, name_str):
-            if cat == "Jeans":
-                if _has_any(["slim"], name_str):
-                    return "Jeans - Slim Fit"
-                if _has_any(["regular"], name_str):
-                    return "Jeans - Regular Fit"
-                if _has_any(["straight"], name_str):
-                    return "Jeans - Straight Fit"
             return cat
-
-    fs_keywords = ["full sleeve", "long sleeve", "fs", "l/s"]
-    if _has_any(["t-shirt", "t shirt", "tee"], name_str):
-        return "T-Shirt - FS" if _has_any(fs_keywords, name_str) else "T-Shirt - HS"
-
-    if _has_any(["shirt"], name_str):
-        return "FS Shirt" if _has_any(fs_keywords, name_str) else "HS Shirt"
 
     return "Others"
     

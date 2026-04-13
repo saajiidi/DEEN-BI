@@ -24,17 +24,21 @@ def apply_global_filters(df: pd.DataFrame, categories: list[str] = None, statuse
     return filtered_df
 
 def get_available_filters(df: pd.DataFrame):
-    """Extracts unique categories and statuses for global filter controls."""
+    """Extracts unique categories and statuses for global filter controls (Generalized Parent Detection)."""
     if df.empty:
         return [], []
     
-    # Categories
-    raw_cats = list(df["Category"].dropna().unique())
-    # Ensure parents exist if children do (e.g. Jeans)
-    if any(str(c).startswith("Jeans - ") for c in raw_cats) and "Jeans" not in raw_cats:
-        raw_cats.append("Jeans")
+    raw_cats = set([str(c) for c in df["Category"].dropna().unique() if str(c).strip()])
     
-    unique_cats = sorted([str(c) for c in raw_cats if str(c).strip()])
+    # Ensure parents exist if children do (e.g. Jeans, Shirt, Wallet)
+    parents_to_add = set()
+    for cat in raw_cats:
+        if " - " in cat:
+            parent = cat.split(" - ")[0]
+            if parent not in raw_cats:
+                parents_to_add.add(parent)
+    
+    unique_cats = sorted(list(raw_cats.union(parents_to_add)))
     
     # Statuses
     unique_statuses = sorted([str(s).title() for s in df["order_status"].dropna().unique()])

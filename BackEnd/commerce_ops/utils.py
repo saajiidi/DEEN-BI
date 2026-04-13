@@ -4,87 +4,15 @@ import re
 # --- Category Logic ---
 def get_category_from_name(name):
     """
-    Determines the category of an item based on its name using keyword matching.
+    Determines the category/sub-category for commerce operations using centralized logic.
+    For daily reports, returns the SHORT sub-category name as requested.
     """
-    name_str = str(name)
-
-    def has_keyword(sub, text):
-        return bool(re.search(rf"\b{re.escape(sub.lower())}\b", text, re.IGNORECASE))
-
-    # --- Category Rules ---
-    # Specific items
-    if has_keyword("boxer", name_str):
-        return "Boxer"
-    if has_keyword("jeans", name_str):
-        if has_keyword("slim", name_str):
-            return "Jeans - Slim Fit"
-        if has_keyword("regular", name_str):
-            return "Jeans - Regular Fit"
-        if has_keyword("straight", name_str):
-            return "Jeans - Straight Fit"
-        return "Jeans"
-    if has_keyword("denim", name_str):
-        return "Denim"
-    if has_keyword("flannel", name_str):
-        return "Flannel"
-    if has_keyword("polo", name_str):
-        return "Polo"
-    if has_keyword("panjabi", name_str):
-        return "Panjabi"
-    if has_keyword("trouser", name_str):
-        return "Trousers"
-    if has_keyword("twill", name_str) or has_keyword("chino", name_str):
-        return "Twill"
-    if has_keyword("sweatshirt", name_str):
-        return "Sweatshirt"
-    if has_keyword("tank top", name_str):
-        return "Tank Top"
-    if has_keyword("drop shoulder", name_str):
-        return "Drop Shoulder"
-    if has_keyword("gabardine", name_str) or has_keyword("pant", name_str):
-        return "Pants"
-
-    # Accessories & Misc
-    if has_keyword("contrast", name_str):
-        return "Contrast"
-    if has_keyword("turtleneck", name_str):
-        return "Turtleneck"
-    if has_keyword("wallet", name_str):
-        return "Wallet"
-    if has_keyword("kaftan", name_str):
-        return "Kaftan"
-    if has_keyword("Active", name_str):
-        return "Active"
-    if has_keyword("mask", name_str):
-        return "1 Pack Mask"
-    if has_keyword("Bag", name_str):
-        return "Bag"
-    if has_keyword("bottle", name_str):
-        return "Bottle"
-
-    # Common Attributes
-    is_full_sleeve = has_keyword("full sleeve", name_str)
-
-    # T-Shirts
-    is_tshirt = has_keyword("t-shirt", name_str) or has_keyword("t shirt", name_str)
-    if is_full_sleeve and is_tshirt:
-        return "FS T-Shirt"
-    if is_tshirt and not is_full_sleeve:
-        return "T-Shirt"
-
-    # Shirts
-    is_shirt = has_keyword("shirt", name_str)
-
-    if is_full_sleeve and is_shirt:
-        return "FS Shirt"
-    if is_shirt and not is_full_sleeve:
-        return "HS Shirt"
-
-    # Fallback: Use first two words
-    words = name_str.split()
-    if len(words) >= 2:
-        return f"{words[0]} {words[1]}"
-    return "Items"
+    try:
+        from BackEnd.core.categories import get_category_for_sales, get_subcategory_name
+        full_cat = get_category_for_sales(name)
+        return get_subcategory_name(full_cat)
+    except:
+        return "Items"
 
 
 # --- Address Logic ---

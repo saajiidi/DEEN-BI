@@ -48,7 +48,7 @@ def _render_workspace_sidebar():
         ui.sidebar_branding()
         
         if "time_window" not in st.session_state:
-            st.session_state.time_window = "Last 7 Days"
+            st.session_state.time_window = "Last Month"
 
         st.markdown('<div class="sidebar-group-label">⏱️ Operational Range</div>', unsafe_allow_html=True)
         st.select_slider(
@@ -74,7 +74,7 @@ def _render_workspace_sidebar():
         if st.session_state.get("time_window") == "Custom Date Range":
             col1, col2 = st.columns(2)
             with col1:
-                st.date_input("Start Date", value=datetime.now().date() - timedelta(days=7), min_value=APP_DATA_START_DATE, max_value=datetime.now().date(), key="wc_sync_start_date")
+                st.date_input("Start Date", value=datetime.now().date() - timedelta(days=30), min_value=APP_DATA_START_DATE, max_value=datetime.now().date(), key="wc_sync_start_date")
                 
             with col2:
                 st.date_input("End Date", value=datetime.now().date(), min_value=APP_DATA_START_DATE, max_value=datetime.now().date(), key="wc_sync_end_date")
@@ -83,7 +83,7 @@ def _render_workspace_sidebar():
 
 
 
-        # 1. Fetch live metrics for Spark-Alerts
+        # 1. Fetch live metrics for alerts
         stats = {"proc": 0, "low": 0}
         if "dashboard_data" in st.session_state:
             data = st.session_state.dashboard_data
@@ -94,13 +94,29 @@ def _render_workspace_sidebar():
             if not stock.empty:
                 stats["low"] = len(stock[stock["Stock Quantity"] <= 5])
 
-        # 1. Fetch live metrics for alerts
-        stats = {"low": 0}
+        # 1.5 Global Strategy Filters
+        st.markdown('<div class="sidebar-group-label">🎯 GLOBAL STRATEGY</div>', unsafe_allow_html=True)
         if "dashboard_data" in st.session_state:
-            data = st.session_state.dashboard_data
-            stock = data.get("stock", pd.DataFrame())
-            if not stock.empty:
-                stats["low"] = len(stock[stock["Stock Quantity"] <= 5])
+            from FrontEnd.pages.dashboard_lib.data_helpers import get_available_filters
+            from BackEnd.core.categories import sort_categories, format_category_label, get_subcategory_name
+            
+            df_raw = st.session_state.dashboard_data.get("sales", pd.DataFrame())
+            unique_cats, _ = get_available_filters(df_raw)
+            sorted_cats = sort_categories(unique_cats)
+            
+            # 1. Category Cluster
+            st.multiselect("Performance Cluster", ["All"] + sorted_cats, default=["All"], 
+                           format_func=format_category_label, 
+                           key="global_categories", help="Focus dashboard on specific product lines")
+            
+            # 2. Status Lifecycle
+            _, unique_stats = get_available_filters(df_raw)
+            st.multiselect("Operational Status", ["All"] + unique_stats, default=["All"],
+                           key="global_statuses", help="Filter by order lifecycle state")
+            
+            st.divider()
+        else:
+            st.caption("Filters will appear once data is loaded.")
 
         # 2. Unified Navigation (Single Stack for Smooth Performance)
         st.markdown('<div class="sidebar-group-label">⚡ NAVIGATION HUB</div>', unsafe_allow_html=True)

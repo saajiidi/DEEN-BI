@@ -13,26 +13,28 @@ def setup_theme():
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         
         :root {
-            --primary: #6750A4;
-            --background: #FEF7FF;
-            --surface: #FFFFFF;
-            --surface-variant: #E7E0EC;
-            --on-surface: #1D1B20;
-            --on-surface-variant: #49454F;
-            --outline: #79747E;
+            --primary: #6366F1;
+            --primary-rgb: 99, 102, 241;
+            --background: #FFFFFF;
+            --surface: #F8FAFC;
+            --surface-variant: #F1F5F9;
+            --on-surface: #0F172A;
+            --on-surface-variant: #64748B;
+            --outline: #E2E8F0;
             --green: #10b981;
             --red: #ef4444;
         }
 
         @media (prefers-color-scheme: dark) {
             :root {
-                --primary: #D0BCFF;
-                --background: #141218;
-                --surface: #1C1B1F;
-                --surface-variant: #49454F;
-                --on-surface: #E6E1E5;
-                --on-surface-variant: #CAC4D0;
-                --outline: #938F99;
+                --primary: #818CF8;
+                --primary-rgb: 129, 140, 248;
+                --background: #0F172A;
+                --surface: #1E293B;
+                --surface-variant: #334155;
+                --on-surface: #F8FAFC;
+                --on-surface-variant: #94A3B8;
+                --outline: #475569;
             }
         }
 

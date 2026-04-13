@@ -8,10 +8,62 @@ from BackEnd.core.paths import DATA_DIR
 LIVE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTBDukmkRJGgHjCRIAAwGmlWaiPwESXSp9UBXm3_sbs37bk2HxavPc62aobmL1cGWUfAKE4Zd6yJySO/pub?output=csv&gid=0"
 
 
+def standardize_dataframe(df):
+    """
+    Ensures the dataframe has all canonical columns required for dashboard analytics.
+    Prevents 'Column not found' errors during downstream processing.
+    """
+    if df is None:
+        return pd.DataFrame()
+    
+    # Canonical Column Map (Standard -> Source Aliases)
+    required_cols = {
+        "Order Date": ["order_date", "date", "created_at"],
+        "Revenue": ["item_revenue", "line_total", "total", "amount", "revenue"],
+        "Product Name": ["item_name", "product_name", "name", "title"],
+        "Quantity": ["qty", "quantity", "units", "count"],
+        "Status": ["order_status", "status"],
+        "Customer ID": ["customer_id", "email", "phone"],
+        "Email": ["email"],
+        "Phone": ["phone", "billing_phone", "contact"],
+        "SKU": ["sku", "item_sku"],
+        "City": ["city", "billing_city", "state"],
+    }
+
+    for target, aliases in required_cols.items():
+        if target not in df.columns:
+            # Try to find an alias
+            found = False
+            for alias in aliases:
+                # Case-insensitive match
+                match = next((c for c in df.columns if c.lower().strip() == alias.lower()), None)
+                if match:
+                    df[target] = df[match]
+                    found = True
+                    break
+            if not found:
+                # Default values
+                if target in ["Revenue", "Quantity"]:
+                    df[target] = 0
+                else:
+                    df[target] = "Unknown"
+
+    # Numeric Casts
+    df["Revenue"] = pd.to_numeric(df["Revenue"], errors="coerce").fillna(0)
+    df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
+    
+    # Date Cast
+    if "Order Date" in df.columns:
+        df["Order Date"] = pd.to_datetime(df["Order Date"], errors="coerce")
+        
+    return df
+
+
 @st.cache_data(ttl=300)
 def load_and_merge_data(force_refresh=False):
     """
     Unions historical Parquet data with live Google Sheet data using DuckDB.
+    Guarantees standardized schema via standardize_dataframe.
     """
     # 1. Load Live Data
     try:
@@ -69,9 +121,8 @@ def load_and_merge_data(force_refresh=False):
     else:
         df_all = df_live
 
-    # Ensure Order Date is datetime
-    if "Order Date" in df_all.columns:
-        df_all["Order Date"] = pd.to_datetime(df_all["Order Date"], errors="coerce")
+    # 4. Standardize (Clean_Product Patch)
+    df_all = standardize_dataframe(df_all)
 
     return df_all
 

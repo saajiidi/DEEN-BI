@@ -44,21 +44,17 @@ def render_district_map(df_sales: pd.DataFrame):
         st.warning("Map data is currently unavailable. Please check your connection.")
         return
 
-    # 1. Aggregate Data by District
+    # 1. Aggregate Data by Parent District (for Map Matching)
+    from BackEnd.core.geo import get_parent_district, get_region_display
+    
     df_map = df_sales.copy()
     
-    def get_district(row):
-        # Prefer 'state' then 'city' (standard WooCommerce fields mapping)
-        state = str(row.get("state", "")).strip().title()
-        city = str(row.get("city", "")).strip().title()
-        
-        # Guard against "Unknown" or empty strings
-        if state and state not in ["Unknown", "None", "", "Nan"]: return state
-        if city and city not in ["Unknown", "None", "", "Nan"]: return city
-        return "Unknown"
-
-    df_map["matched_district"] = df_map.apply(get_district, axis=1)
-    df_map["matched_district"] = df_map["matched_district"].apply(normalize_district_name)
+    # Standardize 'state' as parent district (No BD-** codes)
+    df_map["District_Parent"] = df_map.apply(lambda x: get_parent_district(x.get("state", x.get("city", "Unknown"))), axis=1)
+    df_map["District_Parent"] = df_map["District_Parent"].apply(normalize_district_name)
+    
+    # Store refined label for deep intelligence
+    df_map["Display_Region"] = df_map.apply(lambda x: get_region_display(x.get("city", ""), x.get("state", "")), axis=1)
     
     # --- Ensure all 64 Districts are present for a "Full Map" look ---
     all_districts = [f['properties']['ADM2_EN'] for f in geojson['features']]
@@ -73,13 +69,17 @@ def render_district_map(df_sales: pd.DataFrame):
     )
 
     if map_metric == "Revenue":
-        agg_raw = df_map.groupby("matched_district")["order_total"].sum().reset_index()
+        agg_raw = df_map.groupby("District_Parent")["order_total"].sum().reset_index()
+        spot_raw = df_map.groupby("Display_Region")["order_total"].sum().reset_index()
         agg_raw.columns = ["District", "Value"]
+        spot_raw.columns = ["Region", "Value"]
         color_scale = "Tealgrn"
         labels = {"Value": "Revenue (৳)"}
     else:
-        agg_raw = df_map.groupby("matched_district")["order_id"].nunique().reset_index()
+        agg_raw = df_map.groupby("District_Parent")["order_id"].nunique().reset_index()
+        spot_raw = df_map.groupby("Display_Region")["order_id"].nunique().reset_index()
         agg_raw.columns = ["District", "Value"]
+        spot_raw.columns = ["Region", "Value"]
         color_scale = "Purp"
         labels = {"Value": "Orders"}
 
@@ -88,18 +88,20 @@ def render_district_map(df_sales: pd.DataFrame):
     agg_df["Value"] = agg_df["Value"].fillna(0) + agg_df["Value_base"]
     agg_df = agg_df.drop(columns=["Value_base"])
 
-    # 2. Rendering
-    fig = px.choropleth(
-        agg_df,
-        geojson=geojson,
-        locations="District",
-        featureidkey="properties.ADM2_EN",
-        color="Value",
-        color_continuous_scale=color_scale,
-        range_color=(0, agg_df["Value"].max() if agg_df["Value"].max() > 0 else 100),
-        labels=labels,
-        template="plotly_dark"
-    )
+    gv1, gv2 = st.columns([2, 1])
+    with gv1:
+        # 2. Rendering Map
+        fig = px.choropleth(
+            agg_df,
+            geojson=geojson,
+            locations="District",
+            featureidkey="properties.ADM2_EN",
+            color="Value",
+            color_continuous_scale=color_scale,
+            range_color=(0, agg_df["Value"].max() if agg_df["Value"].max() > 0 else 100),
+            labels=labels,
+            template="plotly_dark"
+        )
 
     fig.update_geos(
         projection_type="mercator",
@@ -120,9 +122,31 @@ def render_district_map(df_sales: pd.DataFrame):
         )
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with gv2:
+        st.markdown(f"#### 🔥 Top 20 Hotspots")
+        st.caption(f"Refined Areas ({map_metric})")
+        
+        # 3. Neighborhood Leaderboard (Graph Chart)
+        spot_df = spot_raw.sort_values("Value", ascending=True).tail(20)
+        fig_spot = px.bar(
+            spot_df, x="Value", y="Region",
+            orientation='h', color="Value",
+            color_continuous_scale=color_scale,
+            labels={"Value": map_metric, "Region": "Refined Area"},
+            template="plotly_dark"
+        )
+        
+        fig_spot.update_layout(
+            height=600, margin=dict(l=0, r=0, t=0, b=0),
+            coloraxis_showscale=False,
+            xaxis=dict(showgrid=False),
+            yaxis=dict(showgrid=False, categoryorder="total ascending")
+        )
+        st.plotly_chart(fig_spot, use_container_width=True)
     
     # 📝 Summary Insight
-    if not agg_df.empty:
-        top_district = agg_df.sort_values("Value", ascending=False).iloc[0]
-        st.caption(f"📍 **Dominant Region:** {top_district['District']} is currently leading in {map_metric.lower()} density.")
+    if not spot_raw.empty:
+        top_spot = spot_raw.sort_values("Value", ascending=False).iloc[0]
+        st.caption(f"📍 **Dominant Hub:** {top_spot['Region']} is your highest density zone for {map_metric.lower()}.")

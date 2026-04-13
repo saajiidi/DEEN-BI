@@ -44,15 +44,26 @@ def icon_metric(label: str, value: str, icon: str = "📊", delta: str = "", del
     )
 
 
-def metric_highlight(label: str, value: str, delta: str = "", delta_type: str = "up", help_text: str = ""):
-    """Premium Enterprise KPI card with glassmorphism and motion transitions."""
+def metric_highlight(label: str, value: str, delta: str = "", delta_type: str = "up", help_text: str = "", icon: str = None):
+    """Premium Enterprise KPI card with glassmorphism, motion transitions, and optional icon."""
     delta_icon = "↑" if delta_type == "up" else "↓"
     delta_color = "#10b981" if delta_type == "up" else "#ef4444"
     
     delta_html = f'<div style="display: flex; align-items: center; gap: 4px; color: {delta_color}; font-size: 0.85rem; font-weight: 700; margin-top: 4px;"><span>{delta_icon} {delta}</span></div>' if delta else ""
     help_block = f'<div style="color: #64748b; font-size: 0.75rem; margin-top: 8px; font-weight: 500;">{help_text}</div>' if help_text else ""
+    icon_html = f'<div style="font-size: 1.2rem; opacity: 0.8;">{icon}</div>' if icon else ""
     
-    html_content = f"""<div class="hub-card metric-highlight"><div class="metric-highlight-label">{label}</div><div class="metric-highlight-value">{value}</div>{delta_html}{help_block}</div>"""
+    html_content = f"""
+    <div class="hub-card metric-highlight">
+        <div style="display: flex; justify-content: space-between; align-items: start; width: 100%;">
+            <div class="metric-highlight-label">{label}</div>
+            {icon_html}
+        </div>
+        <div class="metric-highlight-value" style="margin-top: 5px;">{value}</div>
+        {delta_html}
+        {help_block}
+    </div>
+    """
     st.markdown(html_content, unsafe_allow_html=True)
 
 

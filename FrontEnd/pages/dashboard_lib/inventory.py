@@ -171,19 +171,23 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
         with t1:
             v1, v2 = st.columns(2)
             with v1:
+                # Top-to-less Sort (Already sorted by Selected_Value)
                 fig_donut = ui.donut_chart(cat_agg, values="Selected_Value", names="Category", title=f"Category Share by {val_basis}")
                 st.plotly_chart(fig_donut, use_container_width=True)
             with v2:
-                fig_val_bar = ui.bar_chart(cat_agg, x="Selected_Value", y="Category", title=f"Absolute {val_basis} per Category", color="Selected_Value")
+                # Horizontal bar: ascending in code = largest at top in visual
+                fig_val_bar = ui.bar_chart(cat_agg.sort_values("Selected_Value", ascending=True), x="Selected_Value", y="Category", title=f"Absolute {val_basis} per Category", color="Selected_Value")
                 st.plotly_chart(fig_val_bar, use_container_width=True)
                 
         with t2:
             v3, v4 = st.columns(2)
             with v3:
-                fig_unit_bar = ui.bar_chart(cat_agg.sort_values("Total_Units", ascending=False), x="Total_Units", y="Category", title="Total Unit Volume per Category", color="Total_Units")
+                # Vertical bar: descending
+                fig_unit_bar = ui.bar_chart(cat_agg.sort_values("Total_Units", ascending=True), x="Total_Units", y="Category", title="Total Unit Volume per Category", color="Total_Units")
                 st.plotly_chart(fig_unit_bar, use_container_width=True)
             with v4:
-                fig_sku_bar = ui.bar_chart(cat_agg.sort_values("SKU_Count", ascending=False), x="SKU_Count", y="Category", title="SKU Breadth per Category", color="SKU_Count")
+                # Vertical bar: descending
+                fig_sku_bar = ui.bar_chart(cat_agg.sort_values("SKU_Count", ascending=True), x="SKU_Count", y="Category", title="SKU Breadth per Category", color="SKU_Count")
                 st.plotly_chart(fig_sku_bar, use_container_width=True)
 
         with t3:
