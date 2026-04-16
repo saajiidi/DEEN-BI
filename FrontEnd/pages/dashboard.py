@@ -363,9 +363,49 @@ def render_intelligence_hub_page():
     recovery_lift = total_loss * 0.20
     with nc5: ui.icon_metric("Recovery Lift", f"৳{recovery_lift:,.0f}", icon="⚡", delta="Potential", delta_val=recovery_lift)
 
+    # --- RESTORED FINANCIAL INTEGRITY CHART ---
+    # Prepare Daily Financial Gap Data
+    import plotly.graph_objects as go
+    
+    daily_gross = df_exec.groupby(df_exec['order_date'].dt.date)['item_revenue'].sum().reset_index()
+    daily_gross.columns = ['date', 'gross']
+    
+    # Process returns for daily mapping
+    ret_df_local = st.session_state.returns_data.copy()
+    ret_df_local['date'] = pd.to_datetime(ret_df_local['date']).dt.date
+    daily_returns = ret_df_local.groupby('date').agg(
+        val_lost=('return_value_extracted', 'sum'),
+        part_lost=('partial_amount', 'sum')
+    ).reset_index()
+    daily_returns['total_lost'] = daily_returns['val_lost'] + daily_returns['part_lost']
+    
+    # Merge for plotting
+    fin_plot = pd.merge(daily_gross, daily_returns[['date', 'total_lost']], on='date', how='left').fillna(0)
+    fin_plot['net'] = fin_plot['gross'] - fin_plot['total_lost']
+    fin_plot = fin_plot.sort_values('date')
+    
+    if not fin_plot.empty:
+        fig_gap = go.Figure()
+        fig_gap.add_trace(go.Scatter(
+            x=fin_plot['date'], y=fin_plot['gross'],
+            fill='tonexty', mode='lines', line=dict(color='rgba(59, 130, 246, 0.4)', width=0.5),
+            name='Gross Verified', stackgroup='one'
+        ))
+        fig_gap.add_trace(go.Scatter(
+            x=fin_plot['date'], y=fin_plot['net'],
+            fill='tozeroy', mode='lines', line=dict(color='#10b981', width=3),
+            name='Net Settled', stackgroup='one'
+        ))
+        fig_gap.update_layout(
+            height=280, title="Sales Integrity Gap (Gross vs. Net Settled Sales)",
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=0,r=0,t=40,b=0), hovermode="x unified",
+            legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center")
+        )
+        st.plotly_chart(fig_gap, use_container_width=True)
+    
     st.markdown("<br>", unsafe_allow_html=True)
     
-
     # Routing based on sidebar selection
     selection = st.session_state.get("active_section", "💎 Sales Overview")
 
