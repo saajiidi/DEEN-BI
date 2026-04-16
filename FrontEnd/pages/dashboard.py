@@ -412,10 +412,6 @@ def render_intelligence_hub_page():
         
 
     
-    elif selection == "🚨 Intelligence War-Room":
-        from .dashboard_lib.war_room import render_war_room_page
-        render_war_room_page(data["sales_active"], st.session_state.get("returns_data", pd.DataFrame()))
-
     elif selection == "📊 Traffic & Acquisition":
         render_acquisition_analytics(data["sales_active"])
         
@@ -469,37 +465,45 @@ def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts
 # End of Dashboard controller logic
 
 def render_data_pilot_page(sales_df: pd.DataFrame, stock_df: pd.DataFrame):
-    """The AI-first command interface for natural language operations."""
-    st.markdown('<div class="live-indicator"><span class="live-dot" style="background:#4f46e5; box-shadow: 0 0 10px #4f46e5;"></span>AI Service Active | Data Pilot v10.0</div>', unsafe_allow_html=True)
+    """The AI-first command interface for natural language operations and Strategic Intelligence."""
+    st.markdown('<div class="live-indicator"><span class="live-dot" style="background:#4f46e5; box-shadow: 0 0 10px #4f46e5;"></span>Intelligence Center Active | Data Pilot v11.0</div>', unsafe_allow_html=True)
     
-    st.markdown("""
-    ### 🚀 Operations Data Pilot
-    Ask natural language questions about your e-commerce health, stockouts, or revenue trends.
-    """)
+    tab1, tab2, tab3 = st.tabs([
+        "🚀 Ask Data Pilot", 
+        "🚨 Strategic War-Room", 
+        "📦 Market Basket Intel"
+    ])
     
-    from FrontEnd.components.insights import render_ai_pilot_chat
-    render_ai_pilot_chat(sales_df)
+    with tab1:
+        st.markdown("### 🤖 Operations Data Pilot")
+        st.caption("Ask natural language questions about your e-commerce health, stockouts, or revenue trends.")
+        from FrontEnd.components.insights import render_ai_pilot_chat
+        render_ai_pilot_chat(sales_df)
     
-    st.divider()
-    
-    st.markdown("#### 🔍 Automated Market Basket Intelligence")
-    from BackEnd.services.affinity_engine import MarketBasketEngine
-    engine = MarketBasketEngine(sales_df)
-    rules = engine.get_associations(min_lift=1.2)
-    
-    if not rules.empty:
-        st.markdown("##### Detected High-Lift Product Affinities")
-        st.dataframe(rules[["Antecedent", "Consequent", "Lift", "Confidence", "Frequency"]].head(10), use_container_width=True, hide_index=True)
+    with tab2:
+        from .dashboard_lib.war_room import render_war_room_page
+        returns_df = st.session_state.get("returns_data", pd.DataFrame())
+        render_war_room_page(sales_df, returns_df)
+
+    with tab3:
+        st.markdown("#### 🔍 Automated Market Basket Intelligence")
+        from BackEnd.services.affinity_engine import MarketBasketEngine
+        engine = MarketBasketEngine(sales_df)
+        rules = engine.get_associations(min_lift=1.2)
         
-        # Bundle Fulfillment
-        st.markdown("##### 📦 Bundle Fulfillment Analysis")
-        from BackEnd.services.inventory_intel import InventoryIntelligence
-        if stock_df.empty:
-            st.info("Stock data unavailable. Sync inventory to see fulfillment analysis.")
+        if not rules.empty:
+            st.markdown("##### Detected High-Lift Product Affinities")
+            st.dataframe(rules[["Antecedent", "Consequent", "Lift", "Confidence", "Frequency"]].head(10), use_container_width=True, hide_index=True)
+            
+            # Bundle Fulfillment
+            st.markdown("##### 📦 Bundle Fulfillment Analysis")
+            from BackEnd.services.inventory_intel import InventoryIntelligence
+            if stock_df.empty:
+                st.info("Stock data unavailable. Sync inventory to see fulfillment analysis.")
+            else:
+                inv_intel = InventoryIntelligence(sales_df, stock_df)
+                pairs = rules.head(5).apply(lambda x: {'A': x['Antecedent'], 'B': x['Consequent']}, axis=1).tolist()
+                bundles = inv_intel.calculate_bundle_fulfillment(pairs)
+                st.dataframe(bundles, use_container_width=True, hide_index=True)
         else:
-            inv_intel = InventoryIntelligence(sales_df, stock_df)
-            pairs = rules.head(5).apply(lambda x: {'A': x['Antecedent'], 'B': x['Consequent']}, axis=1).tolist()
-            bundles = inv_intel.calculate_bundle_fulfillment(pairs)
-            st.dataframe(bundles, use_container_width=True, hide_index=True)
-    else:
-        st.info("Insufficient transaction density to discover complex product associations. Check back after more orders.")
+            st.info("Insufficient transaction density to discover complex product associations. Check back after more orders.")
