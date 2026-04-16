@@ -85,7 +85,7 @@ def _render_main_content(filters: Dict[str, Any]) -> None:
         st.info("📊 Please sync data to use customer filters.")
         return
     
-    sales_df = st.session_state.dashboard_data.get("sales_exec", pd.DataFrame())
+    sales_df = st.session_state.dashboard_data.get("sales_active", pd.DataFrame())
     
     if sales_df.empty:
         st.info("📭 No sales data available. Please sync data first.")
@@ -170,60 +170,9 @@ def _get_filtered_customers_from_sales(
     if sales_df.empty:
         return pd.DataFrame()
     
-    # Generate customer insights from sales
-    customers_df = generate_customer_insights_from_sales(sales_df, include_rfm=True)
-    
-    if customers_df.empty:
-        return pd.DataFrame()
-    
-    # Rename columns for consistency with new components
-    column_map = {
-        "customer_id": "customer_key",
-        "primary_name": "name",
-        "total_revenue": "total_value",
-    }
-    for old_col, new_col in column_map.items():
-        if old_col in customers_df.columns and new_col not in customers_df.columns:
-            customers_df[new_col] = customers_df[old_col]
-    
-    # Apply amount filter
-    if filters.get("min_amount", 0) > 0:
-        customers_df = customers_df[customers_df["total_value"] >= filters["min_amount"]]
-    
-    if filters.get("max_amount") is not None and filters["max_amount"] > 0:
-        customers_df = customers_df[customers_df["total_value"] <= filters["max_amount"]]
-    
-    # Apply order count filter
-    if filters.get("min_orders", 0) > 0:
-        customers_df = customers_df[customers_df["total_orders"] >= filters["min_orders"]]
-    
-    if filters.get("max_orders") is not None and filters["max_orders"] > 0:
-        customers_df = customers_df[customers_df["total_orders"] <= filters["max_orders"]]
-    
-    # Apply date filter (check first_order and last_order)
-    if filters.get("start_date"):
-        start_date = pd.to_datetime(filters["start_date"])
-        if "first_order" in customers_df.columns:
-            customers_df = customers_df[pd.to_datetime(customers_df["first_order"]) >= start_date]
-    
-    if filters.get("end_date"):
-        end_date = pd.to_datetime(filters["end_date"])
-        if "last_order" in customers_df.columns:
-            customers_df = customers_df[pd.to_datetime(customers_df["last_order"]) <= end_date]
-    
-    # Product filter - check if customers bought specific products
-    if filters.get("product_ids"):
-        # Filter sales data to only selected products
-        product_ids = filters["product_ids"]
-        # Get orders containing these products
-        if "product_id" in sales_df.columns:
-            matching_orders = sales_df[sales_df["product_id"].isin(product_ids)]["order_id"].unique()
-            # Get customers from those orders
-            if "customer_key" in sales_df.columns:
-                matching_customers = sales_df[sales_df["order_id"].isin(matching_orders)]["customer_key"].unique()
-                customers_df = customers_df[customers_df["customer_key"].isin(matching_customers)]
-    
-    return customers_df
+    # Use the unified apply_customer_filters which handles hierarchical Category/Product/Size
+    from src.components.customer_insight.customer_filters import apply_customer_filters
+    return apply_customer_filters(sales_df, filters)
 
 
 def _on_customer_select(customer_key: str) -> None:
@@ -244,7 +193,7 @@ def _show_global_stats() -> None:
         # Use existing working data from session state
         if "dashboard_data" in st.session_state:
             data = st.session_state.dashboard_data
-            sales_df = data.get("sales_exec", pd.DataFrame())
+            sales_df = data.get("sales_active", pd.DataFrame())
             
             if not sales_df.empty:
                 # Calculate unique customers from sales data
@@ -353,7 +302,7 @@ def _render_compact_results(filters: Dict[str, Any]) -> None:
         st.warning("📊 Please sync data to view customer filters")
         return
     
-    sales_df = st.session_state.dashboard_data.get("sales_exec", pd.DataFrame())
+    sales_df = st.session_state.dashboard_data.get("sales_active", pd.DataFrame())
     
     if sales_df.empty:
         st.warning("📭 No sales data available")

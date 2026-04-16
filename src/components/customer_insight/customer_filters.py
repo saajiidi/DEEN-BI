@@ -21,33 +21,43 @@ from BackEnd.core.logging_config import get_logger
 logger = get_logger("customer_filters")
 
 
-def _get_products_from_sales_data() -> pd.DataFrame:
-    """Extract unique products from existing sales data in session state.
+def _get_sales_data() -> pd.DataFrame:
+    """Get the active sales data from session state with variant parsing.
     
     Returns:
-        DataFrame with product_id and name columns
+        Sales DataFrame with _clean_name, _size, _color columns parsed.
     """
     if "dashboard_data" not in st.session_state:
         return pd.DataFrame()
     
-    sales_df = st.session_state.dashboard_data.get("sales_exec", pd.DataFrame())
+    # Use sales_active (operational dataset) which has Category column
+    sales_df = st.session_state.dashboard_data.get("sales_active", pd.DataFrame())
+    if sales_df.empty:
+        # Fallback to sales_exec or sales
+        sales_df = st.session_state.dashboard_data.get("sales_exec", pd.DataFrame())
+    if sales_df.empty:
+        sales_df = st.session_state.dashboard_data.get("sales", pd.DataFrame())
+    
     if sales_df.empty:
         return pd.DataFrame()
     
-    # Extract unique products from sales data
-    if "item_name" in sales_df.columns and "sku" in sales_df.columns:
-        products = sales_df[["item_name", "sku"]].drop_duplicates()
-        products.columns = ["name", "product_id"]
-        return products
+    # Parse variants if not already done
+    if "_ci_variant_parsed" not in sales_df.columns:
+        from BackEnd.core.categories import parse_sku_variants, get_clean_product_name
+        sales_df[["_color", "_size"]] = sales_df["item_name"].apply(
+            lambda x: pd.Series(parse_sku_variants(x))
+        )
+        sales_df["_clean_name"] = sales_df["item_name"].apply(get_clean_product_name)
+        sales_df["_ci_variant_parsed"] = True
     
-    return pd.DataFrame()
+    return sales_df
 
 
 def render_customer_filters(
     on_filter_change: Optional[Callable[[Dict[str, Any]], None]] = None,
     key_prefix: str = "ci_filters",
 ) -> Dict[str, Any]:
-    """Render customer filter controls - HORIZONTAL LAYOUT.
+    """Render customer filter controls with hierarchical Category → Product → Size filters.
     
     Args:
         on_filter_change: Optional callback when filters change
@@ -56,8 +66,13 @@ def render_customer_filters(
     Returns:
         Dictionary with filter values
     """
+    from BackEnd.core.categories import sort_categories, format_category_label
+    
     st.caption("All filters work together with AND logic. Adjust and click Apply.")
     st.info("📅 Date range is controlled from the global sidebar (Business Intelligence > Custom Date Range)")
+    
+    # Get enriched sales data
+    sales_df = _get_sales_data()
     
     # Initialize session state defaults
     if f"{key_prefix}_min_amount" not in st.session_state:
@@ -74,30 +89,77 @@ def render_customer_filters(
         st.session_state[f"{key_prefix}_orders_select"] = "Any (1 or more)"
     if f"{key_prefix}_filter_mode" not in st.session_state:
         st.session_state[f"{key_prefix}_filter_mode"] = "Customer total within range"
-    # Note: Date range comes from global sidebar (wc_sync_start_date, wc_sync_end_date)
     
-    # ROW 1: Products selector (full width for multiselect)
-    st.markdown("**📦 Products**")
-    st.caption("Leave empty to include all products")
-    products_df = _get_products_from_sales_data()
+    # ──────────────────────────────────────────────────────────────
+    # ROW 1: Hierarchical Product Filters (Category → SKU → Size)
+    # ──────────────────────────────────────────────────────────────
+    st.markdown("**📦 Category & Product Filters**")
     
-    if products_df.empty:
-        st.info("ℹ️ Load sales data from dashboard to filter by products.")
-        selected_product_ids = []
+    active_cats = []
+    active_items = []
+    active_sizes = []
+    
+    if not sales_df.empty and "Category" in sales_df.columns:
+        f_c1, f_c2, f_c3 = st.columns(3)
+        
+        with f_c1:
+            # 1. Category (hierarchical with indented sub-categories)
+            raw_cats = set([str(c) for c in sales_df["Category"].dropna().unique() if str(c).strip()])
+            parents_to_add = set()
+            for cat in raw_cats:
+                if " - " in cat:
+                    parent = cat.split(" - ")[0]
+                    if parent not in raw_cats:
+                        parents_to_add.add(parent)
+            
+            cat_list = sort_categories(list(raw_cats.union(parents_to_add)))
+            sel_cats = st.multiselect(
+                "Categories", ["All"] + cat_list, default=["All"],
+                format_func=format_category_label,
+                key=f"{key_prefix}_cats"
+            )
+            active_cats = [] if "All" in sel_cats or not sel_cats else sel_cats
+        
+        with f_c2:
+            # 2. Products (Name + SKU) — cascaded from Category
+            if active_cats:
+                mask = pd.Series(False, index=sales_df.index)
+                for cat in active_cats:
+                    mask |= sales_df["Category"].str.startswith(cat, na=False)
+                sku_options = sales_df[mask].copy()
+            else:
+                sku_options = sales_df.copy()
+            
+            sku_options["_display_name"] = sku_options["_clean_name"] + " [" + sku_options["sku"].astype(str) + "]"
+            avail_items = sorted([
+                str(s) for s in sku_options["_display_name"].unique()
+                if str(s).strip() and "Unknown" not in str(s)
+            ])
+            sel_items = st.multiselect(
+                "Products (Name + SKU)", ["All"] + avail_items, default=["All"],
+                key=f"{key_prefix}_items"
+            )
+            active_items = [] if "All" in sel_items or not sel_items else sel_items
+        
+        with f_c3:
+            # 3. Size — cascaded from Products
+            if active_items:
+                size_pool = sku_options[sku_options["_display_name"].isin(active_items)]
+            else:
+                size_pool = sku_options
+            
+            avail_sizes = sorted([str(s) for s in size_pool["_size"].dropna().unique() if str(s).strip()])
+            sel_sizes = st.multiselect(
+                "Variants (Size)", ["All"] + avail_sizes, default=["All"],
+                key=f"{key_prefix}_sizes"
+            )
+            active_sizes = [] if "All" in sel_sizes or not sel_sizes else sel_sizes
     else:
-        product_options = {f"{row['name']}": row["product_id"] for _, row in products_df.iterrows()}
-        selected_products = st.multiselect(
-            "Select products",
-            options=list(product_options.keys()),
-            default=st.session_state.get(f"{key_prefix}_products", []),
-            key=f"{key_prefix}_products_select",
-            placeholder="Leave empty for all products, or select specific ones...",
-            label_visibility="collapsed",
-        )
-        selected_product_ids = [product_options[p] for p in selected_products] if selected_products else []
-        st.session_state[f"{key_prefix}_products"] = selected_products
+        st.info("ℹ️ Load sales data from dashboard to enable product filters.")
     
-    # ROW 2: Filter Mode (full width)
+    # ──────────────────────────────────────────────────────────────
+    # ROW 2: Filter Mode
+    # ──────────────────────────────────────────────────────────────
     st.markdown("**🎯 Filter Mode**")
     st.caption("Choose how Amount and Order filters are applied")
     filter_mode = st.radio(
@@ -118,14 +180,15 @@ def render_customer_filters(
     else:
         st.caption("✅ Customers who have AT LEAST ONE order within the selected range (may have others outside)")
     
+    # ──────────────────────────────────────────────────────────────
     # ROW 3: Amount and Order Count (2 columns)
+    # ──────────────────────────────────────────────────────────────
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("**💰 Amount (৳)**")
         st.caption("Select minimum amount")
         
-        # Dropdown for amount selection
         amount_options = [
             "Any amount",
             "Up to ৳1000",
@@ -149,7 +212,6 @@ def render_customer_filters(
             label_visibility="collapsed",
         )
         
-        # Set min/max based on selection
         if selected_amount_option == "Any amount":
             min_amount, max_amount = 0, 10000000
         elif selected_amount_option == "Up to ৳1000":
@@ -160,39 +222,40 @@ def render_customer_filters(
             min_amount, max_amount = 0, 2000
         elif selected_amount_option == "Up to ৳2500":
             min_amount, max_amount = 0, 2500
-        elif selected_amount_option == "Up to ৳4300":
-            min_amount, max_amount = 0, 4300
+        elif selected_amount_option == "Up to ৳3000":
+            min_amount, max_amount = 0, 3000
+        elif selected_amount_option == "Up to ৳3500":
+            min_amount, max_amount = 0, 3500
+        elif selected_amount_option == "Up to ৳4000":
+            min_amount, max_amount = 0, 4000
+        elif selected_amount_option == "Up to ৳5000":
+            min_amount, max_amount = 0, 5000
+        elif selected_amount_option == "Up to ৳7000":
+            min_amount, max_amount = 0, 7000
+        elif selected_amount_option == "Up to ৳10000":
+            min_amount, max_amount = 0, 10000
         else:  # Custom range
             c1, c2 = st.columns(2)
             with c1:
                 min_amount = st.number_input(
-                    "Min ৳",
-                    min_value=0,
-                    max_value=1000000,
+                    "Min ৳", min_value=0, max_value=1000000,
                     value=st.session_state.get(f"{key_prefix}_min_amount", 0),
-                    step=100,
-                    key=f"{key_prefix}_min_amount_custom",
+                    step=100, key=f"{key_prefix}_min_amount_custom",
                 )
             with c2:
                 max_amount = st.number_input(
-                    "Max ৳",
-                    min_value=0,
-                    max_value=10000000,
+                    "Max ৳", min_value=0, max_value=10000000,
                     value=st.session_state.get(f"{key_prefix}_max_amount", 1000000),
-                    step=1000,
-                    key=f"{key_prefix}_max_amount_custom",
+                    step=1000, key=f"{key_prefix}_max_amount_custom",
                 )
         
         st.session_state[f"{key_prefix}_min_amount"] = min_amount
         st.session_state[f"{key_prefix}_max_amount"] = max_amount
-        st.session_state[f"{key_prefix}_amount_min"] = min_amount
-        st.session_state[f"{key_prefix}_amount_max"] = max_amount
     
     with col2:
         st.markdown("**📊 Orders**")
         st.caption("Select order count range")
         
-        # Dropdown for order count selection
         order_options = [
             "Any (1 or more)",
             "Exactly 1",
@@ -210,7 +273,6 @@ def render_customer_filters(
             label_visibility="collapsed",
         )
         
-        # Set min/max based on selection
         if selected_order_option == "Any (1 or more)":
             min_orders, max_orders = 1, 50
         elif selected_order_option == "Exactly 1":
@@ -225,32 +287,23 @@ def render_customer_filters(
             c1, c2 = st.columns(2)
             with c1:
                 min_orders = st.number_input(
-                    "Min",
-                    min_value=1,
-                    max_value=1000,
+                    "Min", min_value=1, max_value=1000,
                     value=st.session_state.get(f"{key_prefix}_min_orders", 1),
-                    step=1,
-                    key=f"{key_prefix}_min_orders_custom",
+                    step=1, key=f"{key_prefix}_min_orders_custom",
                 )
             with c2:
                 max_orders = st.number_input(
-                    "Max",
-                    min_value=1,
-                    max_value=10000,
+                    "Max", min_value=1, max_value=10000,
                     value=st.session_state.get(f"{key_prefix}_max_orders", 1000),
-                    step=10,
-                    key=f"{key_prefix}_max_orders_custom",
+                    step=10, key=f"{key_prefix}_max_orders_custom",
                 )
         
         st.session_state[f"{key_prefix}_min_orders"] = min_orders
         st.session_state[f"{key_prefix}_max_orders"] = max_orders
-        st.session_state[f"{key_prefix}_orders_min"] = min_orders
-        st.session_state[f"{key_prefix}_orders_max"] = max_orders
     
-    # Note: Date range is controlled by global sidebar (Business Intelligence > Custom Date Range)
-    # The data is pre-filtered before reaching Customer Insight
-    
-    # ROW 3: Action Buttons
+    # ──────────────────────────────────────────────────────────────
+    # ROW 4: Action Buttons
+    # ──────────────────────────────────────────────────────────────
     st.markdown("---")
     btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 2])
     
@@ -274,17 +327,16 @@ def render_customer_filters(
     
     if reset_clicked:
         keys_to_clear = [
+            f"{key_prefix}_cats",
+            f"{key_prefix}_items",
+            f"{key_prefix}_sizes",
             f"{key_prefix}_products",
             f"{key_prefix}_min_amount",
             f"{key_prefix}_max_amount",
             f"{key_prefix}_amount_select",
-            f"{key_prefix}_amount_min",
-            f"{key_prefix}_amount_max",
             f"{key_prefix}_min_orders",
             f"{key_prefix}_max_orders",
             f"{key_prefix}_orders_select",
-            f"{key_prefix}_orders_min",
-            f"{key_prefix}_orders_max",
             f"{key_prefix}_filter_mode",
         ]
         for key in keys_to_clear:
@@ -292,19 +344,19 @@ def render_customer_filters(
                 del st.session_state[key]
         st.rerun()
     
-    # Build filter result (date range comes from global sidebar, not local filters)
-    filter_mode = st.session_state.get(f"{key_prefix}_filter_mode", "Customer total within range")
+    # Build filter result
     filters = {
-        "selected_products": selected_product_ids if 'selected_product_ids' in locals() else [],
+        "active_cats": active_cats,
+        "active_items": active_items,
+        "active_sizes": active_sizes,
         "min_amount": st.session_state.get(f"{key_prefix}_min_amount", 0),
         "max_amount": st.session_state.get(f"{key_prefix}_max_amount", 1000000),
         "min_orders": st.session_state.get(f"{key_prefix}_min_orders", 1),
         "max_orders": st.session_state.get(f"{key_prefix}_max_orders", 1000),
-        "filter_mode": filter_mode,
+        "filter_mode": st.session_state.get(f"{key_prefix}_filter_mode", "Customer total within range"),
         "applied": apply_clicked,
     }
     
-    # Auto-apply if callback provided and filters changed
     if on_filter_change and apply_clicked:
         on_filter_change(filters)
     
@@ -315,11 +367,13 @@ def apply_customer_filters(
     orders_df: pd.DataFrame,
     filters: Dict[str, Any],
 ) -> pd.DataFrame:
-    """Apply filter criteria to orders DataFrame using EXISTING data.
+    """Apply hierarchical filter criteria to orders DataFrame.
     
     Args:
         orders_df: DataFrame with orders data from session state
         filters: Filter criteria from render_customer_filters()
+            Keys: active_cats, active_items, active_sizes,
+                  min_amount, max_amount, min_orders, max_orders, filter_mode
         
     Returns:
         Filtered DataFrame with unique customers
@@ -329,18 +383,41 @@ def apply_customer_filters(
     
     df = orders_df.copy()
     
-    # Note: Date range filtering is handled globally in the sidebar
-    # The data in dashboard_data is already filtered by the global date range
+    # ── 1. Apply Category / Product / Size cascade filters ──
+    active_cats = filters.get("active_cats", [])
+    active_items = filters.get("active_items", [])
+    active_sizes = filters.get("active_sizes", [])
     
+    if active_cats and "Category" in df.columns:
+        mask = pd.Series(False, index=df.index)
+        for cat in active_cats:
+            mask |= df["Category"].str.startswith(cat, na=False)
+        df = df[mask]
+    
+    if active_items:
+        # Parse variants if not done
+        if "_clean_name" not in df.columns:
+            from BackEnd.core.categories import get_clean_product_name
+            df["_clean_name"] = df["item_name"].apply(get_clean_product_name)
+        df["_display_name"] = df["_clean_name"] + " [" + df["sku"].astype(str) + "]"
+        df = df[df["_display_name"].isin(active_items)]
+    
+    if active_sizes:
+        if "_size" not in df.columns:
+            from BackEnd.core.categories import parse_sku_variants
+            df[["_color", "_size"]] = df["item_name"].apply(lambda x: pd.Series(parse_sku_variants(x)))
+        df = df[df["_size"].isin(active_sizes)]
+    
+    if df.empty:
+        return pd.DataFrame()
+    
+    # ── 2. Apply filter mode logic ──
     filter_mode = filters.get("filter_mode", "Customer total within range")
     
-    # Get unique customers who qualify based on filter mode
     if filter_mode == "Customer has at least one order in range" and "order_total" in df.columns:
-        # MODE 2: Customer has at least one order in the specified range
-        # First, get unique orders with their totals
+        # Get unique orders
         unique_orders = df.drop_duplicates(subset=["order_id"]).copy()
         
-        # Apply amount filter to unique orders
         min_amt = filters.get("min_amount", 0)
         max_amt = filters.get("max_amount", 10000000)
         
@@ -349,33 +426,17 @@ def apply_customer_filters(
         if max_amt < 10000000:
             unique_orders = unique_orders[unique_orders["order_total"] <= max_amt]
         
-        # Get customers who have at least one qualifying order
         qualifying_customers = unique_orders["customer_key"].unique()
-        
-        # Filter original df to only these customers
         df = df[df["customer_key"].isin(qualifying_customers)]
         
-        # Apply product filter
-        if filters.get("selected_products") and "item_name" in df.columns:
-            product_filter = df["sku"].isin(filters["selected_products"]) if "sku" in df.columns else False
-            if "item_name" in df.columns:
-                product_names = [p.lower() for p in filters["selected_products"]]
-                name_filter = df["item_name"].str.lower().isin(product_names)
-                product_filter = product_filter | name_filter
-            df = df[product_filter]
-        
-        # For orders count in this mode, we count only qualifying orders per customer
         qualifying_order_ids = unique_orders["order_id"].unique()
         df_filtered = df[df["order_id"].isin(qualifying_order_ids)]
         
-        # Aggregate to customer level from filtered data
         from BackEnd.services.customer_insights import generate_customer_insights_from_sales
         customers_df = generate_customer_insights_from_sales(df_filtered, include_rfm=True)
         
-        # Apply order count filter on qualifying orders only
         min_ord = filters.get("min_orders", 1)
         max_ord = filters.get("max_orders", 10000)
-        
         if min_ord > 1:
             customers_df = customers_df[customers_df["total_orders"] >= min_ord]
         if max_ord < 10000:
@@ -383,22 +444,11 @@ def apply_customer_filters(
         
         return customers_df
     
-    # MODE 1: Customer total within range (default behavior)
-    # 1. Apply product filter (match by item_name or sku)
-    if filters.get("selected_products") and "item_name" in df.columns:
-        product_filter = df["sku"].isin(filters["selected_products"]) if "sku" in df.columns else False
-        if "item_name" in df.columns:
-            # Also check item names for partial matches
-            product_names = [p.lower() for p in filters["selected_products"]]
-            name_filter = df["item_name"].str.lower().isin(product_names)
-            product_filter = product_filter | name_filter
-        df = df[product_filter]
-    
-    # 2. Aggregate to customer level
+    # ── MODE 1: Customer total within range (default) ──
     from BackEnd.services.customer_insights import generate_customer_insights_from_sales
     customers_df = generate_customer_insights_from_sales(df, include_rfm=True)
     
-    # Rename columns for consistency
+    # Column normalization
     if "customer_id" in customers_df.columns and "customer_key" not in customers_df.columns:
         customers_df["customer_key"] = customers_df["customer_id"]
     if "primary_name" in customers_df.columns and "name" not in customers_df.columns:
@@ -406,17 +456,15 @@ def apply_customer_filters(
     if "total_revenue" in customers_df.columns and "total_value" not in customers_df.columns:
         customers_df["total_value"] = customers_df["total_revenue"]
     
-    # 3. Apply amount filter
+    # Amount filter
     if filters.get("min_amount", 0) > 0:
         customers_df = customers_df[customers_df["total_value"] >= filters["min_amount"]]
-    
     if filters.get("max_amount") and filters["max_amount"] < 10000000:
         customers_df = customers_df[customers_df["total_value"] <= filters["max_amount"]]
     
-    # 4. Apply order count filter
+    # Order count filter
     if filters.get("min_orders", 1) > 1:
         customers_df = customers_df[customers_df["total_orders"] >= filters["min_orders"]]
-    
     if filters.get("max_orders") and filters["max_orders"] < 10000:
         customers_df = customers_df[customers_df["total_orders"] <= filters["max_orders"]]
     
@@ -438,7 +486,7 @@ def get_filtered_customers_summary(filters: Dict[str, Any]) -> pd.DataFrame:
     if "dashboard_data" not in st.session_state:
         return pd.DataFrame()
     
-    sales_df = st.session_state.dashboard_data.get("sales_exec", pd.DataFrame())
+    sales_df = st.session_state.dashboard_data.get("sales_active", pd.DataFrame())
     
     if sales_df.empty:
         return pd.DataFrame()
