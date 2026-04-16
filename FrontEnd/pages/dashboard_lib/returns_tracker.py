@@ -28,6 +28,12 @@ logger = get_logger("returns_tracker_page")
 def render_returns_tracker_page() -> None:
     """Main entry point for the Returns & Net Sales Tracker page."""
 
+    st.markdown("### 🔄 Returns & Net Sales Tracker")
+    st.caption(
+        "Track returns, partial orders, and exchanges. "
+        "Calculate Net Sales from delivery-issue intelligence."
+    )
+
     # ── Auto Data Sync ──
     sync_window = get_current_sync_window()
     if "returns_data" not in st.session_state or st.session_state.get("last_returns_sync") != sync_window:
@@ -35,42 +41,41 @@ def render_returns_tracker_page() -> None:
             st.session_state.returns_data = load_returns_data(sync_window=sync_window)
             st.session_state.last_returns_sync = sync_window
 
-    # Show only sync status
-    _render_sync_status_only()
+    _render_data_sync_panel()
 
+    if "returns_data" not in st.session_state or st.session_state.returns_data.empty:
+        st.info("📊 No Returns Data available. Check the source connection.")
+        return
 
-def _render_sync_status_only() -> None:
-    """Render minimal sync status (hidden detailed view)."""
-    with st.expander("🔗 Returns Data Sync Status", expanded=True):
-        c1, c2 = st.columns([3, 1])
-        with c1:
-            st.text_input(
-                "Google Sheets CSV URL",
-                value=DEFAULT_SHEET_URL,
-                disabled=True,
-            )
-            last_sync = st.session_state.get('last_returns_sync', 'None')
-            st.caption(f"Last Auto-Sync Window: {last_sync}")
-            
-            # Show record count
-            if "returns_data" in st.session_state and not st.session_state.returns_data.empty:
-                df = st.session_state.returns_data
-                st.success(f"✅ {len(df)} returns records loaded")
-            else:
-                st.warning("📊 No returns data available")
-                
-        with c2:
-            if st.button("🔄 Force Refresh", use_container_width=True):
-                with st.spinner("Force syncing..."):
-                    load_returns_data.clear()
-                    sync_window = get_current_sync_window()
-                    df = load_returns_data(sync_window=sync_window)
-                    st.session_state.returns_data = df
-                    st.session_state.last_returns_sync = sync_window
-                    st.success(f"✅ Reloaded {len(df)} records")
-                    st.rerun()
-        
-        st.info("📊 Returns analytics are now integrated into the main dashboard view.")
+    df = st.session_state.returns_data.copy()
+
+    # ── Date Range Filter ──
+    df = _render_date_filter(df)
+
+    # ── WooCommerce Gross Sales Link ──
+    sales_df = _get_gross_sales_context()
+
+    # ── Compute Metrics ──
+    metrics = calculate_net_sales_metrics(df, sales_df=sales_df)
+
+    # ── KPI Cards ──
+    _render_kpi_cards(metrics)
+
+    if df.empty:
+        st.info("No returns logged within this specific time frame.")
+        return
+
+    # ── Charts ──
+    st.markdown("---")
+    _render_charts(df, metrics)
+
+    # ── Detailed Table ──
+    st.markdown("---")
+    _render_details_table(df)
+
+    # ── Export ──
+    st.markdown("---")
+    _render_export(df, metrics)
 
 
 # ═══════════════════════════════════════════════════════════════════
