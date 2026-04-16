@@ -10,11 +10,16 @@ def detect_business_anomalies(sales_df: pd.DataFrame, returns_df: pd.DataFrame) 
     if sales_df.empty:
         return anomalies
 
+    # Ensure datetime types
+    if 'order_date' in sales_df.columns:
+        sales_df['order_date'] = pd.to_datetime(sales_df['order_date'])
+
     # 1. Revenue Leakage: "Ghost" Orders (Stale Pendings)
-    # Orders created > 5 days ago still in 'pending' or 'on-hold'
     today = datetime.now()
     if 'order_date' in sales_df.columns:
         stale_cutoff = today - timedelta(days=5)
+# ... [rest of the function continues as before, but with safe types]
+
         stale_orders = sales_df[
             (sales_df['order_date'] < stale_cutoff) & 
             (sales_df['order_status'].str.lower().isin(['pending', 'on-hold', 'pending-payment']))
@@ -107,6 +112,8 @@ def calculate_rfm_churn_risk(sales_df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
 
     today = datetime.now()
+    sales_df = sales_df.copy()
+    sales_df['order_date'] = pd.to_datetime(sales_df['order_date'])
     
     # Aggregate by customer
     rfm = sales_df.groupby('customer_key').agg({
