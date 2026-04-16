@@ -368,6 +368,20 @@ def render_intelligence_hub_page():
         # Global Narrative & Summary
         render_dashboard_story(data["sales_active"], data["customers"], data["ml"], window, df_prev_sales=data["prev_sales_active"])
         
+        # --- FEATURE 1: AI EXECUTIVE BRIEFING ---
+        from BackEnd.services.strategic_intelligence import generate_executive_narrative
+        briefing = generate_executive_narrative(data["sales_active"], st.session_state.get("returns_data", pd.DataFrame()), d_rev_val)
+        
+        with st.container():
+            st.markdown(f"""
+            <div style="background: rgba(59, 130, 246, 0.05); border-left: 4px solid #3b82f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <div style="font-weight: 800; color: #3b82f6; font-size: 0.8rem; letter-spacing: 1px; margin-bottom: 10px;">🎙️ AI EXECUTIVE BRIEFING</div>
+                <div style="font-size: 0.95rem; line-height: 1.6;">
+                    {"<br>".join([f"• {point}" for point in briefing])}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
         # 🧾 Performance Report Download
         st.markdown("---")
         ex1, ex2 = st.columns([3, 1])
@@ -391,7 +405,7 @@ def render_intelligence_hub_page():
             
             perf_bytes = ui.export_to_excel(perf_df, "Performance Matrix")
             st.download_button(
-                label="📊 Download Performance Matrix",
+                label="📊 Export Executive Deck (XLS)",
                 data=perf_bytes,
                 file_name=f"deen_performance_{datetime.now().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -404,6 +418,10 @@ def render_intelligence_hub_page():
         
 
     
+    elif selection == "🚨 Intelligence War-Room":
+        from .dashboard_lib.war_room import render_war_room_page
+        render_war_room_page(data["sales_active"], st.session_state.get("returns_data", pd.DataFrame()))
+
     elif selection == "📊 Traffic & Acquisition":
         render_acquisition_analytics(data["sales_active"])
         
