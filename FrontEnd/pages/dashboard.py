@@ -134,13 +134,45 @@ def render_intelligence_hub_page():
         prev_end_date_str = (start_dt - timedelta(days=1)).strftime("%Y-%m-%d")
         prev_start_date_str = (start_dt - timedelta(days=duration)).strftime("%Y-%m-%d")
     else:
-        end_date_str = today.strftime("%Y-%m-%d")
-        start_date_str = (today - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        # Calculate proper date range for ALL window types
+        end_dt = today
+        start_dt = today - timedelta(days=days_back)
+        end_date_str = end_dt.strftime("%Y-%m-%d")
+        start_date_str = start_dt.strftime("%Y-%m-%d")
         prev_start_date_str = (today - timedelta(days=days_back * 2)).strftime("%Y-%m-%d")
         prev_end_date_str = (today - timedelta(days=days_back + 1)).strftime("%Y-%m-%d")
 
     orders_status = get_woocommerce_orders_cache_status(start_date_str, end_date_str)
-    
+
+    # === SKELETON LOADING: Render UI instantly while data loads ===
+    cache_empty = not orders_status.get("cache_exists", False)
+    data_load_key = f"data_loaded_{start_date_str}_{end_date_str}"
+    data_ready = st.session_state.get(data_load_key, False)
+
+    if cache_empty and not data_ready:
+        # Render skeleton UI immediately for fast perceived performance
+        st.markdown("""
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding: 12px 16px; background: linear-gradient(90deg, rgba(59,130,246,0.1) 0%, rgba(59,130,246,0.05) 100%); border-left: 3px solid #3b82f6; border-radius: 8px;">
+                <span style="animation: spin 1s linear infinite;">🔄</span>
+                <div>
+                    <div style="font-weight: 600; color: #3b82f6; font-size: 0.9rem;">Initializing Data Stream...</div>
+                    <div style="font-size: 0.75rem; color: #64748b;">Connecting to WooCommerce API. Dashboard will populate automatically.</div>
+                </div>
+            </div>
+            <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+        """, unsafe_allow_html=True)
+
+        # Show skeleton metrics row
+        ui.skeleton_row(count=6)
+        st.markdown("<br>", unsafe_allow_html=True)
+        ui.skeleton_row(count=6)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Trigger data load and rerun
+        st.session_state[data_load_key] = False
+        st.session_state[f"{data_load_key}_loading"] = True
+        st.rerun()
+
     needs_history = window == "Custom Date Range" and not orders_status.get("is_covered", True)
     if needs_history:
         st.warning(f"⏳ Connecting to WooCommerce Live to sync deep archival history ({start_date_str} to {end_date_str}). This runs seamlessly in the background and may take a few minutes. Your metrics will automatically populate once caching finishes!")
@@ -150,26 +182,31 @@ def render_intelligence_hub_page():
     slow_conn = st.session_state.get("conn_speed_mode") == "Slow Connection"
     active_snapshot_mode = USE_STATIC_SNAPSHOT or slow_conn
     
+    # === DATA LOADING: Load actual data (cache hit or fresh fetch) ===
+    # Skeleton UI already rendered above if cache was empty
+    data_load_key = f"data_loaded_{start_date_str}_{end_date_str}"
+
     if active_snapshot_mode:
         st.info(f"📶 **{SNAPSHOT_LABEL}**: Performance optimized for slow connections. Real-time syncing is paused.")
         df_sales_raw = load_hybrid_data(woocommerce_mode="cache_only", use_snapshot=True)
         df_sales_raw = prune_dataframe(df_sales_raw, DASHBOARD_SALES_COLUMNS)
     else:
         # Standard Live Logic
-        # Force a sync for current-day data requests OR first-time initialization
-        cache_empty = not orders_status.get("cache_exists", False)
         should_force = global_sync or (window == "Last Day") or needs_history or cache_empty
-        
-        if cache_empty:
-             with st.spinner("🚀 Establishing first-time connection to WooCommerce..."):
-                 # Blocking sync for the very first hit to ensure the app isn't empty
-                 df_sales_raw = load_hybrid_data(start_date=start_date_str, end_date=end_date_str, woocommerce_mode="live")
-                 df_sales_raw = prune_dataframe(df_sales_raw, DASHBOARD_SALES_COLUMNS)
-        else:
-             # Regular background refresh for existing users
-             start_orders_background_refresh(start_date_str, end_date_str, force=should_force)
-             sync_mode = "live" if (window == "Last Day" or global_sync) else "cache_only"
-             df_sales_raw = prune_dataframe(load_hybrid_data(start_date=start_date_str, end_date=end_date_str, woocommerce_mode=sync_mode), DASHBOARD_SALES_COLUMNS)
+
+        # Start background refresh for freshness
+        start_orders_background_refresh(start_date_str, end_date_str, force=should_force)
+
+        # Load data (cached or fresh based on mode)
+        sync_mode = "live" if (window == "Last Day" or global_sync) else "cache_only"
+        df_sales_raw = prune_dataframe(
+            load_hybrid_data(start_date=start_date_str, end_date=end_date_str, woocommerce_mode=sync_mode),
+            DASHBOARD_SALES_COLUMNS
+        )
+
+    # Mark data as ready for future renders
+    st.session_state[data_load_key] = True
+    st.session_state[f"{data_load_key}_loading"] = False
     
     # 1. Map categories and apply global filters immediately for UI context
     from BackEnd.core.categories import get_category_for_sales
@@ -338,23 +375,63 @@ def render_intelligence_hub_page():
 
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # --- NET SALES FINANCIAL IMPACT ---
+    # --- NET SALES FINANCIAL IMPACT (STAGED LOADING FOR FAST RENDER) ---
     from BackEnd.services.returns_tracker import load_returns_data, get_current_sync_window, calculate_net_sales_metrics
+    from threading import Thread
+    import time
+
     sync_window = get_current_sync_window()
-    if "returns_data" not in st.session_state or st.session_state.get("last_returns_sync") != sync_window:
-        st.session_state.returns_data = load_returns_data(sync_window=sync_window)
-        st.session_state.last_returns_sync = sync_window
-    
+
+    def _load_returns_async(window: str, sales_df: pd.DataFrame):
+        """Background thread function to load returns data."""
+        try:
+            st.session_state["returns_loading"] = True
+            st.session_state["returns_load_started"] = time.time()
+            returns_df = load_returns_data(sync_window=window, sales_df=sales_df)
+            st.session_state.returns_data = returns_df
+            st.session_state.last_returns_sync = window
+            st.session_state["returns_loading"] = False
+            st.session_state["returns_load_complete"] = True
+        except Exception as e:
+            st.session_state["returns_loading"] = False
+            st.session_state["returns_load_error"] = str(e)
+            log_error(e, context="Returns Background Load")
+
+    # Check if we need to load returns data
+    needs_load = (
+        "returns_data" not in st.session_state
+        or st.session_state.get("last_returns_sync") != sync_window
+        or st.session_state.get("returns_data").empty
+    )
+
+    # Start background loading if needed and not already loading
+    if needs_load and not st.session_state.get("returns_loading", False):
+        # Initialize with empty DataFrame for fast render
+        if "returns_data" not in st.session_state:
+            st.session_state.returns_data = pd.DataFrame()
+        # Start background thread for loading
+        thread = Thread(target=_load_returns_async, args=(sync_window, df_exec), daemon=True)
+        thread.start()
+        st.session_state["returns_loading"] = True
+        st.session_state["returns_load_started"] = time.time()
+
+    # Use current returns data (cached or from previous load)
+    df_returns_all = st.session_state.get("returns_data", pd.DataFrame()).copy()
+
     # Filter returns data to match the global time window
-    df_returns_all = st.session_state.returns_data.copy()
-    if not df_returns_all.empty:
-        # start_dt and end_dt were calculated at the top of the function
-        mask = (df_returns_all["date"].dt.date >= start_dt) & (df_returns_all["date"].dt.date <= end_dt)
+    if not df_returns_all.empty and "date" in df_returns_all.columns:
+        valid_dates = df_returns_all["date"].notna()
+        date_mask = (df_returns_all["date"].dt.date >= start_dt) & (df_returns_all["date"].dt.date <= end_dt)
+        mask = valid_dates & date_mask
         df_returns_filtered = df_returns_all[mask]
     else:
         df_returns_filtered = df_returns_all
 
     net_metrics = calculate_net_sales_metrics(df_returns_filtered, sales_df=df_exec)
+
+    # Show loading indicator if background load is active
+    is_loading = st.session_state.get("returns_loading", False)
+    load_elapsed = time.time() - st.session_state.get("returns_load_started", 0) if is_loading else 0
     
     # Debug info for returns data
     with st.expander("🔍 DEBUG: Returns Data Info", expanded=False):
@@ -362,17 +439,35 @@ def render_intelligence_hub_page():
         st.write(f"Filtered returns rows: {len(df_returns_filtered)}")
         st.write(f"Date range: {start_dt} to {end_dt}")
         if not df_returns_filtered.empty:
-            st.write(f"Issue types: {df_returns_filtered['issue_type'].value_counts().to_dict()}")
-            st.write(f"Sample returned_items: {df_returns_filtered['returned_items'].iloc[0] if len(df_returns_filtered) > 0 else 'N/A'}")
-            # Check for items with non-empty returned_items
-            has_items = df_returns_filtered[df_returns_filtered['returned_items'].apply(lambda x: len(x) > 0 if isinstance(x, list) else False)]
-            st.write(f"Rows with items: {len(has_items)}")
-            if len(has_items) > 0:
-                st.write("Sample row with items:")
-                st.dataframe(has_items[['order_id_raw', 'issue_type', 'product_details', 'returned_items']].head(2))
+            if "issue_type" in df_returns_filtered.columns:
+                st.write(f"Issue types: {df_returns_filtered['issue_type'].value_counts().to_dict()}")
+            if "returned_items" in df_returns_filtered.columns and len(df_returns_filtered) > 0:
+                st.write(f"Sample returned_items: {df_returns_filtered['returned_items'].iloc[0]}")
+                # Check for items with non-empty returned_items
+                has_items = df_returns_filtered[df_returns_filtered['returned_items'].apply(lambda x: len(x) > 0 if isinstance(x, list) else False)]
+                st.write(f"Rows with items: {len(has_items)}")
+                if len(has_items) > 0:
+                    st.write("Sample row with items:")
+                    debug_cols = [c for c in ['order_id_raw', 'issue_type', 'product_details', 'returned_items'] if c in has_items.columns]
+                    if debug_cols:
+                        st.dataframe(has_items[debug_cols].head(2))
         st.write(f"Net metrics: {net_metrics}")
     
-    st.markdown('<div class="sidebar-group-label" style="font-size:0.85rem; letter-spacing:1px;">💰 TRUE REVENUE & FINANCIAL IMPACT</div>', unsafe_allow_html=True)
+    # Loading indicator row
+    if is_loading:
+        loading_cols = st.columns([0.7, 0.3])
+        with loading_cols[0]:
+            st.markdown('<div class="sidebar-group-label" style="font-size:0.85rem; letter-spacing:1px;">💰 TRUE REVENUE & FINANCIAL IMPACT</div>', unsafe_allow_html=True)
+        with loading_cols[1]:
+            st.markdown(f"""
+                <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 0.75rem; color: #f59e0b;">
+                    <span class="animate-spin">🔄</span>
+                    <span>Syncing Returns... ({load_elapsed:.0f}s)</span>
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="sidebar-group-label" style="font-size:0.85rem; letter-spacing:1px;">💰 TRUE REVENUE & FINANCIAL IMPACT</div>', unsafe_allow_html=True)
+
     gross = net_metrics.get('gross_sales', 0)
     net_sales = net_metrics.get('net_sales', 0)
     net_yield_pct = (net_sales / gross * 100) if gross > 0 else 0.0
@@ -508,7 +603,7 @@ def render_intelligence_hub_page():
         # Pass executive sales for analysis consistency
         render_customer_insight_tab(reg_val, guest_val, data["customer_count"], data["sales_active"])
         
-    elif selection == "🔄 Returns & Net Sales":
+    elif selection == "🔄 Returns Insights":
         from .dashboard_lib.returns_tracker import render_returns_tracker_page
         render_returns_tracker_page()
 

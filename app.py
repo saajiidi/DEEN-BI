@@ -104,7 +104,7 @@ def _render_workspace_sidebar():
             "📥 Sales Data Ingestion": "📥 Sales Data Ingestion",
             "📊 Traffic & Acquisition": "📊 Traffic & Acquisition",
             "👥 Customer Insight": "👥 Customer Insight",
-            "🔄 Returns & Net Sales": "🔄 Returns & Net Sales",
+            "🔄 Returns Insights": "🔄 Returns Insights",
             ins_label: "📦 Stock Insight",
             "🚀 Data Pilot": "🚀 Data Pilot"
         }
@@ -112,6 +112,10 @@ def _render_workspace_sidebar():
         # Initialize section if not set
         if "active_section" not in st.session_state:
             st.session_state.active_section = "💎 Sales Overview"
+
+        # Migration: Handle renamed tabs
+        if st.session_state.active_section == "🔄 Returns & Net Sales":
+            st.session_state.active_section = "🔄 Returns Insights"
 
         # Find the index of the active section in the labels list
         # Map values back to display labels to find the index

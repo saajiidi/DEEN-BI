@@ -3,6 +3,41 @@ import streamlit as st
 from .data_display import _safe_datetime_series
 
 
+def skeleton_metric(icon: str = "📊"):
+    """Skeleton loading state for metric cards - renders instantly while data loads."""
+    st.markdown(
+        f"""
+        <div class="hub-card metric-icon-card" style="opacity: 0.7;">
+          <div class="metric-icon-wrap" style="animation: pulse 1.5s infinite;">{icon}</div>
+          <div class="metric-content">
+            <div class="metric-highlight-label" style="background: linear-gradient(90deg, #e2e8f0 25%, #cbd5e1 50%, #e2e8f0 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; height: 14px; width: 80px; border-radius: 4px; margin-bottom: 8px;"></div>
+            <div class="metric-highlight-value" style="background: linear-gradient(90deg, #e2e8f0 25%, #cbd5e1 50%, #e2e8f0 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; height: 28px; width: 100px; border-radius: 4px;"></div>
+          </div>
+        </div>
+        <style>
+          @keyframes shimmer {{
+            0% {{ background-position: 200% 0; }}
+            100% {{ background-position: -200% 0; }}
+          }}
+          @keyframes pulse {{
+            0%, 100% {{ opacity: 1; }}
+            50% {{ opacity: 0.5; }}
+          }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def skeleton_row(count: int = 6):
+    """Render multiple skeleton metric cards in a row."""
+    cols = st.columns(count)
+    icons = ["📦", "💰", "🛒", "📅", "👥", "💎"]
+    for i, col in enumerate(cols):
+        with col:
+            skeleton_metric(icon=icons[i % len(icons)])
+
+
 
 
 
@@ -24,11 +59,16 @@ def badge(note: str):
 
 
 
-def icon_metric(label: str, value: str, icon: str = "📊", delta: str = "", delta_val: float = 0):
+def icon_metric(label: str, value: str, icon: str = "📊", delta: str = "", delta_val: float = 0, loading: bool = False):
+    """Render metric card with optional loading skeleton state."""
+    if loading:
+        skeleton_metric(icon=icon)
+        return
+
     delta_class = "delta-up" if delta_val >= 0 else "delta-down"
     delta_icon = "↑" if delta_val >= 0 else "↓"
     delta_html = f'<div class="metric-delta {delta_class}">{delta_icon} {delta}</div>' if delta else ""
-    
+
     st.markdown(
         f"""
         <div class="hub-card metric-icon-card">

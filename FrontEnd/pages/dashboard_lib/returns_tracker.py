@@ -1,4 +1,4 @@
-"""Returns & Net Sales Tracker - Dashboard Page.
+"""Returns Insights - Dashboard Page.
 
 Premium Streamlit UI for tracking returns, partials, exchanges,
 and calculating Net Sales intelligence.
@@ -28,9 +28,9 @@ logger = get_logger("returns_tracker_page")
 
 
 def render_returns_tracker_page() -> None:
-    """Main entry point for the Returns & Net Sales Tracker page."""
+    """Main entry point for the Returns Insights page."""
 
-    st.markdown("### 🔄 Returns & Net Sales Tracker")
+    st.markdown("### 🔄 Returns Insights")
     st.caption(
         "Track returns, partial orders, and exchanges. "
         "Calculate Net Sales from delivery-issue intelligence."
@@ -699,9 +699,12 @@ def _render_returned_items_list(df: pd.DataFrame) -> None:
                 "Order Number": row.get("order_id", "N/A"),
                 "Issue Type": row.get("issue_type", "N/A"),
                 "SKU": item.get("sku", "N/A"),
+                "WC Matched": "✅" if item.get("matched_from_wc") else "❌",
                 "Product Name": item.get("name", "Unknown"),
                 "Size": item.get("size", "N/A"),
                 "Qty": item.get("qty", 1),
+                "Price": item.get("price", 0),
+                "Revenue Impact": item.get("revenue_impact", 0),
                 "Category": item.get("category", "General"),
                 "Return Reason": row.get("return_reason", "N/A"),
                 "Product Details": row.get("product_details", "")[:100] + "..." if len(row.get("product_details", "")) > 100 else row.get("product_details", ""),
@@ -768,9 +771,12 @@ def _render_returned_items_list(df: pd.DataFrame) -> None:
             "Order Number": st.column_config.TextColumn("Order Number"),
             "Issue Type": st.column_config.TextColumn("Issue Type"),
             "SKU": st.column_config.TextColumn("SKU"),
+            "WC Matched": st.column_config.TextColumn("WC Matched"),
             "Product Name": st.column_config.TextColumn("Product Name"),
             "Size": st.column_config.TextColumn("Size"),
             "Qty": st.column_config.NumberColumn("Qty", format="%d"),
+            "Price": st.column_config.NumberColumn("Price", format="৳%.0f"),
+            "Revenue Impact": st.column_config.NumberColumn("Revenue Impact", format="৳%.0f"),
             "Category": st.column_config.TextColumn("Category"),
             "Return Reason": st.column_config.TextColumn("Return Reason"),
             "Product Details": st.column_config.TextColumn("Raw Details", width="large"),

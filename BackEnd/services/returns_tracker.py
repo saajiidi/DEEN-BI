@@ -1,4 +1,4 @@
-"""Returns & Net Sales Tracker - Backend Service.
+"""Returns Insights - Backend Service.
 
 Syncs delivery-issue data from Google Sheets, classifies orders as
 Return / Partial / Exchange / Refund, and calculates Net Sales metrics.
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 
 import pandas as pd
 import streamlit as st
@@ -72,15 +72,17 @@ def get_current_sync_window() -> str:
 def load_returns_data(
     url: Optional[str] = None,
     sync_window: str = "",
+    sales_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Load and clean returns/delivery-issue data.
 
     Args:
         url: Google Sheets published CSV URL (defaults to DEEN sheet).
-        uploaded_file: Optional Streamlit UploadedFile for manual upload.
+        sync_window: Sync window identifier for caching.
+        sales_df: Optional WooCommerce sales data for cross-referencing items.
 
     Returns:
-        Cleaned DataFrame with standardized columns.
+        Cleaned DataFrame with standardized columns and cross-referenced items.
     """
     try:
         source = url or DEFAULT_SHEET_URL
@@ -117,6 +119,9 @@ def load_returns_data(
     # ── Parse dates ──
     if "date" in df.columns:
         df["date"] = pd.to_datetime(df["date"], format="mixed", dayfirst=False, errors="coerce")
+    else:
+        # Ensure date column exists even if source doesn't have it
+        df["date"] = pd.NaT
 
     # ── Normalize Order ID ──
     if "order_id_raw" in df.columns:
@@ -142,6 +147,10 @@ def load_returns_data(
     df["is_return"] = df["issue_type"].isin(["Paid Return", "Non Paid Return", "Refund"])
     df["is_partial"] = df["issue_type"] == "Partial"
 
+    # ── Ensure product_details column exists ──
+    if "product_details" not in df.columns:
+        df["product_details"] = ""
+
     # ── Extract partial amount (if embedded in product_details) ──
     df["partial_amount"] = df["product_details"].apply(_extract_partial_amount)
 
@@ -157,14 +166,245 @@ def load_returns_data(
     # ── Drop rows with no valid date ──
     df = df.dropna(subset=["date"])
 
+    # Count items extracted
+    total_items_extracted = df['returned_items'].apply(lambda x: len(x) if isinstance(x, list) else 0).sum()
+
     logger.info(
         f"Processed {len(df)} entries: "
         f"{df['is_return'].sum()} returns, "
         f"{df['is_partial'].sum()} partials, "
-        f"{df['is_exchange'].sum()} exchanges"
+        f"{df['is_exchange'].sum()} exchanges, "
+        f"{total_items_extracted} items extracted"
     )
 
+    # Sample of extracted items for debugging
+    if total_items_extracted > 0:
+        sample = df[df['returned_items'].apply(lambda x: len(x) > 0 if isinstance(x, list) else False)].iloc[0]
+        logger.info(f"Sample extracted items: {sample['returned_items']}")
+
+    # Cross-reference with WooCommerce data for accurate SKU and price matching
+    if sales_df is not None and not sales_df.empty:
+        df = cross_reference_return_items(df, sales_df)
+        cross_ref_count = df['items_cross_referenced'].sum() if 'items_cross_referenced' in df.columns else 0
+        logger.info(f"Cross-referenced {cross_ref_count} return items with WooCommerce data")
+
     return df
+
+
+def fetch_woocommerce_order_by_id(order_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a specific order from WooCommerce by ID.
+
+    Args:
+        order_id: The order ID to fetch
+
+    Returns:
+        Order data dict or None if not found
+    """
+    from BackEnd.services.woocommerce_service import WooCommerceService
+
+    try:
+        wc = WooCommerceService(ui_enabled=False)
+        if not wc.wcapi:
+            return None
+
+        # Try to fetch the order by ID
+        response = wc.wcapi.get(f"orders/{order_id}")
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        logger.error(f"Failed to fetch WooCommerce order {order_id}: {e}")
+        return None
+
+
+def fetch_woocommerce_orders_by_ids(order_ids: List[str]) -> pd.DataFrame:
+    """Fetch multiple orders from WooCommerce by their IDs.
+
+    Args:
+        order_ids: List of order IDs to fetch
+
+    Returns:
+        DataFrame with order details including line items
+    """
+    from BackEnd.services.woocommerce_service import WooCommerceService
+
+    orders_data = []
+    try:
+        wc = WooCommerceService(ui_enabled=False)
+        if not wc.wcapi:
+            return pd.DataFrame()
+
+        for order_id in order_ids:
+            try:
+                response = wc.wcapi.get(f"orders/{order_id}")
+                if response.status_code == 200:
+                    order = response.json()
+                    # Extract line items
+                    for item in order.get("line_items", []):
+                        orders_data.append({
+                            "order_id": str(order_id),
+                            "product_id": item.get("product_id"),
+                            "item_name": item.get("name", ""),
+                            "sku": item.get("sku", "N/A"),
+                            "qty": item.get("quantity", 1),
+                            "price": float(item.get("price", 0) or 0),
+                            "total": float(item.get("total", 0) or 0),
+                        })
+            except Exception as e:
+                logger.warning(f"Failed to fetch order {order_id}: {e}")
+                continue
+
+    except Exception as e:
+        logger.error(f"WooCommerce API error: {e}")
+
+    return pd.DataFrame(orders_data)
+
+
+def _order_data_to_dataframe(order_data: Dict[str, Any], order_id: str) -> pd.DataFrame:
+    """Convert WooCommerce order API response to DataFrame format.
+
+    Args:
+        order_data: Order data dict from WooCommerce API
+        order_id: The order ID
+
+    Returns:
+        DataFrame with line items or empty DataFrame if no items
+    """
+    items = []
+    for item in order_data.get("line_items", []):
+        items.append({
+            "order_id": str(order_id),
+            "product_id": item.get("product_id"),
+            "item_name": item.get("name", ""),
+            "sku": item.get("sku", "N/A"),
+            "qty": item.get("quantity", 1),
+            "price": float(item.get("price", 0) or 0),
+            "total": float(item.get("total", 0) or 0),
+        })
+    return pd.DataFrame(items)
+
+
+def cross_reference_return_items(
+    returns_df: pd.DataFrame,
+    sales_df: Optional[pd.DataFrame] = None
+) -> pd.DataFrame:
+    """Cross-reference returns with WooCommerce data for accurate item tracking.
+
+    For each return order:
+    - Paid/Non Paid Return: Match items from WooCommerce order to identify what was returned
+    - Partial: Compare Google Sheet product details with WooCommerce items
+    - Exchange: Track item changes without revenue deduction
+
+    Args:
+        returns_df: DataFrame with returns data
+        sales_df: Optional cached sales data
+
+    Returns:
+        DataFrame with enhanced returned_items including SKU matching
+    """
+    if returns_df.empty:
+        return returns_df
+
+    # Get unique order IDs that need cross-referencing
+    order_ids = returns_df["order_id"].unique().tolist()
+
+    # Try to get from cached sales data first
+    if sales_df is not None and not sales_df.empty:
+        # Filter sales data for our return orders
+        order_sales = sales_df[sales_df["order_id"].astype(str).isin(order_ids)].copy()
+    else:
+        order_sales = pd.DataFrame()
+
+    # If no cached data, fetch from WooCommerce (limited to avoid API abuse)
+    if order_sales.empty and len(order_ids) <= 50:  # Limit API calls
+        logger.info(f"Fetching {len(order_ids)} orders from WooCommerce for cross-reference")
+        order_sales = fetch_woocommerce_orders_by_ids(order_ids)
+
+    # Fallback: Fetch missing individual orders using single-order API
+    if not order_sales.empty:
+        found_order_ids = set(order_sales["order_id"].unique())
+        missing_order_ids = [oid for oid in order_ids if str(oid) not in found_order_ids]
+
+        if missing_order_ids:
+            logger.info(f"Fetching {len(missing_order_ids)} missing orders individually")
+            for order_id in missing_order_ids:
+                order_data = fetch_woocommerce_order_by_id(str(order_id))
+                if order_data:
+                    order_df = _order_data_to_dataframe(order_data, str(order_id))
+                    if not order_df.empty:
+                        order_sales = pd.concat([order_sales, order_df], ignore_index=True)
+                        logger.debug(f"Fetched missing order {order_id} with {len(order_df)} items")
+                else:
+                    logger.warning(f"Could not fetch order {order_id} from WooCommerce")
+
+    if order_sales.empty:
+        logger.warning("No WooCommerce data available for cross-referencing")
+        return returns_df
+
+    # Enhance returned_items with SKU matching
+    enhanced_items = []
+    for _, row in returns_df.iterrows():
+        order_id = str(row["order_id"])
+        issue_type = row.get("issue_type", "Unknown")
+        returned_items = row.get("returned_items", [])
+
+        if not isinstance(returned_items, list):
+            enhanced_items.append(returned_items)
+            continue
+
+        # Get WooCommerce items for this order
+        wc_items = order_sales[order_sales["order_id"] == order_id]
+
+        enhanced_row_items = []
+        for item in returned_items:
+            if not isinstance(item, dict):
+                enhanced_row_items.append(item)
+                continue
+
+            item_name = item.get("name", "").lower().strip()
+            item_size = item.get("size", "").lower().strip()
+
+            # Try to match with WooCommerce item
+            matched = False
+            for _, wc_item in wc_items.iterrows():
+                wc_name = wc_item.get("item_name", "").lower().strip()
+                wc_sku = wc_item.get("sku", "N/A")
+
+                # Match by name similarity or SKU in name
+                if item_name in wc_name or wc_name in item_name or wc_sku.lower() in item_name:
+                    item["sku"] = wc_sku
+                    item["price"] = wc_item.get("price", 0)
+                    item["matched_from_wc"] = True
+                    matched = True
+                    break
+
+            if not matched:
+                item["matched_from_wc"] = False
+
+            # Classify based on issue type
+            if issue_type == "Exchange":
+                item["transaction_type"] = "exchange"
+                item["revenue_impact"] = 0  # No revenue deduction
+            elif issue_type == "Partial":
+                item["transaction_type"] = "partial_return"
+                item["revenue_impact"] = item.get("price", 0) * item.get("qty", 1) * 0.5  # Estimate 50%
+            elif issue_type in ["Paid Return", "Non Paid Return"]:
+                item["transaction_type"] = "full_return"
+                item["revenue_impact"] = item.get("price", 0) * item.get("qty", 1)
+            else:
+                item["transaction_type"] = "unknown"
+                item["revenue_impact"] = 0
+
+            enhanced_row_items.append(item)
+
+        enhanced_items.append(enhanced_row_items)
+
+    returns_df["returned_items"] = enhanced_items
+    returns_df["items_cross_referenced"] = returns_df["returned_items"].apply(
+        lambda items: any(isinstance(i, dict) and i.get("matched_from_wc") for i in items) if isinstance(items, list) else False
+    )
+
+    return returns_df
 
 
 def _normalize_order_id(raw_id: str) -> str:
@@ -614,6 +854,30 @@ def calculate_net_sales_metrics(
     # ── Returned Orders Percentage ──
     returned_orders_pct = (return_count / total_orders * 100) if total_orders > 0 else 0.0
 
+    # ── Calculate Revenue Impact from Cross-Referenced Items ──
+    # Sum up revenue impact from enhanced item data
+    total_return_revenue_impact = 0.0
+    total_exchange_revenue_impact = 0.0
+    total_partial_revenue_impact = 0.0
+
+    for items in returns_df["returned_items"]:
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, dict):
+                    transaction_type = item.get("transaction_type", "")
+                    revenue_impact = item.get("revenue_impact", 0)
+
+                    if transaction_type == "full_return":
+                        total_return_revenue_impact += revenue_impact
+                    elif transaction_type == "exchange":
+                        total_exchange_revenue_impact += revenue_impact
+                    elif transaction_type == "partial_return":
+                        total_partial_revenue_impact += revenue_impact
+
+    # Use cross-referenced value if available, otherwise fall back to extracted value
+    if total_return_revenue_impact > 0:
+        return_value = total_return_revenue_impact
+
     metrics = {
         "total_issues": len(unique_orders),
         "return_count": int(return_count),
@@ -632,6 +896,9 @@ def calculate_net_sales_metrics(
         "gross_sales": gross_sales,
         "total_orders": total_orders,
         "return_value_extracted": return_value,
+        "return_revenue_impact": round(total_return_revenue_impact, 2),
+        "exchange_revenue_impact": round(total_exchange_revenue_impact, 2),
+        "partial_revenue_impact": round(total_partial_revenue_impact, 2),
         "net_sales": max(0.0, gross_sales - return_value - partial_amounts),
     }
 
