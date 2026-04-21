@@ -74,6 +74,9 @@ def ensure_sales_schema(df: pd.DataFrame) -> pd.DataFrame:
         "payment_method", "sku", "source",
     ]:
         if text_col in out.columns:
+            # Convert categorical to object first to avoid "Cannot setitem on a Categorical" errors
+            if pd.api.types.is_categorical_dtype(out[text_col]):
+                out[text_col] = out[text_col].astype(object)
             # fillna("") and astype(str) can be heavy; we use a more direct approach
             out[text_col] = out[text_col].fillna("").astype(str).str.strip()
 

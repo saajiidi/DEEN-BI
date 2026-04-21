@@ -47,7 +47,7 @@ def render_operational_health(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
     # 2. Refund Analytics
     st.markdown("#### 🔄 Returns & Refund Control")
     
-    refund_df = df[df['Order Status'].str.lower() == 'refunded']
+    refund_df = df[df['Order Status'].astype(str).str.lower() == 'refunded']
     total_orders = df['Order Number'].nunique()
     refund_count = refund_df['Order Number'].nunique()
     refund_rate = (refund_count / total_orders * 100) if total_orders > 0 else 0

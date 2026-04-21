@@ -37,12 +37,6 @@ def optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
             optimized[col] = pd.to_numeric(optimized[col], downcast='integer')
         elif col_type == np.float64:
             optimized[col] = pd.to_numeric(optimized[col], downcast='float')
-        # Convert object columns with low cardinality to category
-        elif col_type == object:
-            num_unique = optimized[col].nunique()
-            num_total = len(optimized[col])
-            if num_unique / num_total < 0.5:  # Less than 50% unique values
-                optimized[col] = optimized[col].astype('category')
     
     return optimized
 

@@ -145,13 +145,6 @@ class WooCommerceService:
         # Final concatenation
         final_df = pd.concat(all_dfs, ignore_index=True)
         
-        # Optimize dtypes for efficiency
-        if not final_df.empty:
-            if "Order Status" in final_df.columns:
-                final_df["Order Status"] = final_df["Order Status"].astype("category")
-            if "Payment Method Title" in final_df.columns:
-                final_df["Payment Method Title"] = final_df["Payment Method Title"].astype("category")
-
         return final_df
 
     def process_orders_to_df(self, orders: List[Dict[str, Any]]) -> pd.DataFrame:
