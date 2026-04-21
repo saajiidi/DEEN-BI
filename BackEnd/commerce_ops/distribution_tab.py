@@ -13,15 +13,7 @@ from BackEnd.commerce_ops.ui_components import (
 )
 from BackEnd.commerce_ops.ui_config import INVENTORY_LOCATIONS
 from BackEnd.commerce_ops import core as inv_core
-
-
-def _read_uploaded(uploaded_file):
-    if not uploaded_file:
-        return None
-    uploaded_file.seek(0)
-    if uploaded_file.name.lower().endswith(".csv"):
-        return pd.read_csv(uploaded_file)
-    return pd.read_excel(uploaded_file)
+from BackEnd.commerce_ops.utils import read_uploaded_file
 
 
 def _reset_inventory_state():
@@ -88,7 +80,7 @@ def render_distribution_tab(search_q):
             st.error(f"Failed to fetch WooCommerce data: {exc}")
     elif master_file:
         try:
-            master_df = _read_uploaded(master_file)
+            master_df = read_uploaded_file(master_file)
             st.session_state.inv_master_df_live = master_df
             _, _, title_col, sku_col = inv_core.identify_columns(master_df)
             _render_upload_summary(master_df, title_col)

@@ -11,17 +11,9 @@ from BackEnd.commerce_ops.ui_components import (
     section_card,
     to_excel_bytes,
 )
+from BackEnd.commerce_ops.utils import read_uploaded_file
 
 REQUIRED_COLUMNS = ["Phone (Billing)"]
-
-
-def _read_uploaded(uploaded_file):
-    if not uploaded_file:
-        return None
-    uploaded_file.seek(0)
-    if uploaded_file.name.lower().endswith(".csv"):
-        return pd.read_csv(uploaded_file)
-    return pd.read_excel(uploaded_file)
 
 
 def _reset_pathao_state():
@@ -66,7 +58,7 @@ def render_pathao_tab():
             st.error(f"Failed to fetch WooCommerce data: {exc}")
     elif up_pathao:
         try:
-            preview_df = _read_uploaded(up_pathao)
+            preview_df = read_uploaded_file(up_pathao)
             st.session_state.pathao_preview_df = preview_df
             st.session_state.pathao_uploaded_name = up_pathao.name
             valid_file = render_file_summary(up_pathao, preview_df, REQUIRED_COLUMNS)

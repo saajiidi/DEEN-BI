@@ -11,21 +11,13 @@ from BackEnd.commerce_ops.ui_components import (
     to_excel_bytes,
 )
 from BackEnd.commerce_ops.wp_processor import WhatsAppOrderProcessor
+from BackEnd.commerce_ops.utils import read_uploaded_file
 
 FUZZY_REQUIRED_FIELDS = {
     "phone": ["phone", "mobile", "contact", "billing phone"],
     "name": ["full name", "billing name", "name", "first name", "customer"],
     "product": ["product name", "item name", "product", "item"],
 }
-
-
-def _read_uploaded(uploaded_file):
-    if not uploaded_file:
-        return None
-    uploaded_file.seek(0)
-    if uploaded_file.name.lower().endswith(".csv"):
-        return pd.read_csv(uploaded_file)
-    return pd.read_excel(uploaded_file)
 
 
 def _reset_wp_state():
@@ -102,7 +94,7 @@ def render_wp_tab():
             st.error(f"Failed to fetch WooCommerce data: {exc}")
     elif wp_file:
         try:
-            preview_df = _read_uploaded(wp_file)
+            preview_df = read_uploaded_file(wp_file)
             st.session_state.wp_preview_df = preview_df
             st.session_state.wp_upload_name = wp_file.name
             # Keep the summary card and use a fuzzy requirement check to avoid strict header dependence.

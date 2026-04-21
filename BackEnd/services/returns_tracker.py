@@ -207,21 +207,32 @@ def _process_returns_chunk(
     # ── Extract partial amount ──
     df["partial_amount"] = df["product_details"].apply(_extract_partial_amount)
 
-    # ── Normalize & Extract Returned Products ──
-    df["returned_items"] = df["product_details"].apply(_normalize_product_names)
-
-    # ── Verify & Correct extracted items against WooCommerce stock ──
-    if stock_df is not None and not stock_df.empty:
-        df["returned_items"] = df["returned_items"].apply(
-            lambda items: _verify_products_with_stock(items, stock_df)
-        )
+    # ── Normalize & Extract Returned Products (with stock lookup) ──
+    df["returned_items"] = df["product_details"].apply(
+        lambda x: _normalize_product_names(x, stock_df)
+    )
 
     # ── Keep ONLY allowed types ──
     allowed_types = ["Paid Return", "Non Paid Return", "Partial", "Exchange"]
     df = df[df["issue_type"].isin(allowed_types)].copy()
 
-    # ── Drop rows with no valid date ──
+    # ── Drop rows with missing critical values ──
+    # Ignore rows with no date, no order_id, no product_details, or empty returned_items
     df = df.dropna(subset=["date"])
+
+    # Filter out rows with empty order_id
+    if "order_id" in df.columns:
+        df = df[df["order_id"].astype(str).str.strip() != ""]
+
+    # Filter out rows with empty product_details
+    if "product_details" in df.columns:
+        df = df[df["product_details"].astype(str).str.strip() != ""]
+        df = df[df["product_details"].astype(str).str.lower() != "nan"]
+
+    # Filter out rows where returned_items extraction returned empty list
+    df = df[df["returned_items"].apply(lambda x: len(x) > 0 if isinstance(x, list) else False)]
+
+    logger.info(f"After filtering missing values: {len(df)} rows remain")
 
     # Cross-reference with WooCommerce data
     if sales_df is not None and not sales_df.empty:
@@ -684,15 +695,15 @@ def _extract_partial_amount(details: str) -> float:
     return 0.0
 
 
-def _normalize_product_names(details: str) -> list[dict[str, Any]]:
+def _normalize_product_names(details: str, stock_df: Optional[pd.DataFrame] = None) -> list[dict[str, Any]]:
     """Granular extraction of product details (Name, Size, SKU, Qty, Category).
 
-    Handles formats like:
-    - "Product name - size - sku"
-    - "Product name - size x2 - sku; product name - size - sku"
-    - "Product name (size) x2"
-    
-    Format: Product name – size (sometimes x count) – SKU ;
+    NEW APPROACH:
+    1. Detect FULL SKU first (pattern: XXX-XXXX-XXX before ;)
+    2. Fetch product name from WooCommerce using SKU
+    3. Extract size from the string (between name and SKU)
+
+    Format: Product name – size – SKU-XXX-XXX ;
     Multiple items separated by semicolon (;)
     """
     if not details or details.lower() == "nan":
@@ -709,66 +720,129 @@ def _normalize_product_names(details: str) -> list[dict[str, Any]]:
     raw_items = re.split(r'[;]', clean)
     processed = []
 
+    # Build SKU lookup from stock data if available
+    sku_to_name = {}
+    if stock_df is not None and not stock_df.empty:
+        for _, row in stock_df.iterrows():
+            sku = str(row.get("SKU", "")).strip()
+            name = str(row.get("Name", "")).strip()
+            if sku and name:
+                sku_to_name[sku.lower()] = name
+
     for item in raw_items:
         item = item.strip()
-        if not item: continue
+        if not item:
+            continue
 
         qty = 1
-        name = item.strip()
+        name = "N/A"
         size = "N/A"
         sku = "N/A"
 
-        # --- Parse "Name - Size [xQty] - SKU" format ---
-        # Split by dash, but handle qty in any part
-        dash_parts = [p.strip() for p in item.split('-') if p.strip()]
-        
-        # Extract qty from any part (e.g., "size x2" or "x2" or "2x")
-        for i, part in enumerate(dash_parts):
-            qty_match = re.search(r'\s*[x×]\s*(\d+)$', part, re.IGNORECASE)  # "x2" or "×2" at end
+        # --- STEP 1: Try to detect FULL SKU with 3-dash pattern ---
+        # Pattern: something-XXX-XXXX-XXX (at end before optional qty)
+        # SKU has format: prefix-size_code-variant (3 parts separated by -)
+        full_sku_match = re.search(
+            r'([A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+)\s*(?:[x×]\s*\d+)?$',
+            item,
+            re.IGNORECASE
+        )
+
+        if full_sku_match:
+            # Found full SKU with 3 parts
+            sku = full_sku_match.group(1).strip()
+
+            # Remove SKU and any qty from item to get name-size part
+            name_size_part = item[:full_sku_match.start()].strip()
+
+            # --- STEP 2: Extract qty if present ---
+            qty_match = re.search(r'\s*[x×]\s*(\d+)$', name_size_part, re.IGNORECASE)
             if qty_match:
                 qty = int(qty_match.group(1))
-                # Remove qty from the part
-                dash_parts[i] = re.sub(r'\s*[x×]\s*\d+$', '', part).strip()
-                break  # Only take first qty found
+                name_size_part = name_size_part[:qty_match.start()].strip()
 
-        if len(dash_parts) >= 3:
-            # Format: "Item name - size - sku"
-            sku = dash_parts[-1]  # Last part is SKU
-            size = dash_parts[-2]  # Second to last is size
-            name = ' - '.join(dash_parts[:-2])  # Everything else is name
-        elif len(dash_parts) == 2:
-            # Format: "Item name - sku" or "Item name - size"
-            # Try to determine if last part is SKU (usually alphanumeric, caps) or size
-            last_part = dash_parts[-1]
-            if re.match(r'^[A-Z0-9]{3,}$', last_part):  # Looks like SKU (caps + numbers)
-                sku = last_part
-                name = dash_parts[0]
-            else:  # Probably size
-                size = last_part
-                name = dash_parts[0]
-        else:
-            # No dashes - try bracket format for size
-            size_match = re.search(r'[\(\[\{](.*?)[\)\]\}]', item)
-            if size_match:
-                size = size_match.group(1).strip()
-                name = item[:size_match.start()].strip()
+            # --- STEP 3: Split name and size from remaining part ---
+            # Last dash usually separates name from size
+            last_dash_idx = name_size_part.rfind('-')
+            if last_dash_idx > 0:
+                size = name_size_part[last_dash_idx + 1:].strip()
+                extracted_name = name_size_part[:last_dash_idx].strip()
             else:
-                # Try finding size without brackets at the end
-                size_match_alt = re.search(r'\s+([SLM]|[XL]{1,2}|3\d|4\d|2\d)\s*$', item, re.IGNORECASE)
-                if size_match_alt:
-                    size = size_match_alt.group(1).strip()
-                    name = item[:size_match_alt.start()].strip()
+                # No dash - size might be at end without dash
+                size_match = re.search(r'\s+(XS|S|M|L|XL|XXL|3XL|4XL|[0-9]{2})\s*$', name_size_part, re.IGNORECASE)
+                if size_match:
+                    size = size_match.group(1).strip()
+                    extracted_name = name_size_part[:size_match.start()].strip()
+                else:
+                    extracted_name = name_size_part
 
-        # --- Extract SKU if still not found (look for patterns like CODE123, SKU: ABC) ---
-        if sku == "N/A":
-            # Look for SKU pattern: uppercase letters followed by numbers
-            sku_match = re.search(r'\b([A-Z]{2,}\d{2,})\b', name)
-            if sku_match:
-                sku = sku_match.group(1)
-                # Remove SKU from name
-                name = name.replace(sku, '').strip()
+            # --- STEP 4: Fetch name from WooCommerce using SKU ---
+            if sku != "N/A":
+                sku_lower = sku.lower()
+                if sku_lower in sku_to_name:
+                    name = sku_to_name[sku_lower]
+                else:
+                    # Fallback: use extracted name if WC lookup fails
+                    name = extracted_name if extracted_name else "N/A"
+            else:
+                name = extracted_name if extracted_name else "N/A"
 
-        # --- Clean up name ---
+        else:
+            # --- FALLBACK: Old logic for items without 3-part SKU ---
+            dash_parts = [p.strip() for p in item.split('-') if p.strip()]
+
+            # Extract qty from any part
+            for i, part in enumerate(dash_parts):
+                qty_match = re.search(r'\s*[x×]\s*(\d+)$', part, re.IGNORECASE)
+                if qty_match:
+                    qty = int(qty_match.group(1))
+                    dash_parts[i] = re.sub(r'\s*[x×]\s*\d+$', '', part).strip()
+                    break
+
+            if len(dash_parts) >= 3:
+                # Assume last part is SKU, second-to-last is size
+                potential_sku = dash_parts[-1]
+                # Check if it looks like a partial SKU we can look up
+                potential_sku_lower = potential_sku.lower()
+
+                # Try to find full SKU from stock
+                full_sku = None
+                for stock_sku in sku_to_name.keys():
+                    if stock_sku.startswith(potential_sku_lower + '-') or stock_sku == potential_sku_lower:
+                        full_sku = stock_sku
+                        break
+
+                if full_sku:
+                    sku = full_sku
+                    name = sku_to_name[full_sku]
+                else:
+                    sku = potential_sku
+                    name = ' - '.join(dash_parts[:-2])
+
+                size = dash_parts[-2]
+
+            elif len(dash_parts) == 2:
+                last_part = dash_parts[-1]
+                if re.match(r'^[A-Z0-9]{3,}$', last_part):
+                    sku = last_part
+                    name = dash_parts[0]
+                else:
+                    size = last_part
+                    name = dash_parts[0]
+            else:
+                name = item.strip()
+                # Try to extract size from brackets or end
+                size_match = re.search(r'[\(\[\{](.*?)[\)\]\}]', item)
+                if size_match:
+                    size = size_match.group(1).strip()
+                    name = item[:size_match.start()].strip()
+                else:
+                    size_match_alt = re.search(r'\s+(XS|S|M|L|XL|XXL|3XL|4XL|[0-9]{2})\s*$', item, re.IGNORECASE)
+                    if size_match_alt:
+                        size = size_match_alt.group(1).strip()
+                        name = item[:size_match_alt.start()].strip()
+
+        # --- Clean up ---
         name = name.strip(' -_')
 
         # --- Infer Category ---

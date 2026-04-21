@@ -1,5 +1,25 @@
 import re
 
+import pandas as pd
+
+
+# --- File Upload Logic ---
+def read_uploaded_file(uploaded_file) -> pd.DataFrame | None:
+    """Read an uploaded CSV or Excel file into a DataFrame.
+
+    Args:
+        uploaded_file: Streamlit UploadedFile object
+
+    Returns:
+        DataFrame or None if no file provided
+    """
+    if not uploaded_file:
+        return None
+    uploaded_file.seek(0)
+    if uploaded_file.name.lower().endswith(".csv"):
+        return pd.read_csv(uploaded_file)
+    return pd.read_excel(uploaded_file)
+
 
 # --- Category Logic ---
 def get_category_from_name(name):
