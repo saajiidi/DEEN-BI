@@ -453,19 +453,23 @@ def _classify_issue_type(row: pd.Series) -> str:
     product = str(row.get("product_details", "")).lower()
     courier_reason = str(row.get("courier_reason", "")).lower()
 
-    # 1. Exact match on delivery_issue column
+    # 1. Exact match on delivery_issue column - PRIORITY ORDER MATTERS
+    # "Paid Return/Reverse" should be Paid Return (not Exchange)
+    if di == "paid return/reverse" or di.startswith("paid return/reverse"):
+        return "Paid Return"
+    
     type_map = {
         "paid return": "Paid Return",
         "non paid return": "Non Paid Return",
         "partial": "Partial",
         "exchange": "Exchange",
+        "reverse": "Paid Return",  # Reverse alone = Paid Return (delivery fee only)
+        "reverse ": "Paid Return",
         "refund": "Refund",
         "cancel": "Cancel",
         "delivered": "Delivered",
         "items lost": "Items Lost",
         "delivery issue": "Delivery Issue",
-        "reverse": "Exchange",  # Reverse = exchange variant
-        "reverse ": "Exchange",
     }
     for key, label in type_map.items():
         if di == key or di.startswith(key):
@@ -475,11 +479,12 @@ def _classify_issue_type(row: pd.Series) -> str:
     if raw_id.upper().startswith("D-"):
         return "Exchange"
 
-    # 3. Fuzzy match on exchange keywords
+    # 3. Fuzzy match on exchange keywords (but NOT if it says "paid return/reverse")
     combined = f"{di} {product} {courier_reason}"
-    for kw in EXCHANGE_KEYWORDS:
-        if kw in combined:
-            return "Exchange"
+    if "paid return/reverse" not in di:
+        for kw in EXCHANGE_KEYWORDS:
+            if kw in combined:
+                return "Exchange"
 
     # 4. Fuzzy match on partial keywords
     for kw in PARTIAL_KEYWORDS:
@@ -490,9 +495,9 @@ def _classify_issue_type(row: pd.Series) -> str:
     if "return" in di:
         return "Paid Return" if "paid" in di else "Non Paid Return"
 
-    # 6. Default
+    # 6. Default - return "Other" for anything not matching the 4 main types
     if di:
-        return di.title()
+        return "Other"
     return "Unknown"
 
 
@@ -551,42 +556,48 @@ def _normalize_product_names(details: str) -> list[dict[str, Any]]:
     """Granular extraction of product details (Name, Size, SKU, Qty, Category).
 
     Handles formats like:
-    - "Item name - size - sku"
-    - "Item name - size - sku; item name - size - sku"
-    - "Item name (size) x2"
+    - "Product name - size - sku"
+    - "Product name - size x2 - sku; product name - size - sku"
+    - "Product name (size) x2"
+    
+    Format: Product name – size (sometimes x count) – SKU ;
+    Multiple items separated by semicolon (;)
     """
     if not details or details.lower() == "nan":
         return []
 
-    # 1. Clean prefix
+    # 1. Clean prefix (e.g., "50 tk - ", "Return: ", etc.)
     clean = re.sub(r'^\s*(\d+)\s*(?:tk|=)[^:]*:?', '', details, flags=re.IGNORECASE).strip()
     clean = re.sub(r'^(?:Get Return|Return|Exchange|Partial|Issue)\s*:?\s*', '', clean, flags=re.IGNORECASE).strip()
 
     if not clean:
         return []
 
-    # 2. Split items by semicolon, comma, or plus
-    raw_items = re.split(r'[,+;]', clean)
+    # 2. Split items by semicolon (primary separator for multiple items)
+    raw_items = re.split(r'[;]', clean)
     processed = []
 
     for item in raw_items:
         item = item.strip()
         if not item: continue
 
-        # --- Extract Qty (e.g., x2, *2, 2pcs) ---
         qty = 1
-        qty_match = re.search(r'\s*[x*]\s*(\d+)\s*$', item, re.IGNORECASE)
-        if qty_match:
-            qty = int(qty_match.group(1))
-            item = item[:qty_match.start()].strip()
-
-        # --- Parse "Name - Size - SKU" format ---
         name = item.strip()
         size = "N/A"
         sku = "N/A"
 
-        # Check for dash-separated format: "Name - Size - SKU"
+        # --- Parse "Name - Size [xQty] - SKU" format ---
+        # Split by dash, but handle qty in any part
         dash_parts = [p.strip() for p in item.split('-') if p.strip()]
+        
+        # Extract qty from any part (e.g., "size x2" or "x2" or "2x")
+        for i, part in enumerate(dash_parts):
+            qty_match = re.search(r'\s*[x×]\s*(\d+)$', part, re.IGNORECASE)  # "x2" or "×2" at end
+            if qty_match:
+                qty = int(qty_match.group(1))
+                # Remove qty from the part
+                dash_parts[i] = re.sub(r'\s*[x×]\s*\d+$', '', part).strip()
+                break  # Only take first qty found
 
         if len(dash_parts) >= 3:
             # Format: "Item name - size - sku"
@@ -999,12 +1010,14 @@ def _build_daily_financials(returns_df: pd.DataFrame, sales_df: Optional[pd.Data
 def calculate_net_sales_metrics(
     returns_df: pd.DataFrame,
     sales_df: Optional[pd.DataFrame] = None,
+    total_items_sold: int = 0,
 ) -> Dict[str, Any]:
     """Calculate comprehensive net sales metrics.
 
     Args:
         returns_df: Classified returns DataFrame.
         sales_df: WooCommerce active sales DataFrame to calculate precise values.
+        total_items_sold: Total items sold in the same period (for calculating return item %).
 
     Returns:
         Dictionary of computed KPIs.
@@ -1017,6 +1030,7 @@ def calculate_net_sales_metrics(
         return {
             "total_issues": 0,
             "return_count": 0, "total_returned_items": 0,
+            "total_returned_items_pct": 0.0,
             "partial_count": 0, "partial_amounts": 0,
             "exchange_count": 0,
             "gross_sales": gross_sales,
@@ -1034,6 +1048,8 @@ def calculate_net_sales_metrics(
             "estimated_returned_items": 0,
             "daily_financials": _build_daily_financials(pd.DataFrame(), sales_context),
             "return_rate": 0.0,
+            "returned_orders_pct": 0.0,
+            "total_items_sold": total_items_sold,
         }
 
     # Deduplicate by normalized order_id for counting unique orders
@@ -1179,12 +1195,20 @@ def calculate_net_sales_metrics(
     estimated_returned_items = int(unique_orders["_estimated_item_qty"].sum())
     daily_financials = _build_daily_financials(unique_orders, sales_context)
 
+    # ── Fix percentage calculations with correct denominators ──
+    # returned_orders_pct: % of unique orders that had returns
+    returned_orders_pct_fixed = (return_count / total_orders * 100) if total_orders > 0 else 0.0
+    
+    # total_returned_items_pct: % of total items sold that were returned (vs total_items_sold, not orders)
+    total_returned_items_pct = (total_return_qty_all / total_items_sold * 100) if total_items_sold > 0 else 0.0
+
     metrics = {
         "total_issues": len(unique_orders),
         "return_count": int(return_count),
         "total_returned_items": int(total_returned_items),
         "total_return_qty_all": int(total_return_qty_all),
-        "returned_orders_pct": round(returned_orders_pct, 1),
+        "total_returned_items_pct": round(total_returned_items_pct, 1),
+        "returned_orders_pct": round(returned_orders_pct_fixed, 1),
         "total_exchanged_items": int(total_exchanged_items),
         "paid_return_count": int(paid_return_count),
         "non_paid_return_count": int(non_paid_return_count),
@@ -1196,6 +1220,7 @@ def calculate_net_sales_metrics(
         "monthly_by_type": monthly_by_type,
         "gross_sales": gross_sales,
         "total_orders": total_orders,
+        "total_items_sold": total_items_sold,
         "return_value_extracted": round(full_return_loss, 2),
         "full_return_loss": round(full_return_loss, 2),
         "return_revenue_impact": round(full_return_loss, 2),

@@ -27,6 +27,51 @@ from BackEnd.core.logging_config import get_logger
 logger = get_logger("returns_tracker_page")
 
 
+def _get_date_range_from_window() -> tuple[date, date]:
+    """Get start and end dates from global time window."""
+    today = date.today()
+    window = st.session_state.get("time_window", "Last Month")
+
+    if window == "MTD":
+        start_dt = today.replace(day=1)
+        end_dt = today
+    elif window == "YTD":
+        start_dt = today.replace(month=1, day=1)
+        end_dt = today
+    elif window == "Last Month":
+        end_dt = today
+        start_dt = today - timedelta(days=30)
+    elif window == "Last 7 Days":
+        end_dt = today
+        start_dt = today - timedelta(days=7)
+    elif window == "Custom Date Range":
+        start_dt = st.session_state.get("wc_sync_start_date", today - timedelta(days=30))
+        end_dt = st.session_state.get("wc_sync_end_date", today)
+    else:
+        end_dt = today
+        start_dt = today - timedelta(days=30)
+
+    return start_dt, end_dt
+
+
+def _filter_sales_by_date_range(sales_df: pd.DataFrame, start_dt: date, end_dt: date) -> pd.DataFrame:
+    """Filter sales data by date range."""
+    if sales_df.empty or "order_date" not in sales_df.columns:
+        return sales_df
+
+    # Convert order_date to date if needed
+    sales_df = sales_df.copy()
+    if pd.api.types.is_datetime64_any_dtype(sales_df["order_date"]):
+        mask = (sales_df["order_date"].dt.date >= start_dt) & (sales_df["order_date"].dt.date <= end_dt)
+    else:
+        # Try to parse if string
+        sales_df["_date_parsed"] = pd.to_datetime(sales_df["order_date"], errors="coerce")
+        mask = (sales_df["_date_parsed"].dt.date >= start_dt) & (sales_df["_date_parsed"].dt.date <= end_dt)
+        sales_df = sales_df.drop(columns=["_date_parsed"])
+
+    return sales_df[mask]
+
+
 def render_returns_tracker_page() -> None:
     """Main entry point for the Returns Insights page."""
 
@@ -36,13 +81,19 @@ def render_returns_tracker_page() -> None:
         "Calculate Net Sales from delivery-issue intelligence."
     )
 
+    # ── Get Global Time Window ──
+    start_dt, end_dt = _get_date_range_from_window()
+
     # ── Auto Data Sync ──
-    sales_df = _get_gross_sales_context()
+    sales_df_full = _get_gross_sales_context()
+    # Filter sales to match the time window
+    sales_df = _filter_sales_by_date_range(sales_df_full, start_dt, end_dt)
+
     sync_window = get_current_sync_window()
     if "returns_data" not in st.session_state or st.session_state.get("last_returns_sync") != sync_window:
         try:
             with st.spinner("Syncing delivery-issue data (Scheduled)..."):
-                df_returns = load_returns_data(sync_window=sync_window, sales_df=sales_df)
+                df_returns = load_returns_data(sync_window=sync_window, sales_df=sales_df_full)
                 st.session_state.returns_data = df_returns
                 st.session_state.last_returns_sync = sync_window
         except Exception as e:
@@ -61,11 +112,13 @@ def render_returns_tracker_page() -> None:
     # ── Date Range Filter ──
     df = _render_date_filter(df)
 
-    # ── WooCommerce Gross Sales Link ──
-    sales_df = _get_gross_sales_context()
+    # ── Calculate Total Items Sold for % Calculations ──
+    total_items_sold = 0
+    if not sales_df.empty and "quantity" in sales_df.columns:
+        total_items_sold = int(sales_df["quantity"].sum())
 
     # ── Compute Metrics ──
-    metrics = calculate_net_sales_metrics(df, sales_df=sales_df)
+    metrics = calculate_net_sales_metrics(df, sales_df=sales_df, total_items_sold=total_items_sold)
 
     # ── KPI Cards ──
     _render_kpi_cards(metrics)
@@ -256,16 +309,20 @@ def _render_financial_impact_summary(metrics: dict) -> None:
     # Total returned items and their value
     total_ret_qty = metrics.get('total_return_qty_all', 0)
     total_ret_value = metrics.get('full_return_loss', metrics.get('return_value_extracted', 0))
+    total_items_sold = metrics.get('total_items_sold', 0)
+    total_returned_items_pct = metrics.get('total_returned_items_pct', 0.0)
     returned_orders_pct = metrics.get('returned_orders_pct', 0.0)
     partial_loss = metrics.get('partial_loss', metrics.get('partial_amounts', 0))
 
     cols = st.columns(6)
 
     with cols[0]:
+        # Show percentage of items returned (vs total items sold in the period)
+        items_pct_text = f"{total_returned_items_pct:.1f}% of {total_items_sold:,} items sold" if total_items_sold > 0 else "0.0% of items"
         st.markdown(_kpi_card(
             "📦 TOTAL RETURNED ITEMS",
             f"{total_ret_qty} Units",
-            f"{returned_orders_pct:.1f}% of orders returned",
+            items_pct_text,
             "#dc2626"
         ), unsafe_allow_html=True)
 
