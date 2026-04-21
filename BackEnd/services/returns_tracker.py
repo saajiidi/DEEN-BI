@@ -9,8 +9,10 @@ Data valid from August 2025 onwards.
 from __future__ import annotations
 
 import gc
+import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List
 
 import pandas as pd
@@ -19,7 +21,6 @@ import streamlit as st
 
 from BackEnd.core.logging_config import get_logger
 from BackEnd.core.memory_utils import (
-    optimize_dtypes,
     safe_groupby_transform,
     safe_merge,
     cleanup_memory,
@@ -30,6 +31,66 @@ from BackEnd.core.memory_utils import (
 pd.set_option('mode.copy_on_write', True)
 
 logger = get_logger("returns_tracker")
+
+# ── Cache Configuration ──
+RETURNS_CACHE_DIR = Path(__file__).parent.parent.parent / "data" / "cache" / "returns"
+RETURNS_CACHE_FILE = RETURNS_CACHE_DIR / "returns_data.parquet"
+RETURNS_META_FILE = RETURNS_CACHE_DIR / "returns_meta.json"
+CACHE_TTL_HOURS = 24
+
+
+def _ensure_cache_dir():
+    """Ensure cache directory exists."""
+    RETURNS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _load_cached_returns() -> pd.DataFrame:
+    """Load cached returns data if it exists and is fresh."""
+    _ensure_cache_dir()
+    if not RETURNS_CACHE_FILE.exists():
+        return pd.DataFrame()
+    try:
+        df = pd.read_parquet(RETURNS_CACHE_FILE)
+        # Check if cache is fresh
+        if RETURNS_META_FILE.exists():
+            import json
+            meta = json.loads(RETURNS_META_FILE.read_text())
+            cached_at = pd.to_datetime(meta.get("cached_at"), errors="coerce")
+            if pd.notna(cached_at):
+                age = datetime.now() - cached_at.to_pydatetime()
+                if age > timedelta(hours=CACHE_TTL_HOURS):
+                    logger.info(f"Returns cache is {age.total_seconds()/3600:.1f} hours old, will check for new data")
+        return df
+    except Exception as e:
+        logger.warning(f"Failed to load cached returns: {e}")
+        return pd.DataFrame()
+
+
+def _save_returns_cache(df: pd.DataFrame, last_date: Optional[datetime] = None):
+    """Save returns data to cache with metadata."""
+    _ensure_cache_dir()
+    try:
+        df.to_parquet(RETURNS_CACHE_FILE, index=False)
+        import json
+        meta = {
+            "cached_at": datetime.now().isoformat(),
+            "row_count": len(df),
+            "last_date": last_date.isoformat() if last_date else None,
+        }
+        RETURNS_META_FILE.write_text(json.dumps(meta, indent=2))
+        logger.info(f"Saved {len(df)} returns rows to cache (last date: {last_date})")
+    except Exception as e:
+        logger.error(f"Failed to save returns cache: {e}")
+
+
+def _get_last_cached_date() -> Optional[datetime]:
+    """Get the last date from cached returns data."""
+    cached_df = _load_cached_returns()
+    if cached_df.empty or "date" not in cached_df.columns:
+        return None
+    last_date = cached_df["date"].max()
+    return last_date if pd.notna(last_date) else None
+
 
 # ── Google Sheets Published CSV ──
 DEFAULT_SHEET_URL = (
@@ -80,31 +141,8 @@ def get_current_sync_window() -> str:
     else:
         return f"{now.date().isoformat()}_16:30"
 
-@st.cache_data(show_spinner=False, max_entries=2)
-def load_returns_data(
-    url: Optional[str] = None,
-    sync_window: str = "",
-    sales_df: Optional[pd.DataFrame] = None,
-) -> pd.DataFrame:
-    """Load and clean returns/delivery-issue data.
-
-    Args:
-        url: Google Sheets published CSV URL (defaults to DEEN sheet).
-        sync_window: Sync window identifier for caching.
-        sales_df: Optional WooCommerce sales data for cross-referencing items.
-
-    Returns:
-        Cleaned DataFrame with standardized columns and cross-referenced items.
-    """
-    try:
-        source = url or DEFAULT_SHEET_URL
-        df = pd.read_csv(source)
-
-        logger.info(f"Loaded {len(df)} rows from returns data source")
-    except Exception as e:
-        logger.error(f"Failed to load returns data: {e}")
-        return pd.DataFrame()
-
+def _process_returns_chunk(df: pd.DataFrame, sales_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Process a chunk of returns data (standardize, classify, cross-reference)."""
     if df.empty:
         return df
 
@@ -132,7 +170,6 @@ def load_returns_data(
     if "date" in df.columns:
         df["date"] = pd.to_datetime(df["date"], format="mixed", dayfirst=False, errors="coerce")
     else:
-        # Ensure date column exists even if source doesn't have it
         df["date"] = pd.NaT
 
     # ── Normalize Order ID ──
@@ -163,44 +200,119 @@ def load_returns_data(
     if "product_details" not in df.columns:
         df["product_details"] = ""
 
-    # ── Extract partial amount (if embedded in product_details) ──
+    # ── Extract partial amount ──
     df["partial_amount"] = df["product_details"].apply(_extract_partial_amount)
 
     # ── Normalize & Extract Returned Products ──
-    # We'll do this later when we have sales_df for SKU mapping,
-    # or just extract names for now.
     df["returned_items"] = df["product_details"].apply(_normalize_product_names)
 
-    # ── Keep ONLY Paid Return, Non Paid Return, Partial, Exchange ──
+    # ── Keep ONLY allowed types ──
     allowed_types = ["Paid Return", "Non Paid Return", "Partial", "Exchange"]
     df = df[df["issue_type"].isin(allowed_types)].copy()
 
     # ── Drop rows with no valid date ──
     df = df.dropna(subset=["date"])
 
-    # Count items extracted
-    total_items_extracted = df['returned_items'].apply(lambda x: len(x) if isinstance(x, list) else 0).sum()
-
-    logger.info(
-        f"Processed {len(df)} entries: "
-        f"{df['is_return'].sum()} returns, "
-        f"{df['is_partial'].sum()} partials, "
-        f"{df['is_exchange'].sum()} exchanges, "
-        f"{total_items_extracted} items extracted"
-    )
-
-    # Sample of extracted items for debugging
-    if total_items_extracted > 0:
-        sample = df[df['returned_items'].apply(lambda x: len(x) > 0 if isinstance(x, list) else False)].iloc[0]
-        logger.info(f"Sample extracted items: {sample['returned_items']}")
-
-    # Cross-reference with WooCommerce data for accurate SKU and price matching
+    # Cross-reference with WooCommerce data
     if sales_df is not None and not sales_df.empty:
         df = cross_reference_return_items(df, sales_df)
-        cross_ref_count = df['items_cross_referenced'].sum() if 'items_cross_referenced' in df.columns else 0
-        logger.info(f"Cross-referenced {cross_ref_count} return items with WooCommerce data")
 
     return df
+
+
+@st.cache_data(show_spinner=False, max_entries=2)
+def load_returns_data(
+    url: Optional[str] = None,
+    sync_window: str = "",
+    sales_df: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
+    """Load and clean returns/delivery-issue data with incremental caching.
+
+    Only processes new rows from Google Sheets, merging with cached historical data.
+    Historical data stays the same - only new entries are fetched and processed.
+
+    Args:
+        url: Google Sheets published CSV URL (defaults to DEEN sheet).
+        sync_window: Sync window identifier for caching.
+        sales_df: Optional WooCommerce sales data for cross-referencing items.
+
+    Returns:
+        Cleaned DataFrame with standardized columns and cross-referenced items.
+    """
+    # ── Load cached historical data ──
+    cached_df = _load_cached_returns()
+    last_cached_date = _get_last_cached_date()
+
+    logger.info(f"Cached returns: {len(cached_df)} rows, last date: {last_cached_date}")
+
+    # ── Fetch fresh data from Google Sheets ──
+    try:
+        source = url or DEFAULT_SHEET_URL
+        fresh_df = pd.read_csv(source)
+        logger.info(f"Fetched {len(fresh_df)} total rows from returns data source")
+    except Exception as e:
+        logger.error(f"Failed to load returns data: {e}")
+        # Return cached data if fetch fails
+        if not cached_df.empty:
+            logger.info("Returning cached data due to fetch failure")
+            return cached_df
+        return pd.DataFrame()
+
+    if fresh_df.empty:
+        return cached_df if not cached_df.empty else fresh_df
+
+    # ── Parse dates to find new rows ──
+    date_col = "Date" if "Date" in fresh_df.columns else None
+    if date_col:
+        fresh_df["_parsed_date"] = pd.to_datetime(fresh_df[date_col], format="mixed", dayfirst=False, errors="coerce")
+    else:
+        fresh_df["_parsed_date"] = pd.NaT
+
+    # ── Filter to only NEW rows (after last cached date) ──
+    if last_cached_date is not None and "_parsed_date" in fresh_df.columns:
+        # Add buffer of 1 day to catch any late entries
+        cutoff_date = last_cached_date - timedelta(days=1)
+        new_rows = fresh_df[fresh_df["_parsed_date"] > cutoff_date].copy()
+        logger.info(f"Found {len(new_rows)} new rows after {cutoff_date}")
+    else:
+        # No cache or no date info - process all
+        new_rows = fresh_df.copy()
+        logger.info(f"No cache found, processing all {len(new_rows)} rows")
+
+    # Drop the temporary parsed date column
+    fresh_df = fresh_df.drop(columns=["_parsed_date"], errors="ignore")
+    if "_parsed_date" in new_rows.columns:
+        new_rows = new_rows.drop(columns=["_parsed_date"])
+
+    # ── Process ONLY the new rows ──
+    if new_rows.empty:
+        logger.info("No new returns data to process")
+        return cached_df if not cached_df.empty else pd.DataFrame()
+
+    processed_new = _process_returns_chunk(new_rows, sales_df)
+    logger.info(
+        f"Processed {len(processed_new)} new entries: "
+        f"{processed_new['is_return'].sum()} returns, "
+        f"{processed_new['is_partial'].sum()} partials, "
+        f"{processed_new['is_exchange'].sum()} exchanges"
+    )
+
+    # ── Merge with cached historical data ──
+    if cached_df.empty:
+        merged_df = processed_new
+    else:
+        # Concatenate and remove duplicates based on order_id and date
+        merged_df = pd.concat([cached_df, processed_new], ignore_index=True)
+        if "order_id" in merged_df.columns and "date" in merged_df.columns:
+            merged_df = merged_df.drop_duplicates(subset=["order_id", "date"], keep="last")
+        merged_df = merged_df.sort_values("date", ascending=False).reset_index(drop=True)
+        logger.info(f"Merged data: {len(cached_df)} cached + {len(processed_new)} new = {len(merged_df)} total")
+
+    # ── Save to cache ──
+    last_date = merged_df["date"].max() if "date" in merged_df.columns and not merged_df.empty else None
+    _save_returns_cache(merged_df, last_date)
+
+    return merged_df
 
 
 def fetch_woocommerce_order_by_id(order_id: str) -> Optional[Dict[str, Any]]:
