@@ -126,25 +126,38 @@ def render_returns_tracker_page() -> None:
     # ── Compute Metrics ──
     metrics = calculate_net_sales_metrics(df, sales_df=sales_df, total_items_sold=total_items_sold)
 
-    # ── KPI Cards ──
-    _render_kpi_cards(metrics)
-    _render_financial_impact_summary(metrics)
+    # ── TABS ──
+    tab_dash, tab_recovery, tab_inventory, tab_ledger = st.tabs([
+        "📊 Executive Dashboard", 
+        "🛡️ Recovery & Loyalty", 
+        "📦 Return Inventory", 
+        "📋 Detailed Ledger"
+    ])
 
-    if df.empty:
-        st.info("No returns logged within this specific time frame.")
-        return
+    with tab_dash:
+        # ── KPI Cards ──
+        _render_kpi_cards(metrics)
+        _render_financial_impact_summary(metrics)
 
-    # ── Charts ──
-    st.markdown("---")
-    _render_charts(df, metrics, sales_df)
+        if df.empty:
+            st.info("No returns logged within this specific time frame.")
+        else:
+            # ── Charts ──
+            st.markdown("---")
+            _render_charts(df, metrics, sales_df)
+            
+            # ── Export ──
+            st.markdown("---")
+            _render_export(df, metrics)
 
-    # ── Detailed Table ──
-    st.markdown("---")
-    _render_details_table(df, sales_df)
+    with tab_recovery:
+        _render_customer_recovery(df, sales_df)
 
-    # ── Export ──
-    st.markdown("---")
-    _render_export(df, metrics)
+    with tab_inventory:
+        _render_return_inventory(df, sales_df)
+
+    with tab_ledger:
+        _render_details_table(df, sales_df)
 
 
 # ═══════════════════════════════════════════════════════════════════
