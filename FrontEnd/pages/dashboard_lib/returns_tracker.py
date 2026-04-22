@@ -254,6 +254,8 @@ def _get_gross_sales_context():
 # KPI CARDS
 # ═══════════════════════════════════════════════════════════════════
 
+def _render_kpi_cards(metrics: dict) -> None:
+    """Render the executive KPI cards."""
     st.markdown("#### 📦 Operational Intelligence")
     cols = st.columns(4)
 
@@ -301,7 +303,8 @@ def _get_gross_sales_context():
         ), unsafe_allow_html=True)
 
 
-
+def _render_financial_impact_summary(metrics: dict) -> None:
+    """Render decision-ready financial impact cards."""
     st.markdown("#### 💰 Financial Integrity & Yield")
 
     gross = metrics.get('gross_sales', 0)
