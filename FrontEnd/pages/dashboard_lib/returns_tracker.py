@@ -5,13 +5,15 @@ and calculating Net Sales intelligence.
 """
 
 from __future__ import annotations
-
+import time
 from datetime import datetime, date, timedelta
+from threading import Thread
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from streamlit_autorefresh import st_autorefresh
 
 from BackEnd.services.returns_tracker import (
     load_returns_data,
@@ -22,9 +24,30 @@ from BackEnd.services.returns_tracker import (
     get_order_items_breakdown,
     track_reordering_customers,
 )
+from FrontEnd.components import ui
+from FrontEnd.utils.error_handler import log_error
 from BackEnd.core.logging_config import get_logger
 
 logger = get_logger("returns_tracker_page")
+
+
+def _load_returns_async(sync_window: str, sales_df_full: pd.DataFrame):
+    """Background loader for returns data."""
+    try:
+        st.session_state["returns_loading"] = True
+        st.session_state["returns_load_started"] = time.time()
+        
+        # Load the data (blocks this thread, not the UI)
+        df_returns = load_returns_data(sync_window=sync_window, sales_df=sales_df_full)
+        
+        # Store in session state
+        st.session_state["returns_data"] = df_returns
+        st.session_state["last_returns_sync"] = sync_window
+        st.session_state["returns_loading"] = False
+        st.session_state["returns_load_complete"] = True
+    except Exception as e:
+        st.session_state["returns_loading"] = False
+        log_error(e, context="Returns Background Load")
 
 
 def _get_date_range_from_window() -> tuple[date, date]:
@@ -73,45 +96,65 @@ def _filter_sales_by_date_range(sales_df: pd.DataFrame, start_dt: date, end_dt: 
 
 
 def render_returns_tracker_page() -> None:
-    """Main entry point for the Returns Insights page."""
+    """Main entry point for the Returns Insights page with staged loading."""
+    
+    # ── Initialize State ──
+    if "returns_loading" not in st.session_state:
+        st.session_state["returns_loading"] = False
+    if "returns_load_complete" not in st.session_state:
+        st.session_state["returns_load_complete"] = False
 
     c1, c2 = st.columns([3, 1])
     with c1:
         st.markdown("### 🔄 Returns Insights")
     with c2:
-        if st.button("🔄 Force Refresh", width="stretch"):
-            with st.spinner("Syncing..."):
-                load_returns_data.clear()
-                sync_window = get_current_sync_window()
-                df = load_returns_data(sync_window=sync_window)
-                st.session_state.returns_data = df
-                st.session_state.last_returns_sync = sync_window
-                st.rerun()
+        if st.button("🔄 Force Refresh", use_container_width=True):
+            # Clear cache and state to trigger a fresh background sync
+            load_returns_data.clear()
+            st.session_state.pop("returns_data", None)
+            st.session_state.pop("last_returns_sync", None)
+            st.session_state["returns_loading"] = False
+            st.session_state["returns_load_complete"] = False
+            st.rerun()
 
     # ── Get Global Time Window ──
     start_dt, end_dt = _get_date_range_from_window()
 
     # ── Auto Data Sync ──
     sales_df_full = _get_gross_sales_context()
-    # Filter sales to match the time window
-    sales_df = _filter_sales_by_date_range(sales_df_full, start_dt, end_dt)
-
     sync_window = get_current_sync_window()
-    if "returns_data" not in st.session_state or st.session_state.get("last_returns_sync") != sync_window:
-        try:
-            with st.spinner("Syncing delivery-issue data (Scheduled)..."):
-                df_returns = load_returns_data(sync_window=sync_window, sales_df=sales_df_full)
-                st.session_state.returns_data = df_returns
-                st.session_state.last_returns_sync = sync_window
-        except Exception as e:
-            logger.error(f"Failed to load returns data: {e}")
-            st.session_state.returns_data = pd.DataFrame()
-            st.session_state.last_returns_sync = sync_window
+    
+    # Trigger background load if needed
+    needs_load = "returns_data" not in st.session_state or st.session_state.get("last_returns_sync") != sync_window
+    is_loading = st.session_state.get("returns_loading", False)
 
+    if needs_load and not is_loading:
+        # Start background thread
+        thread = Thread(target=_load_returns_async, args=(sync_window, sales_df_full), daemon=True)
+        thread.start()
+        st.rerun()
 
+    # ── Staged Loading Display ──
+    if st.session_state.get("returns_loading", False) and "returns_data" not in st.session_state:
+        # Phase 1: Show skeletons while data is being prepared
+        st.info("📊 Syncing delivery-issue data from Google Sheets in the background...")
+        ui.skeleton_row(count=4)
+        st.markdown("<br>", unsafe_allow_html=True)
+        ui.skeleton_row(count=3)
+        
+        # Poll for completion
+        st_autorefresh(interval=3000, key="returns_sync_refresh")
+        return
+
+    # Data is available (either from this sync or previous one)
     if "returns_data" not in st.session_state or st.session_state.returns_data.empty:
         st.info("📊 No Returns Data available. Check the source connection.")
         return
+
+    # If still loading but we have OLD data, show a small indicator
+    if st.session_state.get("returns_loading", False):
+        st.caption("🔄 Data is refreshing in the background... showing cached snapshot.")
+        st_autorefresh(interval=5000, key="returns_background_refresh")
 
     df = st.session_state.returns_data.copy()
 
@@ -268,56 +311,53 @@ def _get_gross_sales_context():
 # ═══════════════════════════════════════════════════════════════════
 
 def _render_kpi_cards(metrics: dict) -> None:
-    """Render the executive KPI cards."""
+    """Render the executive KPI cards using premium components."""
     st.markdown("#### 📦 Operational Intelligence")
-    cols = st.columns(4)
-
+    
     t_ord = metrics.get('total_orders', 0)
     
     def format_pct(val):
         if t_ord > 0:
-            return f"{val:,} <span style='font-size:0.6em; font-weight: 500; opacity:0.7;'>({(val / t_ord * 100):.1f}%)</span>"
+            return f"{val:,} ({(val / t_ord * 100):.1f}%)"
         return f"{val:,}"
 
+    cols = st.columns(4)
+    
     with cols[0]:
-        st.markdown(_kpi_card(
-            "Total Issues",
-            format_pct(metrics['total_issues']),
-            f"Of {t_ord:,} Orders",
-            "#6366F1",
-            "📦"
-        ), unsafe_allow_html=True)
+        ui.metric_highlight(
+            label="Total Issues",
+            value=format_pct(metrics.get('total_issues', 0)),
+            help_text=f"Out of {t_ord:,} total orders",
+            icon="📦"
+        )
 
     with cols[1]:
-        st.markdown(_kpi_card(
-            "Returns",
-            format_pct(metrics['return_count']),
-            f"Paid: {metrics.get('paid_return_count', 0)} | Non-Paid: {metrics.get('non_paid_return_count', 0)}",
-            "#F43F5E",
-            "🔴"
-        ), unsafe_allow_html=True)
+        ui.metric_highlight(
+            label="Returns",
+            value=format_pct(metrics.get('return_count', 0)),
+            help_text=f"Paid: {metrics.get('paid_return_count', 0)} | Non-Paid: {metrics.get('non_paid_return_count', 0)}",
+            icon="🔴"
+        )
 
     with cols[2]:
-        st.markdown(_kpi_card(
-            "Partials",
-            format_pct(metrics['partial_count']),
-            f"৳{metrics['partial_amounts']:,.0f} extracted",
-            "#F59E0B",
-            "🟡"
-        ), unsafe_allow_html=True)
+        ui.metric_highlight(
+            label="Partials",
+            value=format_pct(metrics.get('partial_count', 0)),
+            help_text=f"৳{metrics.get('partial_amounts', 0):,.0f} impact",
+            icon="🟡"
+        )
 
     with cols[3]:
-        st.markdown(_kpi_card(
-            "Exchanges",
-            format_pct(metrics['exchange_count']),
-            "Size/Product changes",
-            "#8B5CF6",
-            "🟣"
-        ), unsafe_allow_html=True)
+        ui.metric_highlight(
+            label="Exchanges",
+            value=format_pct(metrics.get('exchange_count', 0)),
+            help_text="Product/Size swaps",
+            icon="🟣"
+        )
 
 
 def _render_financial_impact_summary(metrics: dict) -> None:
-    """Render decision-ready financial impact cards."""
+    """Render decision-ready financial impact cards using premium components."""
     st.markdown("#### 💰 Financial Integrity & Yield")
 
     gross = metrics.get('gross_sales', 0)
@@ -325,7 +365,6 @@ def _render_financial_impact_summary(metrics: dict) -> None:
     net_yield_pct = metrics.get('net_yield_pct', (net_sales / gross * 100) if gross > 0 else 0.0)
 
     total_ret_qty = metrics.get('total_return_qty_all', 0)
-    total_ret_value = metrics.get('full_return_loss', metrics.get('return_value_extracted', 0))
     total_items_sold = metrics.get('total_items_sold', 0)
     total_returned_items_pct = metrics.get('total_returned_items_pct', 0.0)
     returned_orders_pct = metrics.get('returned_orders_pct', 0.0)
@@ -334,57 +373,51 @@ def _render_financial_impact_summary(metrics: dict) -> None:
     # Primary Row: High-level financial outcome
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.markdown(_kpi_card(
-            "Net Settled Sales",
-            f"৳{net_sales:,.0f}",
-            f"After {metrics.get('return_count', 0)} returns & {metrics.get('partial_count', 0)} partials",
-            "#10B981",
-            "💰"
-        ), unsafe_allow_html=True)
+        ui.metric_highlight(
+            label="Net Settled Sales",
+            value=f"৳{net_sales:,.0f}",
+            help_text=f"After {metrics.get('return_count', 0)} returns & {metrics.get('partial_count', 0)} partials",
+            icon="💰"
+        )
     with c2:
-        st.markdown(_kpi_card(
-            "Net Revenue Yield",
-            f"{net_yield_pct:.1f}%",
-            f"Efficiency: ৳{net_sales:,.0f} / ৳{gross:,.0f}",
-            "#3B82F6",
-            "📊"
-        ), unsafe_allow_html=True)
+        ui.metric_highlight(
+            label="Net Revenue Yield",
+            value=f"{net_yield_pct:.1f}%",
+            help_text=f"Efficiency: ৳{net_sales:,.0f} / ৳{gross:,.0f}",
+            icon="📊"
+        )
     with c3:
-        st.markdown(_kpi_card(
-            "Total Loss Attribution",
-            f"৳{(metrics.get('return_value_extracted', 0) + partial_loss):,.0f}",
-            "Revenue lost to returns and partials",
-            "#EF4444",
-            "📉"
-        ), unsafe_allow_html=True)
+        ui.metric_highlight(
+            label="Total Loss Attribution",
+            value=f"৳{(metrics.get('return_value_extracted', 0) + partial_loss):,.0f}",
+            help_text="Revenue lost to returns and partials",
+            icon="📉"
+        )
 
     # Secondary Row: Operational impact
     c4, c5, c6 = st.columns(3)
     with c4:
         items_pct_text = f"{total_returned_items_pct:.1f}% of {total_items_sold:,} units" if total_items_sold > 0 else "0% items returned"
-        st.markdown(_kpi_card(
-            "Returned Item Volume",
-            f"{total_ret_qty} Units",
-            items_pct_text,
-            "#DC2626",
-            "📦"
-        ), unsafe_allow_html=True)
+        ui.metric_highlight(
+            label="Returned Item Volume",
+            value=f"{total_ret_qty} Units",
+            help_text=items_pct_text,
+            icon="📦"
+        )
     with c5:
-        st.markdown(_kpi_card(
-            "Returned Order Share",
-            f"{returned_orders_pct:.1f}%",
-            f"1 in every {int(100/returned_orders_pct) if returned_orders_pct > 0 else 0} orders",
-            "#F43F5E",
-            "📈"
-        ), unsafe_allow_html=True)
+        ui.metric_highlight(
+            label="Returned Order Share",
+            value=f"{returned_orders_pct:.1f}%",
+            help_text=f"1 in every {int(100/returned_orders_pct) if returned_orders_pct > 0 else 'N/A'} orders",
+            icon="📈"
+        )
     with c6:
-        st.markdown(_kpi_card(
-            "Exchanged Items",
-            f"{metrics.get('total_exchanged_items', 0)} Units",
-            "Product swaps (No revenue loss)",
-            "#8B5CF6",
-            "🔄"
-        ), unsafe_allow_html=True)
+        ui.metric_highlight(
+            label="Exchanged Items",
+            value=f"{metrics.get('total_exchanged_items', 0)} Units",
+            help_text="Product swaps (No revenue loss)",
+            icon="🔄"
+        )
 
     # Financial Integrity Chart
     returns_ready = not metrics.get("daily_financials", pd.DataFrame()).empty
@@ -454,58 +487,6 @@ def _render_financial_impact_summary(metrics: dict) -> None:
     )
 
 
-def _kpi_card(label: str, value: str, subtitle: str, color: str, icon: str = "📊") -> str:
-    """Generate a premium KPI card HTML with glassmorphism and consistent layout."""
-    return f"""
-    <div class="hub-card" style="
-        background: var(--surface);
-        border: 1px solid var(--outline);
-        border-left: 5px solid {color};
-        padding: 20px;
-        height: 150px;
-        min-height: 150px;
-        max-height: 150px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-        transition: all 0.3s ease;
-        position: relative;
-        overflow: hidden;
-    ">
-        <!-- Subtle Background Glow -->
-        <div style="
-            position: absolute;
-            top: -20px;
-            right: -20px;
-            width: 80px;
-            height: 80px;
-            background: {color};
-            opacity: 0.05;
-            filter: blur(30px);
-            border-radius: 50%;
-        "></div>
-        
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; z-index: 1;">
-            <div style="font-size: 0.75rem; font-weight: 700; color: var(--on-surface-variant); 
-                         text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.8;">
-                {label}
-            </div>
-            <div style="font-size: 1.4rem; opacity: 0.9;">{icon}</div>
-        </div>
-        
-        <div style="margin-top: auto; z-index: 1;">
-            <div style="font-size: 1.85rem; font-weight: 850; color: var(--on-surface); 
-                         letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 6px;">
-                {value}
-            </div>
-            <div style="font-size: 0.78rem; color: var(--on-surface-variant); font-weight: 500;
-                         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.9;">
-                {subtitle}
-            </div>
-        </div>
-    </div>
-    """
 
 
 # ═══════════════════════════════════════════════════════════════════
