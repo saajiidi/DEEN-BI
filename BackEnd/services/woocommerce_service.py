@@ -310,6 +310,19 @@ class WooCommerceService:
             
         return pd.DataFrame(all_products)
 
+    def fetch_orders_range(self, start_date: Any, end_date: Any) -> pd.DataFrame:
+        """Fetch orders within a specific timestamp range."""
+        from BackEnd.utils.woocommerce_helpers import to_iso8601
+        
+        after = to_iso8601(start_date)
+        before = to_iso8601(end_date)
+        
+        return self.fetch_all_historical_orders(after=after, before=before, show_progress=False)
+
+    def fetch_stock_inventory(self) -> pd.DataFrame:
+        """Alias for get_stock_report to maintain compatibility with the hybrid loader."""
+        return self.get_stock_report(show_errors=False)
+
     def get_registered_customer_count(self) -> int:
         """Fetch total count of registered customers using headers (efficient)."""
         if not self.wcapi:
