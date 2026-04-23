@@ -541,6 +541,93 @@ def render_intelligence_hub_page():
             )
 
         st.divider()
+        
+        # --- Sales Integrity Gap Chart ---
+        from BackEnd.services.returns_tracker import calculate_net_sales_metrics
+        import plotly.graph_objects as go
+        import numpy as np
+        
+        returns_df = st.session_state.get("returns_data", pd.DataFrame())
+        
+        # Apply Global Date Range Filter to Returns
+        start_date = pd.to_datetime(window_config["start_date_str"]).date()
+        end_date = pd.to_datetime(window_config["end_date_str"]).date()
+        
+        if not returns_df.empty and "date" in returns_df.columns:
+            returns_df = returns_df.copy()
+            returns_df["_dt"] = pd.to_datetime(returns_df["date"], errors="coerce").dt.date
+            returns_df = returns_df[(returns_df["_dt"] >= start_date) & (returns_df["_dt"] <= end_date)]
+            returns_df = returns_df.drop(columns=["_dt"])
+            
+        ret_metrics = calculate_net_sales_metrics(returns_df, sales_df=data["sales_active"], total_items_sold=total_items)
+        fin_plot = ret_metrics.get("daily_financials", pd.DataFrame()).copy()
+        
+        if not fin_plot.empty:
+            fin_plot["date"] = pd.to_datetime(fin_plot["date"], errors="coerce")
+            fin_plot = fin_plot.dropna(subset=["date"])
+            
+            # Strict boundary filter for the plot timeline
+            fin_plot = fin_plot[(fin_plot["date"].dt.date >= start_date) & (fin_plot["date"].dt.date <= end_date)].sort_values("date")
+            
+            if not fin_plot.empty:
+                st.markdown("#### ⚖️ Sales Integrity Gap (Gross vs. Net Settled)")
+                st.caption(f"Visualizing revenue efficiency for the selected period (**{start_date.strftime('%B %d, %Y')}** to **{end_date.strftime('%B %d, %Y')}**). The shaded red area represents revenue lost to returns.")
+                fig_gap = go.Figure()
+                
+                custom_data = np.stack((fin_plot['gross_sales'], fin_plot['total_loss']), axis=-1)
+
+                # Layer 1: Deep Red flame base
+                fig_gap.add_trace(go.Scatter(
+                    x=fin_plot['date'], y=fin_plot['net_sales'] * 0.3,
+                    fill='tozeroy', mode='lines',
+                    line=dict(color='rgba(220, 20, 60, 0.3)', width=0),
+                    fillcolor='rgba(220, 20, 60, 0.4)',
+                    name='Net Settled Base', stackgroup='one', hoverinfo='skip', showlegend=False
+                ))
+                
+                # Layer 2: Orange-red
+                fig_gap.add_trace(go.Scatter(
+                    x=fin_plot['date'], y=fin_plot['net_sales'] * 0.6,
+                    fill='tonexty', mode='lines',
+                    line=dict(color='rgba(255, 69, 0, 0.4)', width=0),
+                    fillcolor='rgba(255, 69, 0, 0.5)',
+                    name='Net Settled Core', stackgroup='one', hoverinfo='skip', showlegend=False
+                ))
+
+                # Layer 3: Flame Orange (Net Settled)
+                fig_gap.add_trace(go.Scatter(
+                    x=fin_plot['date'], y=fin_plot['net_sales'],
+                    fill='tonexty', mode='lines',
+                    line=dict(color='rgba(255, 140, 0, 1.0)', width=3),
+                    fillcolor='rgba(255, 140, 0, 0.6)',
+                    name='Net Settled', stackgroup='one',
+                    customdata=custom_data,
+                    hovertemplate='<b>Net Settled:</b> ৳%{y:,.0f}<br><b>Loss:</b> ৳%{customdata[1]:,.0f}<extra></extra>'
+                ))
+                
+                # Layer 4: Golden Yellow (Gross Verified)
+                fig_gap.add_trace(go.Scatter(
+                    x=fin_plot['date'], y=fin_plot['gross_sales'],
+                    fill='tonexty', mode='lines',
+                    line=dict(color='rgba(255, 215, 0, 1.0)', width=2),
+                    fillcolor='rgba(255, 215, 0, 0.4)',
+                    name='Gross Verified', stackgroup='one',
+                    hovertemplate='<b>Gross Sales:</b> ৳%{y:,.0f}<extra></extra>'
+                ))
+
+                fig_gap.update_layout(
+                    height=350, 
+                    paper_bgcolor='rgba(0,0,0,0)', 
+                    plot_bgcolor='rgba(0,0,0,0)', 
+                    margin=dict(l=0, r=0, t=15, b=0), 
+                    hovermode="x unified", 
+                    legend=dict(orientation="h", y=1.15, x=0.5, xanchor="center"),
+                    xaxis=dict(showgrid=False, title="", tickformat="%b %d", fixedrange=True),
+                    yaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.1)", title="Revenue (৳)", fixedrange=True)
+                )
+                st.plotly_chart(fig_gap, width="stretch", config={'displayModeBar': False})
+                st.divider()
+
         render_sales_overview_timeseries(data["sales_active"], ml_bundle=data.get("ml") or {})
 
     elif selection == "📊 Traffic & Acquisition":
