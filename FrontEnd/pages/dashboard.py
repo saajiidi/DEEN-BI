@@ -660,7 +660,6 @@ def render_intelligence_hub_page():
     elif selection == "📦 Stock Insight":
         from .dashboard_lib.inventory import render_inventory_health
 
-        st.subheader("Operational Forecasting")
         render_inventory_health(data["stock"], (data.get("ml") or {}).get("forecast"), data["sales"])
 
     elif selection == "🚀 Data Pilot":

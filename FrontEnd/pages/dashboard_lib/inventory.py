@@ -7,7 +7,7 @@ from FrontEnd.components import ui
 from BackEnd.core.categories import get_category_for_sales, parse_sku_variants, get_clean_product_name, get_master_category_list, format_category_label
 
 def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, df_sales: pd.DataFrame = None):
-    st.subheader("Stock Insight")
+    st.subheader("📦 Stock Insight")
     
     if stock_df is None or stock_df.empty:
         st.info("No live inventory data is available yet. Initializing sync...")
@@ -29,8 +29,8 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
     inventory["_clean_name"] = inventory["Name"].apply(get_clean_product_name)
     inventory[["_color", "_size"]] = inventory["Name"].apply(lambda x: pd.Series(parse_sku_variants(x)))
     
-    if "Category" not in inventory.columns:
-        inventory["Category"] = inventory["Name"].apply(get_category_for_sales)
+    # Enforce DEEN-BI standard categories over raw WooCommerce tags
+    inventory["Category"] = inventory["Name"].apply(get_category_for_sales)
         
     # --- Real Velocity & Trend Calculation ---
     if df_sales is not None and not df_sales.empty:
@@ -154,7 +154,11 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
         val_col = val_col_map.get(val_basis, "Value")
 
         # 3. Data Preparation
-        cat_agg = inventory.groupby("Category").agg(
+        valid_cats = set(get_master_category_list())
+        inventory["Category"] = inventory["Category"].apply(lambda c: c if c in valid_cats else "Others")
+        inventory["Main Category"] = inventory["Category"].apply(lambda x: str(x).split(" - ")[0])
+        
+        cat_agg = inventory.groupby("Main Category").agg(
             Selected_Value=(val_col, "sum"),
             Total_Units=("Stock Quantity", "sum"),
             SKU_Count=("Name", "count")
@@ -166,23 +170,19 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
         with t1:
             v1, v2 = st.columns(2)
             with v1:
-                # Top-to-less Sort (Already sorted by Selected_Value)
-                fig_donut = ui.donut_chart(cat_agg, values="Selected_Value", names="Category", title=f"Category Share by {val_basis}")
+                fig_donut = ui.donut_chart(cat_agg, values="Selected_Value", names="Main Category", title=f"Category Share by {val_basis}")
                 st.plotly_chart(fig_donut, width="stretch")
             with v2:
-                # Horizontal bar: ascending in code = largest at top in visual
-                fig_val_bar = ui.bar_chart(cat_agg.sort_values("Selected_Value", ascending=True), x="Selected_Value", y="Category", title=f"Absolute {val_basis} per Category", color="Selected_Value")
+                fig_val_bar = ui.bar_chart(cat_agg.sort_values("Selected_Value", ascending=True), x="Selected_Value", y="Main Category", title=f"Absolute {val_basis} per Category", color="Selected_Value")
                 st.plotly_chart(fig_val_bar, width="stretch")
                 
         with t2:
             v3, v4 = st.columns(2)
             with v3:
-                # Vertical bar: descending
-                fig_unit_bar = ui.bar_chart(cat_agg.sort_values("Total_Units", ascending=True), x="Total_Units", y="Category", title="Total Unit Volume per Category", color="Total_Units")
+                fig_unit_bar = ui.bar_chart(cat_agg.sort_values("Total_Units", ascending=True), x="Total_Units", y="Main Category", title="Total Unit Volume per Category", color="Total_Units")
                 st.plotly_chart(fig_unit_bar, width="stretch")
             with v4:
-                # Vertical bar: descending
-                fig_sku_bar = ui.bar_chart(cat_agg.sort_values("SKU_Count", ascending=True), x="SKU_Count", y="Category", title="SKU Breadth per Category", color="SKU_Count")
+                fig_sku_bar = ui.bar_chart(cat_agg.sort_values("SKU_Count", ascending=True), x="SKU_Count", y="Main Category", title="SKU Breadth per Category", color="SKU_Count")
                 st.plotly_chart(fig_sku_bar, width="stretch")
 
         with t3:

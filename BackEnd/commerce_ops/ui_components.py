@@ -149,6 +149,17 @@ def inject_base_styles():
             border-bottom: 2px solid #1d4ed8 !important;
         }
         
+        /* Premium Dataframe & Table Wrapper Styling */
+        div[data-testid="stDataFrame"] > div, div[data-testid="stTable"] > div {
+            border: 1px solid rgba(128, 128, 128, 0.15) !important;
+            border-radius: 8px !important;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.04) !important;
+            transition: box-shadow 0.3s ease !important;
+        }
+        div[data-testid="stDataFrame"] > div:hover, div[data-testid="stTable"] > div:hover {
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08) !important;
+        }
+        
         @media (max-width: 900px) {
             .block-container {
                 padding-left: 0.5rem !important;

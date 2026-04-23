@@ -1739,7 +1739,7 @@ def track_reordering_customers(returns_df: pd.DataFrame, sales_df: pd.DataFrame)
     
     for _, ret in returned_customers.iterrows():
         cust_key = ret["customer_key"]
-        return_date = ret["order_date"]
+        return_date = ret["date"]
         
         # Find subsequent orders for this customer
         future_orders = order_cust[
