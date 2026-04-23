@@ -162,11 +162,41 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
         inventory["Category"] = np.where(inventory["Category"].isin(valid_cats), inventory["Category"], "Others")
         inventory["Main Category"] = inventory["Category"].astype(str).str.split(" - ").str[0]
         
-        cat_agg = inventory.groupby("Main Category").agg(
+        # Apply active filters to the strategic analysis
+        filtered_inv = inventory.copy()
+        filtered_inv["_display_name"] = filtered_inv["_clean_name"] + " [" + filtered_inv["SKU"].astype(str) + "]"
+        
+        if active_cat: 
+            filtered_inv = filtered_inv[filtered_inv["Category"].str.startswith(active_cat, na=False)]
+        if active_trend: 
+            filtered_inv = filtered_inv[filtered_inv["Trend"] == active_trend]
+        if active_prod:
+            filtered_inv = filtered_inv[filtered_inv["_display_name"] == active_prod]
+
+        # Dynamic Drill-down Logic
+        if active_prod:
+            group_col = "_size"
+            group_label = "Size"
+            filtered_inv[group_col] = filtered_inv[group_col].replace(["", None], "Unknown")
+        elif active_cat:
+            if " - " in active_cat:
+                group_col = "_display_name"
+                group_label = "Product (SKU)"
+            else:
+                filtered_inv["Sub Category"] = filtered_inv["Category"].apply(lambda x: str(x).split(" - ")[1] if " - " in str(x) else str(x))
+                group_col = "Sub Category"
+                group_label = "Sub-Category"
+        else:
+            group_col = "Main Category"
+            group_label = "Main Category"
+
+        cat_agg = filtered_inv.groupby(group_col).agg(
             Selected_Value=(val_col, "sum"),
             Total_Units=("Stock Quantity", "sum"),
             SKU_Count=("Name", "count")
         ).reset_index().sort_values("Selected_Value", ascending=False).head(12)
+        
+        cat_agg = cat_agg.rename(columns={group_col: "Display Category"})
         
         # 4. Interactive Visuals
         t1, t2, t3, t4 = st.tabs(["💰 Value Distribution", "📦 Volume Analysis", "🛒 Smart Restock", "📉 Dead Stock"])
@@ -174,19 +204,23 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
         with t1:
             v1, v2 = st.columns(2)
             with v1:
-                fig_donut = ui.donut_chart(cat_agg, values="Selected_Value", names="Main Category", title=f"Category Share by {val_basis}")
+                fig_donut = ui.donut_chart(cat_agg, values="Selected_Value", names="Display Category", title=f"{group_label} Share by {val_basis}")
+                fig_donut.update_traces(texttemplate="<b>%{label}</b><br>৳%{value:,.0f}<br>(%{percent:.1%})", textinfo="none")
                 st.plotly_chart(fig_donut, width="stretch")
             with v2:
-                fig_val_bar = ui.bar_chart(cat_agg.sort_values("Selected_Value", ascending=True), x="Selected_Value", y="Main Category", title=f"Absolute {val_basis} per Category", color="Selected_Value")
+                fig_val_bar = ui.bar_chart(cat_agg.sort_values("Selected_Value", ascending=True), x="Selected_Value", y="Display Category", title=f"Absolute {val_basis} per {group_label}", color="Selected_Value")
+                fig_val_bar.update_traces(texttemplate="৳%{x:,.0f}", textposition="auto")
                 st.plotly_chart(fig_val_bar, width="stretch")
                 
         with t2:
             v3, v4 = st.columns(2)
             with v3:
-                fig_unit_bar = ui.bar_chart(cat_agg.sort_values("Total_Units", ascending=True), x="Total_Units", y="Main Category", title="Total Unit Volume per Category", color="Total_Units")
+                fig_unit_bar = ui.bar_chart(cat_agg.sort_values("Total_Units", ascending=True), x="Total_Units", y="Display Category", title=f"Total Unit Volume per {group_label}", color="Total_Units")
+                fig_unit_bar.update_traces(texttemplate="%{x:,} Units", textposition="auto")
                 st.plotly_chart(fig_unit_bar, width="stretch")
             with v4:
-                fig_sku_bar = ui.bar_chart(cat_agg.sort_values("SKU_Count", ascending=True), x="SKU_Count", y="Main Category", title="SKU Breadth per Category", color="SKU_Count")
+                fig_sku_bar = ui.bar_chart(cat_agg.sort_values("SKU_Count", ascending=True), x="SKU_Count", y="Display Category", title=f"SKU Breadth per {group_label}", color="SKU_Count")
+                fig_sku_bar.update_traces(texttemplate="%{x:,} SKUs", textposition="auto")
                 st.plotly_chart(fig_sku_bar, width="stretch")
 
         with t3:
@@ -194,19 +228,19 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
             st.caption("Strategic restock recommendations based on real sales velocity for the selected range.")
             
             # Use real daily_velocity calculated at the top
-            inventory["days_remaining"] = (inventory["Stock Quantity"] / inventory["daily_velocity"]).replace([np.inf, -np.inf], 999).fillna(999).astype(int)
+            filtered_inv["days_remaining"] = (filtered_inv["Stock Quantity"] / filtered_inv["daily_velocity"]).replace([np.inf, -np.inf], 999).fillna(999).astype(int)
             
             # Vectorized Recommendation logic
-            inventory["Status"] = np.select(
+            filtered_inv["Status"] = np.select(
                 [
-                    (inventory["days_remaining"] < 3) & (inventory["daily_velocity"] > 0),
-                    (inventory["days_remaining"] < 7) & (inventory["daily_velocity"] > 0)
+                    (filtered_inv["days_remaining"] < 3) & (filtered_inv["daily_velocity"] > 0),
+                    (filtered_inv["days_remaining"] < 7) & (filtered_inv["daily_velocity"] > 0)
                 ],
                 ["🚨 CRITICAL: RESTOCK TODAY", "⚠️ WARNING: REORDER NOW"],
                 default="✅ HEALTHY"
             )
             
-            crit_items = inventory[(inventory["days_remaining"] < 7) & (inventory["daily_velocity"] > 0)].sort_values("days_remaining")
+            crit_items = filtered_inv[(filtered_inv["days_remaining"] < 7) & (filtered_inv["daily_velocity"] > 0)].sort_values("days_remaining")
             if not crit_items.empty:
                 st.warning(f"Found {len(crit_items)} items that will stock out within 7 days.")
                 st.dataframe(crit_items[["Name", "Stock Quantity", "daily_velocity", "days_remaining", "Trend", "Status"]].rename(
@@ -220,9 +254,9 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
             st.caption("Items with high inventory levels but near-zero transaction velocity in the selected range.")
             
             # Dead stock based on real velocity zeroing out
-            dead_stock = inventory[
-                (inventory["daily_velocity"] < 0.05) & 
-                (inventory["Stock Quantity"] > 0)
+            dead_stock = filtered_inv[
+                (filtered_inv["daily_velocity"] < 0.05) & 
+                (filtered_inv["Stock Quantity"] > 0)
             ].copy()
             
             if not dead_stock.empty:
