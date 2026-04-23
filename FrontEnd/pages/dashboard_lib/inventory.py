@@ -273,6 +273,6 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
             data=excel_bytes,
             file_name=f"deen_inventory_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            width="stretch",
+            use_container_width=True,
             key="inv_custom_export_btn"
         )

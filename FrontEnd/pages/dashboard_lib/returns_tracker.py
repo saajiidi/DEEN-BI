@@ -316,8 +316,20 @@ def _get_gross_sales_context():
 
 def _ui_return_metric(label: str, value: str, icon: str, help_text: str, border_color: str):
     """Premium custom metric card for Returns Insights."""
+    # Use a unique class to scope the hover effect and avoid conflicts
+    unique_class = f"return-metric-card-{label.lower().replace(' ', '-')}"
     st.markdown(f"""
-        <div style="
+        <style>
+            .{unique_class} {{
+                transition: all 0.2s ease-in-out;
+            }}
+            .{unique_class}:hover {{
+                transform: translateY(-2px);
+                box-shadow: 0 8px 16px rgba(0,0,0,0.08) !important;
+                border-color: {border_color} !important;
+            }}
+        </style>
+        <div class="{unique_class}" style="
             background: var(--secondary-background-color);
             border: 1px solid rgba(128, 128, 128, 0.1);
             border-top: 4px solid {border_color};
@@ -347,7 +359,9 @@ def _render_kpi_cards(metrics: dict) -> None:
     """Render the executive KPI cards using premium components."""
     st.markdown("#### 📦 Operational Intelligence")
     
+    # Defensive: ensure scalar values (not Series/arrays)
     t_ord = metrics.get('total_orders', 0)
+    t_ord = int(t_ord) if hasattr(t_ord, '__int__') else 0
     
     def format_pct(val):
         if t_ord > 0:
@@ -393,15 +407,16 @@ def _render_financial_impact_summary(metrics: dict) -> None:
     """Render decision-ready financial impact cards using premium components."""
     st.markdown("#### 💰 Financial Integrity & Yield")
 
-    gross = metrics.get('gross_sales', 0)
-    net_sales = metrics.get('net_sales', 0)
-    net_yield_pct = metrics.get('net_yield_pct', (net_sales / gross * 100) if gross > 0 else 0.0)
+    # Defensive: ensure all metrics are scalars (not Series/arrays)
+    gross = float(metrics.get('gross_sales', 0) or 0)
+    net_sales = float(metrics.get('net_sales', 0) or 0)
+    net_yield_pct = float(metrics.get('net_yield_pct', 0) or 0)
 
-    total_ret_qty = metrics.get('total_return_qty_all', 0)
-    total_items_sold = metrics.get('total_items_sold', 0)
-    total_returned_items_pct = metrics.get('total_returned_items_pct', 0.0)
-    returned_orders_pct = metrics.get('returned_orders_pct', 0.0)
-    partial_loss = metrics.get('partial_loss', metrics.get('partial_amounts', 0))
+    total_ret_qty = int(metrics.get('total_return_qty_all', 0) or 0)
+    total_items_sold = int(metrics.get('total_items_sold', 0) or 0)
+    total_returned_items_pct = float(metrics.get('total_returned_items_pct', 0.0) or 0.0)
+    returned_orders_pct = float(metrics.get('returned_orders_pct', 0.0) or 0.0)
+    partial_loss = float(metrics.get('partial_loss', metrics.get('partial_amounts', 0)) or 0)
 
     # Primary Row: High-level financial outcome
     c1, c2, c3 = st.columns(3)

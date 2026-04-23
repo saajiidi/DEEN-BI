@@ -106,21 +106,21 @@ def inject_base_styles():
             border-color: var(--primary);
         }
         
-        /* 3. Action Glow for success/primary steps */
-        @keyframes success-pulse {
-            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
-            70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-        }
-        div[data-testid="stDownloadButton"] button {
-            animation: success-pulse 2s infinite;
-            border: 1px solid #10b981 !important;
-            transition: all 0.2s ease !important;
-        }
-        div[data-testid="stDownloadButton"] button:hover {
-            transform: scale(1.02);
-            background: #059669 !important;
+        /* Premium Export / Download Button Styling */
+        div[data-testid="stDownloadButton"] > button {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
             color: white !important;
+            border: none !important;
+            border-radius: 100px !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.5px !important;
+            box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3) !important;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+        div[data-testid="stDownloadButton"] > button:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 6px 14px rgba(16, 185, 129, 0.4) !important;
+            background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
         }
         
         /* Global button hover scaling */
@@ -160,6 +160,53 @@ def inject_base_styles():
             box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08) !important;
         }
         
+        /* Smooth Page Load Animation */
+        .block-container {
+            animation: fadeIn 0.6s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Global Premium Metric Cards */
+        div[data-testid="stMetric"] {
+            background: var(--surface) !important;
+            border: 1px solid rgba(128, 128, 128, 0.12) !important;
+            padding: 16px 20px !important;
+            border-radius: 12px !important;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.03) !important;
+            transition: all 0.2s ease-in-out !important;
+        }
+        div[data-testid="stMetric"]:hover {
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.06) !important;
+            border-color: rgba(29, 78, 216, 0.4) !important;
+            transform: translateY(-2px) !important;
+        }
+        div[data-testid="stMetricLabel"] {
+            color: #64748b !important;
+            font-weight: 700 !important;
+            font-size: 0.8rem !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+            margin-bottom: 4px !important;
+        }
+        
+        /* Premium Expander Styling */
+        div[data-testid="stExpander"] {
+            border: 1px solid rgba(128, 128, 128, 0.15) !important;
+            border-radius: 8px !important;
+            background: var(--surface) !important;
+            transition: border-color 0.3s ease !important;
+        }
+        div[data-testid="stExpander"]:hover {
+            border-color: rgba(29, 78, 216, 0.3) !important;
+        }
+        div[data-testid="stExpander"] > details > summary {
+            padding: 10px 15px !important;
+            font-weight: 600 !important;
+        }
+        
         @media (max-width: 900px) {
             .block-container {
                 padding-left: 0.5rem !important;
@@ -177,6 +224,13 @@ def inject_base_styles():
                 padding: 10px;
                 border-radius: 8px;
             }
+        .hub-footer {
+            flex-direction: column;
+            text-align: center;
+            justify-content: center;
+            gap: 8px;
+            position: relative;
+        }
             /* Metric Font Scaling for Small Screens */
             div[data-testid="stMetricValue"] {
                 font-size: 1.2rem !important;
@@ -280,12 +334,15 @@ def render_footer():
         f"""
         <div class="hub-footer">
             <div style="width:100%; text-align:center;">
-                <span style="margin-right:12px;">© 2026 <a href="https://github.com/saajiidi" target="_blank">Sajid Islam</a>. All rights reserved.</span>
-                <span style="margin:0 12px; opacity:0.5;">|</span>
-                <a href="https://deencommerce.com/" target="_blank" style="text-decoration:none;">
-                    <img src="{logo_src}" width="20" class="deen-logo-small" onerror="this.style.display='none'">
-                    Powered by <b>DEEN Commerce</b>
-                </a>
+                <div style="display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:8px;">
+                    <span>© 2026 <a href="https://github.com/saajiidi" target="_blank">Sajid Islam</a>. All rights reserved.</span>
+                    <span style="opacity:0.5; margin:0 4px;">|</span>
+                    <a href="https://deencommerce.com/" target="_blank" style="text-decoration:none; display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:6px;">
+                        <span>Powered by</span>
+                        <img src="{logo_src}" width="18" class="deen-logo-small" style="margin:0;" onerror="this.style.display='none'">
+                        <b>DEEN Commerce Ltd.</b>
+                    </a>
+                </div>
             </div>
         </div>
         """,

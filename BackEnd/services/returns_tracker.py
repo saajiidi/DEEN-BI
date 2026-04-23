@@ -1437,6 +1437,8 @@ def calculate_net_sales_metrics(
     sales_context = _prepare_sales_context(sales_df)
     gross_sales = float(pd.to_numeric(sales_context.get("_line_revenue", 0.0), errors="coerce").fillna(0.0).sum()) if not sales_context.empty else 0.0
     total_orders = int(sales_context["order_id"].nunique()) if not sales_context.empty else 0
+    # Ensure total_items_sold is a scalar (defensive against Series/array input)
+    total_items_sold = int(total_items_sold) if hasattr(total_items_sold, '__int__') else 0
 
     if returns_df.empty:
         return {

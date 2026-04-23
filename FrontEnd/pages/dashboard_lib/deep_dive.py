@@ -246,6 +246,8 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
     # Pre-calculate bulk propensity for export and visuals
     order_basket = w_df.groupby("order_id")["qty"].sum().reset_index()
     total_orders_in_cluster = len(order_basket)
+    p_single, p_bulk, p_other = "N/A", "N/A", "N/A"
+    single_piece, bulk_pieces, mid_piece = 0, 0, 0
     if total_orders_in_cluster > 0:
         single_piece = len(order_basket[order_basket["qty"] == 1])
         bulk_pieces = len(order_basket[order_basket["qty"] >= 3])
@@ -268,8 +270,8 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
                 total_items_sold, 
                 unique_customers, 
                 f"৳{avg_item_price:,.0f}",
-                f"{p_single:.1f}%" if 'p_single' in locals() else "N/A",
-                f"{p_bulk:.1f}%" if 'p_bulk' in locals() else "N/A"
+                f"{p_single:.1f}%" if isinstance(p_single, (int, float)) else p_single,
+                f"{p_bulk:.1f}%" if isinstance(p_bulk, (int, float)) else p_bulk
             ]
         }
         summary_df = pd.DataFrame(summary_data)
@@ -280,8 +282,8 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         # 3. Compile AI Strategic Intelligence
         ai_narrative = [
             f"STRATEGIC OVERVIEW: This filtered cluster generated ৳{total_revenue:,.0f} across {unique_customers:,} unique buyers.",
-            f"BASKET DYNAMICS: Bulk buying (3+ units) accounts for {p_bulk:.1f}% of transactions." if 'p_bulk' in locals() else "",
-            f"BASKET DYNAMICS: Single-item purchases make up {p_single:.1f}% of transactions." if 'p_single' in locals() else "",
+            f"BASKET DYNAMICS: Bulk buying (3+ units) accounts for {p_bulk:.1f}% of transactions." if isinstance(p_bulk, (int, float)) else "",
+            f"BASKET DYNAMICS: Single-item purchases make up {p_single:.1f}% of transactions." if isinstance(p_single, (int, float)) else "",
             f"DOMINANT VARIATION: {top_var_name} is driving the cluster with {top_var_units} units sold."
         ]
         ai_df = pd.DataFrame({"AI Strategic Intelligence": [n for n in ai_narrative if n]})
@@ -294,7 +296,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             data=report_bytes,
             file_name=f"deen_strategic_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            width="stretch",
+            use_container_width=True,
             key="btn_export_strategic"
         )
 

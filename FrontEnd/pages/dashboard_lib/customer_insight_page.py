@@ -325,7 +325,7 @@ def _render_main_content(filters: Dict[str, Any]) -> None:
             data=excel_data,
             file_name=f"filtered_customers_{len(customers_df)}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            width="stretch",
+            use_container_width=True,
         )
     with export_col2:
         st.caption(f"Exporting {len(customers_df)} unique customers with their details")
@@ -567,7 +567,7 @@ def _render_compact_results(filters: Dict[str, Any]) -> None:
             data=excel_data,
             file_name=f"filtered_customers_{len(customers_df)}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            width="stretch",
+            use_container_width=True,
             key="ci_tab_export",
         )
     with export_col2:

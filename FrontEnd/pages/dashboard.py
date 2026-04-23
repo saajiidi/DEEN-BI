@@ -626,7 +626,7 @@ def render_intelligence_hub_page():
                 data=report_bytes,
                 file_name=f"deen_sales_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width="stretch",
+                use_container_width=True,
                 key="sales_overview_export_btn"
             )
         st.divider()

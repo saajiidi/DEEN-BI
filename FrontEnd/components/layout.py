@@ -167,6 +167,49 @@ def setup_theme():
             opacity: 0.92;
         }
 
+        /* Premium Export / Download Button Styling */
+        div[data-testid="stDownloadButton"] > button {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 100px !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.5px !important;
+            box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3) !important;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+        div[data-testid="stDownloadButton"] > button:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 6px 14px rgba(16, 185, 129, 0.4) !important;
+            background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+        }
+
+        /* Premium Input Styling (Selectbox, Multiselect, Text Input) */
+        div[data-testid="stSelectbox"] > div, 
+        div[data-testid="stMultiSelect"] > div,
+        div[data-testid="stTextInput"] > div > div > input {
+            background-color: var(--surface) !important;
+            border: 1px solid var(--outline) !important;
+            border-radius: 8px !important;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
+            transition: all 0.2s ease-in-out !important;
+        }
+        div[data-testid="stSelectbox"] > div:hover, 
+        div[data-testid="stMultiSelect"] > div:hover,
+        div[data-testid="stTextInput"] > div > div > input:hover {
+            border-color: var(--primary) !important;
+            box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1) !important;
+        }
+        div[data-testid="stMultiSelect"] span[data-baseweb="tag"] {
+            background-color: rgba(var(--primary-rgb), 0.15) !important;
+            color: var(--primary) !important;
+            border-radius: 6px !important;
+        }
+        div[data-testid="stTextInput"] > div > div > input {
+            padding-left: 12px !important;
+            padding-right: 12px !important;
+        }
+
         [data-testid="stSidebar"] {
             background-color: var(--surface) !important;
             border-right: 1px solid var(--surface-variant) !important;
@@ -536,6 +579,9 @@ def setup_theme():
                 font-size: 0.7rem;
                 flex-direction: column;
                 text-align: center;
+                align-items: center;
+                justify-content: center;
+                display: flex;
                 gap: 4px;
             }
             /* Mobile Metrics */
@@ -657,6 +703,7 @@ def setup_theme():
         .hub-page_footer {
             margin-top: 40px;
             width: 100%;
+            position: relative;
             background: var(--background);
             opacity: 0.98;
             backdrop-filter: blur(8px);
@@ -762,9 +809,10 @@ def page_footer():
         <div class="hub-page_footer">
             <div style="width:100%; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;">
                 <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
-                    <a href="https://deencommerce.com/" target="_blank" style="color:var(--on-surface); text-decoration:none; display:flex; align-items:center; gap:8px;">
-                        <img src="{logo_src}" width="18" height="18" style="border-radius:4px;" onerror="this.style.display='none'">
-                        <span style="font-size:0.9rem; opacity:0.9;">Powered by <b>DEEN Commerce Ltd.</b></span>
+                    <a href="https://deencommerce.com/" target="_blank" style="color:var(--on-surface); text-decoration:none; display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:6px;">
+                        <span style="font-size:0.9rem; opacity:0.9;">Powered by</span>
+                        <img src="{logo_src}" width="18" height="18" style="border-radius:4px; margin-top:-2px;" onerror="this.style.display='none'">
+                        <span style="font-size:0.9rem; opacity:0.9;"><b>DEEN Commerce Ltd.</b></span>
                     </a>
                 </div>
             </div>
@@ -772,12 +820,3 @@ def page_footer():
         """,
         unsafe_allow_html=True,
     )
-
-
-
-
-
-
-
-
-
