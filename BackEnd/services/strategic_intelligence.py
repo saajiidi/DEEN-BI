@@ -3,7 +3,11 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
-def detect_business_anomalies(sales_df: pd.DataFrame, returns_df: pd.DataFrame) -> List[Dict[str, Any]]:
+def detect_business_anomalies(
+    sales_df: pd.DataFrame, 
+    returns_df: pd.DataFrame,
+    stale_days_threshold: int = 5
+) -> List[Dict[str, Any]]:
     """Detects operational risks, courier drops, and revenue leakage markers."""
     anomalies = []
     
@@ -17,7 +21,7 @@ def detect_business_anomalies(sales_df: pd.DataFrame, returns_df: pd.DataFrame) 
     # 1. Revenue Leakage: "Ghost" Orders (Stale Pendings)
     today = datetime.now()
     if 'order_date' in sales_df.columns and 'order_status' in sales_df.columns:
-        stale_cutoff = today - timedelta(days=5)
+        stale_cutoff = today - timedelta(days=stale_days_threshold)
         stale_orders = sales_df[
             (sales_df['order_date'] < stale_cutoff) & 
             (sales_df['order_status'].str.lower().isin(['pending', 'on-hold', 'pending-payment']))
@@ -28,7 +32,7 @@ def detect_business_anomalies(sales_df: pd.DataFrame, returns_df: pd.DataFrame) 
                 "level": "CRITICAL",
                 "category": "Revenue Leakage",
                 "title": f"৳{leakage:,.0f} stuck in Stale Orders",
-                "description": f"{len(stale_orders['order_id'].unique())} orders are older than 5 days but not yet processed.",
+                "description": f"{len(stale_orders['order_id'].unique())} orders are older than {stale_days_threshold} days but not yet processed.",
                 "action": "Review Pending queue in WooCommerce."
             })
 
@@ -106,7 +110,12 @@ def generate_executive_narrative(sales_df: pd.DataFrame, returns_df: pd.DataFram
 
     return narrative
 
-def calculate_rfm_churn_risk(sales_df: pd.DataFrame) -> pd.DataFrame:
+def calculate_rfm_churn_risk(
+    sales_df: pd.DataFrame,
+    vip_monetary_threshold: float = 10000,
+    vip_freq_threshold: int = 3,
+    churn_days: int = 30
+) -> pd.DataFrame:
     """Computes RFM scores and identifies Churn Risk for VIPs."""
     if sales_df.empty or 'customer_key' not in sales_df.columns:
         return pd.DataFrame()
@@ -125,13 +134,13 @@ def calculate_rfm_churn_risk(sales_df: pd.DataFrame) -> pd.DataFrame:
     rfm.columns = ['customer_key', 'recency', 'frequency', 'monetary']
     
     # Define VIPs (e.g., spent > 10,000 or bought > 3 times)
-    is_vip = (rfm['monetary'] > 10000) | (rfm['frequency'] >= 3)
+    is_vip = (rfm['monetary'] > vip_monetary_threshold) | (rfm['frequency'] >= vip_freq_threshold)
     rfm['status'] = 'Standard'
     rfm.loc[is_vip, 'status'] = 'VIP'
     
     # Churn Risk: VIP and Recency > 30 days
     rfm['risk_level'] = 'Low'
-    rfm.loc[(rfm['status'] == 'VIP') & (rfm['recency'] > 30), 'risk_level'] = 'High (Churn Risk)'
-    rfm.loc[(rfm['status'] == 'VIP') & (rfm['recency'] > 60), 'risk_level'] = 'CRITICAL (Lost VIP?)'
+    rfm.loc[(rfm['status'] == 'VIP') & (rfm['recency'] > churn_days), 'risk_level'] = 'High (Churn Risk)'
+    rfm.loc[(rfm['status'] == 'VIP') & (rfm['recency'] > churn_days * 2), 'risk_level'] = 'CRITICAL (Lost VIP?)'
     
     return rfm[rfm['status'] == 'VIP'].sort_values('recency', ascending=False)

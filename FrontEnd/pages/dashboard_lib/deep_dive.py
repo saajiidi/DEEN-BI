@@ -2,7 +2,6 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 from FrontEnd.components import ui
-from FrontEnd.components.category_matrix import render_category_matrix
 from BackEnd.core.categories import parse_sku_variants, get_clean_product_name, get_master_category_list, format_category_label
 
 def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev: pd.DataFrame = None, window_label: str = "period"):
@@ -95,15 +94,79 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
     st.markdown("### 📥 Sales Data Ingestion & Analysis")
     st.caption("Perform high-resolution segment analysis to identify operational opportunities and regional hotspots.")
     
-    # CATEGORY MATRIX
-    render_category_matrix(
-        sales_df=df_sales,
-        cat_col="Category",
-        subcat_col="_clean_name",
-        val_col="item_revenue",
-        order_col="order_id",
-        date_col="order_date"
-    )
+    clean_window = window_label.replace('last ', '').title() if window_label else "Period"
+
+    # CATEGORY PERFORMANCE MATRIX
+    st.markdown("#### 📊 Category Performance Matrix")
+    st.caption(f"Master and Sub-categories ranked by revenue, comparing current vs previous {clean_window.lower()}.")
+
+    if not df_sales.empty:
+        curr_agg = df_sales.groupby("Category").agg(
+            Total_Sold=("qty", "sum"),
+            Total_Revenue=("item_revenue", "sum")
+        ).reset_index()
+        
+        if df_prev is not None and not df_prev.empty:
+            prev_agg = df_prev.groupby("Category").agg(
+                Prev_Sold=("qty", "sum"),
+                Prev_Revenue=("item_revenue", "sum")
+            ).reset_index()
+            merged = curr_agg.merge(prev_agg, on="Category", how="outer").fillna(0)
+        else:
+            merged = curr_agg.copy()
+            merged["Prev_Sold"] = 0
+            merged["Prev_Revenue"] = 0
+
+        def format_trend(curr, prev):
+            if prev == 0 and curr > 0:
+                return "🚀 New"
+            elif prev == 0 and curr == 0:
+                return "➖"
+            diff = curr - prev
+            pct = (diff / prev) * 100
+            if diff > 0:
+                return f"▲ +{pct:.1f}%"
+            elif diff < 0:
+                return f"▼ {abs(pct):.1f}%"
+            else:
+                return "➖ 0%"
+
+        merged["Sold Trend"] = merged.apply(lambda x: format_trend(x["Total_Sold"], x["Prev_Sold"]), axis=1)
+        merged["Rev Trend"] = merged.apply(lambda x: format_trend(x["Total_Revenue"], x["Prev_Revenue"]), axis=1)
+        
+        merged["Master Category"] = merged["Category"].apply(lambda x: str(x).split(" - ")[0] if " - " in str(x) else str(x))
+        merged["Sub Category"] = merged["Category"].apply(lambda x: str(x).split(" - ")[1] if " - " in str(x) else str(x))
+        
+        merged = merged.sort_values(["Total_Revenue", "Master Category"], ascending=[False, True])
+        
+        display_df = merged[["Master Category", "Sub Category", "Total_Sold", "Sold Trend", "Total_Revenue", "Rev Trend"]].rename(columns={
+            "Total_Sold": "Total Sold",
+            "Total_Revenue": "Total Revenue"
+        })
+        
+        col_cfg = {
+            "Master Category": st.column_config.TextColumn("Master Category", width="medium"),
+            "Sub Category": st.column_config.TextColumn("Sub Category", width="medium"),
+            "Total Sold": st.column_config.NumberColumn("Total Sold", format="%d"),
+            "Sold Trend": st.column_config.TextColumn(f"Sold vs Prev {clean_window}"),
+            "Total Revenue": st.column_config.NumberColumn("Total Revenue", format="৳%d"),
+            "Rev Trend": st.column_config.TextColumn(f"Rev vs Prev {clean_window}"),
+        }
+        
+        def color_trend(val):
+            if isinstance(val, str):
+                if "▲" in val or "🚀" in val:
+                    return "color: #10b981;"  # Emerald Green
+                elif "▼" in val:
+                    return "color: #ef4444;"  # Red
+            return ""
+
+        styler = display_df.style
+        styled_df = styler.map(color_trend, subset=["Sold Trend", "Rev Trend"]) if hasattr(styler, "map") else styler.applymap(color_trend, subset=["Sold Trend", "Rev Trend"])
+        
+        st.dataframe(styled_df, width="stretch", hide_index=True, column_config=col_cfg)
+    else:
+        st.info("Insufficient data for category matrix generation.")
     
     # FILTER CONTROL CENTER
     with st.expander("🛠️ Advanced Cluster Filters", expanded=True):
@@ -479,10 +542,18 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             )
         with ac2:
             if others_count > 0:
-                st.warning("Found items in 'Others'. See Top Uncategorized below to refine keyword rules.")
-                top_others = others_df.groupby("item_name")["qty"].sum().reset_index().sort_values("qty", ascending=False).head(10)
-                st.write("**Top Uncategorized Items (Others):**")
-                st.dataframe(top_others, width="stretch", hide_index=True)
+                st.warning("Found items in 'Others'. Review the list below to identify missing keyword rules.")
+                top_others = others_df.groupby("item_name").agg(
+                    Units=("qty", "sum"),
+                    Revenue=("item_revenue", "sum")
+                ).reset_index().sort_values("Revenue", ascending=False)
+                st.write("**All Uncategorized Items (Others):**")
+                st.dataframe(
+                    top_others, 
+                    width="stretch", 
+                    hide_index=True,
+                    column_config={"Revenue": st.column_config.NumberColumn("Revenue", format="৳%d")}
+                )
             else:
                 st.success("✅ Perfection: 100% of items in this cluster are successfully categorized!")
 

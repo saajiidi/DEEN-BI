@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import tempfile
 import logging
+from typing import Dict, Any
 
 # Use unified data directory from root
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -11,6 +12,43 @@ DATA_DIR = os.path.join(REPO_ROOT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 STATE_FILE = os.path.join(DATA_DIR, "session_state.json")
 
+
+class AppState:
+    """
+    Strictly typed wrapper around Streamlit's session_state.
+    Provides autocomplete, type hinting, and removes nested dictionary boilerplate.
+    """
+    @property
+    def dashboard_data(self) -> Dict[str, Any]:
+        return st.session_state.get("dashboard_data", {})
+
+    @dashboard_data.setter
+    def dashboard_data(self, value: Dict[str, Any]) -> None:
+        st.session_state["dashboard_data"] = value
+
+    @property
+    def sales_active(self) -> pd.DataFrame:
+        """Safely fetches active sales DataFrame from nested dashboard_data."""
+        return self.dashboard_data.get("sales_active", pd.DataFrame())
+
+    @property
+    def returns_data(self) -> pd.DataFrame:
+        return st.session_state.get("returns_data", pd.DataFrame())
+
+    @returns_data.setter
+    def returns_data(self, value: pd.DataFrame) -> None:
+        st.session_state["returns_data"] = value
+
+    @property
+    def low_stock_threshold(self) -> int:
+        return st.session_state.get("low_stock_threshold", 5)
+
+    @low_stock_threshold.setter
+    def low_stock_threshold(self, value: int) -> None:
+        st.session_state["low_stock_threshold"] = value
+
+# Global state manager instance
+app_state = AppState()
 
 def save_state():
     """Saves relevant session state keys to a local file."""

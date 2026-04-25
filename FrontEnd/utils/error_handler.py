@@ -6,6 +6,7 @@ import logging
 import os
 import platform
 import tempfile
+import threading
 import traceback
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ PROMPT_DIR.mkdir(exist_ok=True)
 ERROR_LOG_FILE = DATA_DIR / "error_logs.json"
 LATEST_PROMPT_FILE = PROMPT_DIR / "latest_error_prompt.md"
 
+_log_lock = threading.Lock()
 
 
 def _safe_jsonable(value: Any) -> Any:
@@ -87,27 +89,28 @@ def log_error(error_msg: Any, context: str = "General", details: dict[str, Any] 
         }
         entry["fix_prompt"] = build_fix_prompt(entry)
 
-        logs: list[dict[str, Any]] = []
-        if ERROR_LOG_FILE.exists():
-            try:
-                logs = json.loads(ERROR_LOG_FILE.read_text(encoding="utf-8"))
-            except Exception:
-                logs = []
-
-        logs.append(entry)
-        logs = logs[-200:]
-
-        fd, temp_path = tempfile.mkstemp(dir=str(DATA_DIR), suffix=".json")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(logs, handle, indent=2, ensure_ascii=False)
-            os.replace(temp_path, ERROR_LOG_FILE)
-        finally:
-            if os.path.exists(temp_path):
+        with _log_lock:
+            logs: list[dict[str, Any]] = []
+            if ERROR_LOG_FILE.exists():
                 try:
-                    os.unlink(temp_path)
-                except OSError:
-                    pass
+                    logs = json.loads(ERROR_LOG_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    logs = []
+
+            logs.append(entry)
+            logs = logs[-200:]
+
+            fd, temp_path = tempfile.mkstemp(dir=str(DATA_DIR), suffix=".json")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    json.dump(logs, handle, indent=2, ensure_ascii=False)
+                os.replace(temp_path, ERROR_LOG_FILE)
+            finally:
+                if os.path.exists(temp_path):
+                    try:
+                        os.unlink(temp_path)
+                    except OSError:
+                        pass
 
         timestamp_slug = timestamp.replace(":", "-").replace(" ", "_")
         prompt_path = PROMPT_DIR / f"error_prompt_{timestamp_slug}.md"

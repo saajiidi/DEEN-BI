@@ -39,6 +39,7 @@ from BackEnd.services.customer_manager import (
 
 from FrontEnd.components import ui
 from BackEnd.core.logging_config import get_logger
+from FrontEnd.utils.state import app_state
 
 
 logger = get_logger("customer_insight_page")
@@ -120,26 +121,31 @@ def _render_analysis_tab() -> None:
         )
     
     with col_s:
-        st.markdown("### ⚙️ Optimization")
-        if st.button("🔄 Update Customer Mapping", width="stretch", help="Fetch recent orders and update first-order dates"):
-            with st.spinner("Updating mapping..."):
-                sales_df = st.session_state.dashboard_data.get("sales_active", pd.DataFrame())
-                if not sales_df.empty:
-                    update_customer_mapping(sales_df)
-                    st.success("Mapping updated!")
-                    st.rerun()
-                else:
-                    st.warning("No active sales data to update from.")
-        
-        mapping_df = load_customer_mapping()
-        if mapping_df.empty:
-            st.warning("⚠️ No customer mapping found. Please run the build script or update mapping.")
-        else:
-            st.success(f"✅ **{len(mapping_df):,}** customers indexed")
-            st.caption("Data Sources: WooCommerce History + External Sheets")
+        _render_mapping_updater_fragment()
 
     # Results section below filters
     _render_main_content(filters)
+
+
+@st.fragment
+def _render_mapping_updater_fragment() -> None:
+    """Isolated UI component that updates customer mapping without full page reload."""
+    st.markdown("### ⚙️ Optimization")
+    if st.button("🔄 Update Customer Mapping", width="stretch", help="Fetch recent orders and update first-order dates"):
+        with st.spinner("Updating mapping..."):
+            sales_df = app_state.sales_active
+            if not sales_df.empty:
+                update_customer_mapping(sales_df)
+                st.success("Mapping updated!")
+            else:
+                st.warning("No active sales data to update from.")
+    
+    mapping_df = load_customer_mapping()
+    if mapping_df.empty:
+        st.warning("⚠️ No customer mapping found. Please run the build script or update mapping.")
+    else:
+        st.success(f"✅ **{len(mapping_df):,}** customers indexed")
+        st.caption("Data Sources: WooCommerce History + External Sheets")
 
 
 def _render_consolidation_tab() -> None:
@@ -241,7 +247,7 @@ def _render_main_content(filters: Dict[str, Any]) -> None:
         st.info("📊 Please sync data to use customer filters.")
         return
     
-    sales_df = st.session_state.dashboard_data.get("sales_active", pd.DataFrame())
+    sales_df = app_state.sales_active
     
     if sales_df.empty:
         st.info("📭 No sales data available. Please sync data first.")

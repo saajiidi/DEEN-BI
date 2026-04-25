@@ -117,9 +117,9 @@ def get_category_for_sales(name) -> str:
         return "Jeans"
 
     # T-Shirt (Must be before general Shirt)
-    if _has_any(["t-shirt", "t shirt", "tee"], name_str):
+    if _has_any(["t-shirt", "t shirt", "tee", "tank top", "tank-top"], name_str):
         if _has_any(["drop shoulder"], name_str): return "T-Shirt - Drop Shoulder"
-        if _has_any(["tank top"], name_str): return "T-Shirt - Tank Top"
+        if _has_any(["tank top", "tank-top"], name_str): return "T-Shirt - Tank Top"
         if _has_any(["active wear", "activewear"], name_str): return "T-Shirt - Active Wear"
         if _has_any(["jersey", "jersy"], name_str): return "T-Shirt - Jersey"
         
@@ -288,4 +288,3 @@ def apply_category_expert_rules(df: pd.DataFrame, name_col: str = "item_name") -
             
     df['Category'] = df[target_col].apply(get_category_for_sales)
     return df
-
