@@ -16,11 +16,14 @@ logger = get_logger("category_matrix")
 
 def render_category_matrix(
     sales_df: pd.DataFrame, 
+    returns_df: Optional[pd.DataFrame] = None,
+    top_n: int = 5,
     cat_col: str = "Category",
     subcat_col: str = "_clean_name", 
     val_col: str = "total",
     order_col: str = "order_id",
-    date_col: str = "date_created"
+    date_col: str = "date_created",
+    qty_col: str = "qty"
 ) -> None:
     """Render the HTML matrix view for category and sub-category sales data."""
     if sales_df is None or sales_df.empty:
@@ -41,6 +44,24 @@ def render_category_matrix(
             
     if order_col not in df.columns:
         df[order_col] = df.index  # fallback for counting
+        
+    if qty_col not in df.columns:
+        df[qty_col] = 1
+
+    # Derive Main Category and Sub-Category from the hierarchy (e.g. Jeans -> Regular Fit)
+    df['_main_cat'] = df[cat_col].apply(lambda x: str(x).split(' - ')[0].strip() if pd.notna(x) else 'Unknown')
+    df['_sub_cat'] = df[cat_col].apply(lambda x: str(x).split(' - ')[1].strip() if pd.notna(x) and ' - ' in str(x) else str(x).strip())
+
+    # Integrate Returns Data for High Return Rate Warnings
+    if returns_df is None and "returns_data" in st.session_state:
+        returns_df = st.session_state.returns_data
+        
+    df['is_returned'] = False
+    if returns_df is not None and not returns_df.empty and 'issue_type' in returns_df.columns:
+        ret_orders = returns_df[returns_df['issue_type'].isin(['Paid Return', 'Non Paid Return', 'Partial'])]['order_id'].astype(str).unique()
+        df['is_returned'] = df[order_col].astype(str).isin(ret_orders)
+        
+    df['ret_qty'] = df[qty_col].where(df['is_returned'], 0)
 
     # 2. Date grouping for Week-over-Week (WoW) Comparison
     df['period'] = 'current'
@@ -61,23 +82,23 @@ def render_category_matrix(
     <style>
         .matrix-dashboard-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
             gap: 1.5rem;
             align-items: start;
             width: 100%;
             margin: 0 auto;
-            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
         }
         .matrix-card {
-            background: white;
+            background: var(--surface, white);
             border-radius: 1rem;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
             transition: all 0.2s;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--outline, #e2e8f0);
+            container-type: inline-size;
         }
         .matrix-card-header {
             padding: 1rem 1.25rem;
-            border-bottom: 1px solid #e2e8f0;
+            border-bottom: 1px solid var(--outline, #e2e8f0);
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -91,14 +112,15 @@ def render_category_matrix(
             gap: 0.6rem;
         }
         .matrix-title-section h3 {
-            font-size: 1.1rem;
+            font-size: clamp(0.9rem, 5cqi, 1.1rem);
             font-weight: 600;
-            color: #0f172a;
+            color: var(--on-surface, #0f172a);
             margin: 0;
         }
         .matrix-icon {
             font-size: 1.4rem;
-            background: #eef2ff;
+            background: rgba(16, 185, 129, 0.1);
+            color: #10b981;
             padding: 0.3rem;
             border-radius: 12px;
             display: inline-flex;
@@ -113,9 +135,9 @@ def render_category_matrix(
             font-size: 0.8rem;
             font-weight: 500;
         }
-        .matrix-positive { color: #10b981; background: #d1fae5; }
-        .matrix-negative { color: #ef4444; background: #fee2e2; }
-        .matrix-neutral { color: #64748b; background: #f1f5f9; }
+        .matrix-positive { color: #10b981; background: rgba(16, 185, 129, 0.15); }
+        .matrix-negative { color: #ef4444; background: rgba(239, 68, 68, 0.15); }
+        .matrix-neutral { color: var(--on-surface-variant, #64748b); background: rgba(100, 116, 139, 0.15); }
         .matrix-scroll {
             overflow-x: auto;
             overflow-y: hidden;
@@ -123,7 +145,7 @@ def render_category_matrix(
             scroll-behavior: smooth;
         }
         .matrix-table {
-            min-width: 500px;
+            min-width: 400px;
             width: 100%;
             border-collapse: collapse;
             font-size: 0.85rem;
@@ -131,26 +153,26 @@ def render_category_matrix(
         .matrix-table th, .matrix-table td {
             padding: 0.9rem 1rem;
             text-align: left;
-            border-bottom: 1px solid #eef2f6;
+            border-bottom: 1px solid var(--outline, #eef2f6);
             white-space: nowrap;
-            color: #334155;
+            color: var(--on-surface-variant, #334155);
         }
         .matrix-table th {
-            background-color: #fafcff;
+            background-color: var(--surface, #fafcff);
             font-weight: 600;
-            color: #1e293b;
+            color: var(--on-surface, #1e293b);
             font-size: 0.8rem;
             text-transform: uppercase;
             letter-spacing: 0.3px;
         }
-        .matrix-revenue { font-weight: 700; color: #0f172a; }
+        .matrix-revenue { font-weight: 700; color: var(--on-surface, #0f172a); }
         .matrix-trend {
             display: inline-flex;
             align-items: center;
             gap: 0.2rem;
             font-weight: 500;
             font-size: 0.8rem;
-            background: #f8fafc;
+            background: var(--surface, #f8fafc);
             padding: 0.2rem 0.5rem;
             border-radius: 1rem;
         }
@@ -161,17 +183,15 @@ def render_category_matrix(
         .matrix-card-footer {
             padding: 0.75rem 1.25rem;
             font-size: 0.75rem;
-            color: #64748b;
+            color: var(--on-surface-variant, #64748b);
             text-align: right;
-            background: #fafcff;
+            background: var(--surface, #fafcff);
             border-radius: 0 0 1rem 1rem;
-        }
-        @media (max-width: 1280px) {
-            .matrix-dashboard-grid { grid-template-columns: 1fr; gap: 1.2rem; }
+            border-top: 1px solid var(--outline, #eef2f6);
         }
         .matrix-scroll::-webkit-scrollbar { height: 6px; }
-        .matrix-scroll::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 4px; }
-        .matrix-scroll::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
+        .matrix-scroll::-webkit-scrollbar-track { background: var(--surface, #e2e8f0); border-radius: 4px; }
+        .matrix-scroll::-webkit-scrollbar-thumb { background: var(--outline, #94a3b8); border-radius: 4px; }
     </style>
     """
 
@@ -185,11 +205,11 @@ def render_category_matrix(
 
     cards_html = ""
     
-    # 4. Generate Cards by Category (Sorted by Top Revenue)
-    cat_metrics = df.groupby(cat_col)[val_col].sum().sort_values(ascending=False)
+    # 4. Generate Cards by Main Category (Sorted by Top Revenue)
+    cat_metrics = df.groupby('_main_cat')[val_col].sum().sort_values(ascending=False)
     
     for cat in cat_metrics.index:
-        cat_df = df[df[cat_col] == cat]
+        cat_df = df[df['_main_cat'] == cat]
         
         curr_df = cat_df[cat_df['period'] == 'current']
         prev_df = cat_df[cat_df['period'] == 'previous']
@@ -206,16 +226,50 @@ def render_category_matrix(
         elif prev_cat_rev == 0 and curr_cat_rev == 0:
             badge_text, badge_class = "No change", "matrix-neutral"
 
-        # 5. Generate Rows by Sub-Category (Top 10)
-        sub_metrics = cat_df.groupby(subcat_col).agg({
-            val_col: 'sum', order_col: 'nunique'
-        }).rename(columns={val_col: 'rev_total', order_col: 'orders_total'}).sort_values('rev_total', ascending=False).head(10)
+        # 5. Generate Rows by Sub-Category with "Others" aggregation
+        sub_metrics = cat_df.groupby('_sub_cat').agg(
+            rev_total=(val_col, 'sum'),
+            items_total=(qty_col, 'sum'),
+            ret_total=('ret_qty', 'sum')
+        ).sort_values('rev_total', ascending=False)
         
-        rows_html = ""
-        for subcat, row in sub_metrics.iterrows():
-            sub_curr = curr_df[curr_df[subcat_col] == subcat][val_col].sum()
-            sub_prev = prev_df[prev_df[subcat_col] == subcat][val_col].sum()
+        top_subs = sub_metrics.head(top_n)
+        other_subs = sub_metrics.iloc[top_n:]
+        
+        curr_subs = curr_df.groupby('_sub_cat')[val_col].sum()
+        prev_subs = prev_df.groupby('_sub_cat')[val_col].sum()
+
+        max_sub_rev = top_subs['rev_total'].max() if not top_subs.empty else 1
+
+        rows_data = []
+        for subcat, row in top_subs.iterrows():
+            rows_data.append({
+                'name': subcat,
+                'items': row['items_total'],
+                'rev': row['rev_total'],
+                'ret': row['ret_total'],
+                'curr': curr_subs.get(subcat, 0),
+                'prev': prev_subs.get(subcat, 0),
+                'is_other': False
+            })
             
+        if not other_subs.empty:
+            rows_data.append({
+                'name': 'Others',
+                'items': other_subs['items_total'].sum(),
+                'rev': other_subs['rev_total'].sum(),
+                'ret': other_subs['ret_total'].sum(),
+                'curr': curr_subs[other_subs.index].sum() if not other_subs.empty else 0,
+                'prev': prev_subs[other_subs.index].sum() if not other_subs.empty else 0,
+                'is_other': True,
+                'other_count': len(other_subs)
+            })
+
+        rows_html = ""
+        for r in rows_data:
+            sub_curr = r['curr']
+            sub_prev = r['prev']
+        
             sub_growth = ((sub_curr - sub_prev) / sub_prev * 100) if sub_prev > 0 else 0
             if sub_prev == 0 and sub_curr > 0:
                 trend_html = '<span class="matrix-trend matrix-trend-up">▲ New</span>'
@@ -226,35 +280,36 @@ def render_category_matrix(
             else:
                 trend_html = '<span class="matrix-trend">➖ 0%</span>'
             
-            rows_html += f"""
-            <tr>
-                <td>{subcat}</td>
-                <td>{int(row['orders_total']):,}</td>
-                <td class="matrix-revenue">{format_currency(row['rev_total'])}</td>
-                <td>{trend_html}</td>
-                <td class="matrix-view-icon">👁️</td>
-            </tr>
-            """
+            bar_pct = min((r['rev'] / max_sub_rev * 100), 100) if max_sub_rev > 0 else 0
+            
+            if r['is_other']:
+                bg_style = f"background: linear-gradient(90deg, rgba(100, 116, 139, 0.1) {bar_pct}%, transparent {bar_pct}%);"
+                tooltip = f"Includes {r['other_count']} aggregated sub-categories"
+            else:
+                bg_style = f"background: linear-gradient(90deg, rgba(16, 185, 129, 0.12) {bar_pct}%, transparent {bar_pct}%);"
+                avg_price = r['rev'] / r['items'] if r['items'] > 0 else 0
+                tooltip = f"Avg Price: {format_currency(avg_price)}"
+                
+            ret_rate = (r['ret'] / r['items'] * 100) if r['items'] > 0 else 0
+            warning_html = f" <span title='High Return Rate: {ret_rate:.1f}%' style='color: #ef4444; font-size: 0.85rem; cursor: help;'>⚠️</span>" if ret_rate >= 10 else ""
+            
+            subcat_display = f"{r['name']}{warning_html}"
 
-        cards_html += f"""
-        <div class="matrix-card">
-            <div class="matrix-card-header">
-                <div class="matrix-title-section">
-                    <span class="matrix-icon">{get_cat_icon(cat)}</span>
-                    <h3>{cat} · Revenue Matrix</h3>
-                </div>
-                <div class="matrix-comparison-badge {badge_class}">{badge_text}</div>
-            </div>
-            <div class="matrix-scroll">
-                <table class="matrix-table">
-                    <thead>
-                        <tr><th>Sub-Category</th><th>Total Orders</th><th>Revenue</th><th>vs Prev week</th><th>View</th></tr>
-                    </thead>
-                    <tbody>{rows_html}</tbody>
-                </table>
-            </div>
-            <div class="matrix-card-footer">WoW comparison · Top Sub-Categories</div>
-        </div>
-        """
+            # Formatted without leading indentation to prevent Streamlit Markdown Code Block parsing
+            rows_html += f"<tr><td>{subcat_display}</td><td>{int(r['items']):,}</td><td class='matrix-revenue' style='{bg_style}'>{format_currency(r['rev'])}</td><td>{trend_html}</td><td class='matrix-view-icon' title='{tooltip}'>ℹ️</td></tr>"
+
+        cards_html += (
+            f"<div class='matrix-card'>"
+            f"<div class='matrix-card-header'><div class='matrix-title-section'>"
+            f"<span class='matrix-icon'>{get_cat_icon(cat)}</span>"
+            f"<h3>{cat} · Revenue Matrix</h3></div>"
+            f"<div class='matrix-comparison-badge {badge_class}'>{badge_text}</div></div>"
+            f"<div class='matrix-scroll'><table class='matrix-table'>"
+            f"<thead><tr><th>Sub-Category</th><th>Items Sold</th><th>Revenue</th><th>vs Prev week</th><th>View</th></tr></thead>"
+            f"<tbody>{rows_html}</tbody>"
+            f"</table></div>"
+            f"<div class='matrix-card-footer'>WoW comparison · Top Sub-Categories</div>"
+            f"</div>"
+        )
 
     st.markdown(f"{css}<div class='matrix-dashboard-grid'>{cards_html}</div>", unsafe_allow_html=True)

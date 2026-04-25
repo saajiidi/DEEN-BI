@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 from FrontEnd.components import ui
+from FrontEnd.components.category_matrix import render_category_matrix
 from BackEnd.core.categories import parse_sku_variants, get_clean_product_name, get_master_category_list, format_category_label
 
 def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev: pd.DataFrame = None, window_label: str = "period"):
@@ -93,6 +94,16 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
     # MAIN UI LAYOUT
     st.markdown("### 📥 Sales Data Ingestion & Analysis")
     st.caption("Perform high-resolution segment analysis to identify operational opportunities and regional hotspots.")
+    
+    # CATEGORY MATRIX
+    render_category_matrix(
+        sales_df=df_sales,
+        cat_col="Category",
+        subcat_col="_clean_name",
+        val_col="item_revenue",
+        order_col="order_id",
+        date_col="order_date"
+    )
     
     # FILTER CONTROL CENTER
     with st.expander("🛠️ Advanced Cluster Filters", expanded=True):
