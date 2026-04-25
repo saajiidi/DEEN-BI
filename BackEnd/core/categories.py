@@ -117,7 +117,7 @@ def get_category_for_sales(name) -> str:
         return "Jeans"
 
     # T-Shirt (Must be before general Shirt)
-    if _has_any(["t-shirt", "t shirt", "tee", "tank top", "tank-top"], name_str):
+    if _has_any(["t-shirt", "t shirt", "tee", "tank top", "tank-top", "active wear", "activewear"], name_str):
         if _has_any(["drop shoulder"], name_str): return "T-Shirt - Drop Shoulder"
         if _has_any(["tank top", "tank-top"], name_str): return "T-Shirt - Tank Top"
         if _has_any(["active wear", "activewear"], name_str): return "T-Shirt - Active Wear"
@@ -162,23 +162,17 @@ def get_category_for_sales(name) -> str:
 
     # Twill Chino
     if _has_any(["twill", "chino"], name_str):
-        if _has_any(["jogger"], name_str): return "Twill Chino - Twill Joggers"
+        if _has_any(["jogger", "joggers"], name_str): return "Twill Chino - Twill Joggers"
         if _has_any(["five pocket", "5 pocket", "5-pocket"], name_str): return "Twill Chino - Five Pockets"
         return "Twill Chino - Twill Chino Pant"
 
     # Trousers
-    if _has_any(["trouser", "jogger", "pants", "gabardine"], name_str):
+    if _has_any(["trouser", "trousers", "jogger", "joggers", "pant", "pants", "gabardine"], name_str):
         if _has_any(["regular"], name_str) and _has_any(["fit"], name_str): return "Trousers - Cotton Trousers"
-        if _has_any(["jogger"], name_str): return "Trousers - Joggers"
+        if _has_any(["jogger", "joggers"], name_str): return "Trousers - Joggers"
         return "Trousers - Trousers"
 
     # 3. STATIC / BUNDLES
-    if "bundle" in name_str:
-        detected = []
-        if _has_any(["t-shirt", "t shirt", "tee"], name_str): detected.append("T-Shirt")
-        if _has_any(["jeans", "denim"], name_str): detected.append("Jeans")
-        if _has_any(["boxer"], name_str): detected.append("Boxer")
-        return f"Bundles - {' + '.join(detected)}" if detected else "Bundles"
 
     specific_cats = {
         "Boxer": ["boxer"],

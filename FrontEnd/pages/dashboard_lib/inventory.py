@@ -30,7 +30,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
     inventory[["_color", "_size"]] = inventory["Name"].apply(lambda x: pd.Series(parse_sku_variants(x)))
     
     # Enforce DEEN-BI standard categories over raw WooCommerce tags
-    inventory["Category"] = inventory["Name"].apply(get_category_for_sales)
+    inventory["Category"] = inventory.apply(lambda x: get_category_for_sales(str(x.get("Name", "")) + " " + str(x.get("SKU", ""))), axis=1)
         
     # --- Real Velocity & Trend Calculation ---
     if df_sales is not None and not df_sales.empty:

@@ -87,7 +87,7 @@ def process_single_order_group(phone, group, data_cols):
     for _, row in group.iterrows():
         item_name = row.get("Item Name", "")
         sku = row.get("SKU", "")
-        category = get_category_for_orders(item_name)
+        category = get_category_for_orders(f"{item_name} {sku}")
 
         # Format: "Item Name - SKU"
         item_str = f"{item_name} - {sku}"
