@@ -183,10 +183,10 @@ def get_category_for_sales(name) -> str:
         return "Twill - Twill Chino"
 
     # Trousers
-    if _has_any(["trouser", "jogger", "pants", "pant", "gabardine", "cargo", "sweatpant", "track pant", "track pants"], name_str):
+    if _has_any(["trouser", "trousers", "jogger", "joggers", "pants", "pant", "gabardine", "cargo", "cargos", "sweatpant", "sweatpants", "track pant", "track pants"], name_str):
         if _has_any(["french terry"], name_str): return "Trousers - French Terry Trousers"
-        if _has_any(["regular", "fit"], name_str) and not _has_any(["jogger", "cargo"], name_str): return "Trousers - Cotton Trousers"
-        if _has_any(["jogger"], name_str): return "Trousers - Joggers"
+        if _has_any(["regular", "fit"], name_str) and not _has_any(["jogger", "joggers", "cargo", "cargos"], name_str): return "Trousers - Cotton Trousers"
+        if _has_any(["jogger", "joggers"], name_str): return "Trousers - Joggers"
         return "Trousers - Trousers"
 
     # 3. STATIC / BUNDLES
@@ -214,9 +214,9 @@ def get_category_for_sales(name) -> str:
         "Jacket": ["jacket", "outerwear", "coat", "windbreaker", "blazer", "shacket", "bomber"],
         "Sweater": ["sweater", "cardigan", "knitwear", "jumper"],
         "Cap": ["cap", "hat", "beanie"],
-        "Shorts": ["short", "half pant", "swim trunk"],
+        "Shorts": ["short", "shorts", "half pant", "swim trunk"],
         "Socks": ["sock", "socks", "anklet"],
-        "Footwear": ["shoe", "sneaker", "sandal", "slipper", "loafer", "boot", "slides"],
+        "Footwear": ["shoe", "shoes", "sneaker", "sneakers", "sandal", "sandals", "slipper", "slippers", "loafer", "loafers", "boot", "boots", "slides", "slide"],
         "Perfume & Fragrance": ["perfume", "fragrance", "attar", "cologne", "body spray", "mist"],
         "Gift Box": ["gift box", "gift packaging", "wrapping"],
         "Accessories": ["sunglass", "watch", "bracelet", "ring", "necklace", "pendant"],

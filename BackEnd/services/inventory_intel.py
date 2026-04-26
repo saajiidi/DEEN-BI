@@ -15,6 +15,19 @@ class InventoryIntelligence:
         self.stock_prod_col = self._find_col(stock_df, ["Name", "Product Name", "Item Name", "Product"])
         self.stock_qty_col = self._find_col(stock_df, ["Stock Quantity", "Stock", "Quantity", "Qty"])
 
+        # Pre-calculate stock quantities for fast lookups
+        if not self.stock_df.empty and self.stock_prod_col in self.stock_df.columns and self.stock_qty_col in self.stock_df.columns:
+            # The stock_df (inventory) from inventory.py has _clean_name
+            if "_clean_name" in self.stock_df.columns:
+                self.stock_lookup = self.stock_df.groupby("_clean_name")[self.stock_qty_col].sum().to_dict()
+            else: # Fallback if clean name not pre-calculated
+                from BackEnd.core.categories import get_clean_product_name
+                temp_stock = self.stock_df.copy()
+                temp_stock["_clean_name"] = temp_stock[self.stock_prod_col].apply(get_clean_product_name)
+                self.stock_lookup = temp_stock.groupby("_clean_name")[self.stock_qty_col].sum().to_dict()
+        else:
+            self.stock_lookup = {}
+
     def _find_col(self, df, candidates):
         cols = {str(c).lower().strip(): c for c in df.columns}
         for cand in candidates:
@@ -52,6 +65,7 @@ class InventoryIntelligence:
         """Finds items (Orphan Stock) where the affinity partner is OOS."""
         try:
             from BackEnd.services.affinity_engine import MarketBasketEngine
+            from BackEnd.core.categories import get_clean_product_name
         except ImportError:
             return pd.DataFrame()
             
@@ -63,22 +77,35 @@ class InventoryIntelligence:
             
         orphans = []
         for _, rule in rules.iterrows():
-            item_a = rule['Antecedent']
-            item_b = rule['Consequent']
+            # The affinity engine may use full names, so we clean them for stock lookup
+            item_a = get_clean_product_name(rule['Antecedent'])
+            item_b = get_clean_product_name(rule['Consequent'])
             
-            stock_a = self.stock_df[self.stock_df[self.stock_prod_col] == item_a][self.stock_qty_col].sum()
-            stock_b = self.stock_df[self.stock_df[self.stock_prod_col] == item_b][self.stock_qty_col].sum()
+            stock_a = self.stock_lookup.get(item_a, 0)
+            stock_b = self.stock_lookup.get(item_b, 0)
             
             # If A is in stock but B is out of stock, A is orphaned
             if stock_a > 0 and stock_b <= 0:
                 orphans.append({
                     "In_Stock_Item": item_a,
-                    "Stock_Qty": stock_a,
+                    "Stock_Qty": int(stock_a),
                     "Missing_Partner": item_b,
                     "Lift (Correlation)": round(rule['Lift'], 2),
                     "Action": f"Restock {item_b} to unblock {item_a} sales"
                 })
+            # If B is in stock but A is out of stock, B is orphaned
+            elif stock_b > 0 and stock_a <= 0:
+                orphans.append({
+                    "In_Stock_Item": item_b,
+                    "Stock_Qty": int(stock_b),
+                    "Missing_Partner": item_a,
+                    "Lift (Correlation)": round(rule['Lift'], 2),
+                    "Action": f"Restock {item_a} to unblock {item_b} sales"
+                })
                 
+        if not orphans:
+            return pd.DataFrame()
+            
         return pd.DataFrame(orphans).sort_values("Lift (Correlation)", ascending=False).drop_duplicates(subset=["In_Stock_Item"])
 
     def component_dependency_ratio(self, item_a: str, item_b: str):

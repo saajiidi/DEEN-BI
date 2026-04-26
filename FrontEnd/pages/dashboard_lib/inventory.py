@@ -243,6 +243,21 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
                 fig_val_bar.update_layout(height=max(450, len(top_val_df) * 30))
                 st.plotly_chart(fig_val_bar, width="stretch")
                 
+            st.divider()
+            st.markdown(f"##### 📋 Detailed {group_label} Ledger")
+            display_table = cat_agg.sort_values("Selected_Value", ascending=False).copy()
+            st.dataframe(
+                display_table,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Display Category": st.column_config.TextColumn(group_label),
+                    "Selected_Value": st.column_config.NumberColumn(val_basis, format="৳%.0f"),
+                    "Total_Units": st.column_config.NumberColumn("Total Units", format="%d"),
+                    "SKU_Count": st.column_config.NumberColumn("Unique SKUs", format="%d")
+                }
+            )
+
         with t2:
             breadth_label = "Variants" if group_basis == "Variant" else "SKUs"
             fig_sku_bar = ui.bar_chart(top_sku_df, x="SKU_Count", y="Display Category", title=f"{breadth_label} Breadth per {group_label}", color="SKU_Count")

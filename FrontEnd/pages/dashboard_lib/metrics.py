@@ -3,7 +3,7 @@ import streamlit as st
 from FrontEnd.components import ui
 from .data_helpers import sum_order_level_revenue, build_order_level_dataset
 
-def render_executive_summary(df_sales: pd.DataFrame, df_customers: pd.DataFrame, summary: dict):
+def render_executive_summary(df_sales: pd.DataFrame, df_customers: pd.DataFrame, summary: dict, df_prev_sales: pd.DataFrame = None):
     st.subheader("Executive Summary")
     df = df_sales[df_sales["order_date"].notna()].copy()
     order_df = build_order_level_dataset(df)
@@ -13,15 +13,43 @@ def render_executive_summary(df_sales: pd.DataFrame, df_customers: pd.DataFrame,
     total_items = float(df["qty"].sum())
     pending_count = len(df[df["order_status"].str.lower().isin(["pending", "processing", "on-hold"])])
 
+    d_rev_label, d_rev_val = None, None
+    d_ord_label, d_ord_val = None, None
+    d_aov_label, d_aov_val = None, None
+    d_cust_label, d_cust_val = None, None
+    d_items_label, d_items_val = None, None
+
+    if df_prev_sales is not None and not df_prev_sales.empty:
+        prev_df = df_prev_sales[df_prev_sales["order_date"].notna()].copy()
+        prev_order_df = build_order_level_dataset(prev_df)
+        prev_revenue = sum_order_level_revenue(prev_df)
+        prev_orders = prev_order_df["order_id"].replace("", pd.NA).dropna().nunique() if not prev_order_df.empty else 0
+        prev_customers = prev_df["customer_key"].replace("", pd.NA).dropna().nunique()
+        prev_items = float(prev_df["qty"].sum())
+        prev_aov = prev_revenue / prev_orders if prev_orders else 0
+        
+        def get_delta(curr, prev):
+            if prev <= 0: return None, None
+            diff = curr - prev
+            pct = (diff / prev) * 100
+            sign = "+" if diff > 0 else ""
+            return f"{sign}{pct:.1f}% vs prev", diff
+
+        d_rev_label, d_rev_val = get_delta(total_revenue, prev_revenue)
+        d_ord_label, d_ord_val = get_delta(total_orders, prev_orders)
+        d_aov_label, d_aov_val = get_delta(total_revenue / total_orders if total_orders else 0, prev_aov)
+        d_cust_label, d_cust_val = get_delta(active_customers, prev_customers)
+        d_items_label, d_items_val = get_delta(total_items, prev_items)
+
     k1, k2, k3, k4, k5 = st.columns(5)
-    with k1: ui.icon_metric("Revenue", f"TK {total_revenue:,.0f}", icon="💰"); ui.badge("Order-level totals")
-    with k2: ui.icon_metric("Orders", f"{total_orders:,}", icon="🛒"); ui.badge("Normalized count")
-    with k3: ui.icon_metric("AOV", f"TK { (total_revenue/total_orders) if total_orders else 0:,.0f}", icon="💳"); ui.badge("Direct calc")
-    with k4: ui.icon_metric("Customers", f"{active_customers:,}", icon="👥"); ui.badge("Distinct keys")
+    with k1: ui.icon_metric("Revenue", f"TK {total_revenue:,.0f}", icon="💰", delta=d_rev_label, delta_val=d_rev_val); ui.badge("Order-level totals")
+    with k2: ui.icon_metric("Orders", f"{total_orders:,}", icon="🛒", delta=d_ord_label, delta_val=d_ord_val); ui.badge("Normalized count")
+    with k3: ui.icon_metric("AOV", f"TK { (total_revenue/total_orders) if total_orders else 0:,.0f}", icon="💳", delta=d_aov_label, delta_val=d_aov_val); ui.badge("Direct calc")
+    with k4: ui.icon_metric("Customers", f"{active_customers:,}", icon="👥", delta=d_cust_label, delta_val=d_cust_val); ui.badge("Distinct keys")
     with k5: ui.icon_metric("Pending", f"{pending_count:,}", icon="⏳", delta="Action required" if pending_count > 5 else "Healthy", delta_color="inverse" if pending_count > 5 else "normal")
 
     s1, s2, s3 = st.columns(3)
-    with s1: ui.icon_metric("Items Sold", f"{total_items:,.0f}", icon="📦"); st.caption(f"WooCommerce: {summary.get('woocommerce_live',0):,} rows")
+    with s1: ui.icon_metric("Items Sold", f"{total_items:,.0f}", icon="📦", delta=d_items_label, delta_val=d_items_val); st.caption(f"WooCommerce: {summary.get('woocommerce_live',0):,} rows")
     with s2: ui.icon_metric("Repeat Rate", f"{float((df_customers['total_orders'] > 1).mean() * 100) if not df_customers.empty else 0:.1f}%", icon="🔄"); ui.badge("Retention base")
     with s3: ui.icon_metric("Latest Order", df["order_date"].max().strftime("%Y-%m-%d %H:%M") if not df.empty and pd.notna(df["order_date"].max()) else "N/A", icon="🗓️")
 
