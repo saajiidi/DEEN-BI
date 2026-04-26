@@ -7,6 +7,7 @@ CATEGORY_MAPPING = {
     'FS Shirt - Denim Shirt': ['denim'],
     'FS Shirt - Flannel Shirt': ['flannel'],
     'FS Shirt - Oxford Shirt': ['oxford'],
+    'FS Shirt - Executive Formal Shirt': ['executive', 'formal'],
     'Polo Shirt': ['polo'],
     'Panjabi': ['panjabi', 'punjabi'],
     'Trousers': ['trousers', 'pant', 'cargo', 'trouser', 'joggers', 'track pant', 'jogger'],

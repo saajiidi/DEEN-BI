@@ -19,7 +19,7 @@ def get_category_for_orders(name) -> str:
 CATEGORIES_PRIORITY = [
     "Jeans", "Jeans - Regular Fit", "Jeans - Slim Fit", "Jeans - Straight Fit",
     "T-Shirt", "T-Shirt - HS T-Shirt", "T-Shirt - FS T-Shirt", "T-Shirt - Drop Shoulder", "T-Shirt - Tank Top", "T-Shirt - Active Wear", "T-Shirt - Jersey",
-    "FS Shirt", "FS Shirt - Flannel Shirt", "FS Shirt - Denim Shirt", "FS Shirt - Oxford Shirt", "FS Shirt - Kaftan Shirt", "FS Shirt - FS Casual Shirt",
+    "FS Shirt", "FS Shirt - Flannel Shirt", "FS Shirt - Denim Shirt", "FS Shirt - Oxford Shirt", "FS Shirt - Kaftan Shirt", "FS Shirt - Executive Formal Shirt", "FS Shirt - FS Casual Shirt",
     "HS Shirt", "HS Shirt - Contrast Shirt", "HS Shirt - HS Casual Shirt",
     "Wallet", "Wallet - Passport Holder", "Wallet - Card Holder", "Wallet - Long Wallet", "Wallet - Bifold Wallet", "Wallet - Trifold Wallet",
     "Panjabi", "Panjabi - Panjabi", "Panjabi - Embroidered Panjabi",
@@ -117,10 +117,10 @@ def get_category_for_sales(name) -> str:
         return "Jeans"
 
     # T-Shirt (Must be before general Shirt)
-    if _has_any(["t-shirt", "t shirt", "tee", "tank top", "tank-top", "active wear", "activewear", "active-wear", "gym wear"], name_str):
+    if _has_any(["t-shirt", "t shirt", "tee"], name_str):
         if _has_any(["drop shoulder"], name_str): return "T-Shirt - Drop Shoulder"
-        if _has_any(["tank top", "tank-top", "sleeveless"], name_str): return "T-Shirt - Tank Top"
-        if _has_any(["active wear", "activewear", "active-wear", "gym wear"], name_str): return "T-Shirt - Active Wear"
+        if _has_any(["tank top"], name_str): return "T-Shirt - Tank Top"
+        if _has_any(["active wear", "activewear"], name_str): return "T-Shirt - Active Wear"
         if _has_any(["jersey", "jersy"], name_str): return "T-Shirt - Jersey"
         
         fs_keywords = ["full sleeve", "long sleeve", "fs", "l/s"]
@@ -132,11 +132,12 @@ def get_category_for_sales(name) -> str:
     is_shirt = _has_any(["shirt"], name_str)
     
     # Force certain types into FS Shirt even if 'full sleeve' is missing
-    if is_shirt and (_has_any(fs_keywords, name_str) or _has_any(["flannel", "denim", "oxford"], name_str)):
+    if is_shirt and (_has_any(fs_keywords, name_str) or _has_any(["flannel", "denim", "oxford", "kaftan", "executive", "formal"], name_str)):
         if _has_any(["flannel"], name_str): return "FS Shirt - Flannel Shirt"
         if _has_any(["denim"], name_str): return "FS Shirt - Denim Shirt"
         if _has_any(["oxford"], name_str): return "FS Shirt - Oxford Shirt"
         if _has_any(["kaftan"], name_str): return "FS Shirt - Kaftan Shirt"
+        if _has_any(["executive", "formal"], name_str): return "FS Shirt - Executive Formal Shirt"
         if _has_any(["casual"], name_str): return "FS Shirt - FS Casual Shirt"
         return "FS Shirt"
 
@@ -162,17 +163,23 @@ def get_category_for_sales(name) -> str:
 
     # Twill Chino
     if _has_any(["twill", "chino"], name_str):
-        if _has_any(["jogger", "joggers"], name_str): return "Twill Chino - Twill Joggers"
+        if _has_any(["jogger"], name_str): return "Twill Chino - Twill Joggers"
         if _has_any(["five pocket", "5 pocket", "5-pocket"], name_str): return "Twill Chino - Five Pockets"
         return "Twill Chino - Twill Chino Pant"
 
     # Trousers
-    if _has_any(["trouser", "trousers", "jogger", "joggers", "pant", "pants", "gabardine", "track pant", "track pants"], name_str):
+    if _has_any(["trouser", "jogger", "pants", "gabardine"], name_str):
         if _has_any(["regular"], name_str) and _has_any(["fit"], name_str): return "Trousers - Cotton Trousers"
-        if _has_any(["jogger", "joggers", "track pant", "track pants"], name_str): return "Trousers - Joggers"
+        if _has_any(["jogger"], name_str): return "Trousers - Joggers"
         return "Trousers - Trousers"
 
     # 3. STATIC / BUNDLES
+    if "bundle" in name_str:
+        detected = []
+        if _has_any(["t-shirt", "t shirt", "tee"], name_str): detected.append("T-Shirt")
+        if _has_any(["jeans", "denim"], name_str): detected.append("Jeans")
+        if _has_any(["boxer"], name_str): detected.append("Boxer")
+        return f"Bundles - {' + '.join(detected)}" if detected else "Bundles"
 
     specific_cats = {
         "Boxer": ["boxer"],

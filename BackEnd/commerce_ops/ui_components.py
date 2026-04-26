@@ -447,11 +447,11 @@ def premium_metric_card(label: str, value: str, icon: str, help_text: str = "", 
                     {icon}
                 </div>
             </div>
-            <div class="pmc-value" style="font-size: clamp(1.4rem, 3.5vw, 2.2rem); font-weight: 800; color: {value_color}; line-height: 1.1; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;">
+            <div class="pmc-value" style="font-size: clamp(1.4rem, 3.5vw, 2.2rem); font-weight: 800; color: var(--text-color); line-height: 1.1; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;">
                 {value}
             </div>
             <div class="pmc-footer" style="font-size: clamp(0.55rem, 1vw, 0.65rem); color: #94a3b8; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; margin-top: auto; min-height: 16px; display: flex; justify-content: center; align-items: center;">
-                {footer_content}
+                {help_text}
             </div>
         </div>
     """, unsafe_allow_html=True)

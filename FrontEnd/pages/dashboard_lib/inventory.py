@@ -3,11 +3,31 @@ import streamlit as st
 import plotly.express as px
 import numpy as np
 from datetime import datetime
+from itertools import combinations
+from collections import Counter
 from FrontEnd.components import ui
 from BackEnd.core.categories import get_category_for_sales, parse_sku_variants, get_clean_product_name, get_master_category_list, format_category_label
 
 def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, df_sales: pd.DataFrame = None):
-    st.subheader("📦 Stock Insight")
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        st.subheader("📦 Stock Insight")
+    with c2:
+        if st.button("🔄 Sync Products & Stock", use_container_width=True, help="Fetch latest published products, SKUs, and inventory counts."):
+            with st.spinner("Fetching latest product catalog and stock data..."):
+                from BackEnd.services.hybrid_data_loader import refresh_woocommerce_stock_cache
+                
+                # Force clear Streamlit's in-memory caches to ensure fresh data is displayed
+                try:
+                    from BackEnd.services.woocommerce_client.fetch_products import clear_products_cache
+                    clear_products_cache()
+                except Exception:
+                    pass
+                st.cache_data.clear()
+                
+                refresh_woocommerce_stock_cache()
+                st.toast("✅ Product and Stock data synced successfully!")
+                st.rerun()
     
     if stock_df is None or stock_df.empty:
         st.info("No live inventory data is available yet. Initializing sync...")
@@ -153,6 +173,13 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
                 index=0,
                 horizontal=True
             )
+        with c_filter2:
+            group_basis = st.radio(
+                "Aggregation Level",
+                ["Main Category", "Sub-Category", "Master Product", "Variant"],
+                index=1,
+                horizontal=True
+            )
         
         val_col_map = {
             "Market Value": "Value",
@@ -165,10 +192,13 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
         valid_cats = list(get_master_category_list())
         inventory["Category"] = np.where(inventory["Category"].isin(valid_cats), inventory["Category"], "Others")
         inventory["Main Category"] = inventory["Category"].astype(str).str.split(" - ").str[0]
+        inventory["Sub Category"] = inventory["Category"].apply(lambda x: str(x).split(" - ")[1] if " - " in str(x) else str(x))
+        inventory["Master Product"] = inventory["_clean_name"] + " [" + inventory["SKU"].astype(str) + "]"
+        inventory["Variant"] = inventory["Name"]
         
         # Apply active filters to the strategic analysis
         filtered_inv = inventory.copy()
-        filtered_inv["_display_name"] = filtered_inv["_clean_name"] + " [" + filtered_inv["SKU"].astype(str) + "]"
+        filtered_inv["_display_name"] = filtered_inv["Master Product"]
         
         if active_cat: 
             filtered_inv = filtered_inv[filtered_inv["Category"].str.startswith(active_cat, na=False)]
@@ -177,55 +207,54 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
         if active_prod:
             filtered_inv = filtered_inv[filtered_inv["_display_name"] == active_prod]
 
-        # Dynamic Drill-down Logic
-        if active_prod:
-            group_col = "_size"
-            group_label = "Size"
-            filtered_inv[group_col] = filtered_inv[group_col].replace(["", None], "Unknown")
-        elif active_cat:
-            if " - " in active_cat:
-                group_col = "_display_name"
-                group_label = "Product (SKU)"
-            else:
-                filtered_inv["Sub Category"] = filtered_inv["Category"].apply(lambda x: str(x).split(" - ")[1] if " - " in str(x) else str(x))
-                group_col = "Sub Category"
-                group_label = "Sub-Category"
-        else:
-            group_col = "Main Category"
-            group_label = "Main Category"
+        # Explicit Aggregation Logic based on Radio Button
+        group_col_map = {
+            "Main Category": "Main Category",
+            "Sub-Category": "Sub Category",
+            "Master Product": "Master Product",
+            "Variant": "Variant"
+        }
+        group_col = group_col_map.get(group_basis, "Sub Category")
+        group_label = group_basis
 
         cat_agg = filtered_inv.groupby(group_col).agg(
             Selected_Value=(val_col, "sum"),
             Total_Units=("Stock Quantity", "sum"),
             SKU_Count=("Name", "count")
-        ).reset_index().sort_values("Selected_Value", ascending=False).head(12)
+        ).reset_index()
         
         cat_agg = cat_agg.rename(columns={group_col: "Display Category"})
         
+        # Independent limits for each metric so Volume isn't restricted by Value
+        # Show all for Categories, limit for Products/Variants to keep charts readable
+        display_limit = 150 if group_basis in ["Main Category", "Sub-Category"] else 50
+        
+        top_val_df = cat_agg.sort_values("Selected_Value", ascending=False).head(display_limit).sort_values("Selected_Value", ascending=True)
+        top_unit_df = cat_agg.sort_values("Total_Units", ascending=False).head(display_limit).sort_values("Total_Units", ascending=True)
+        top_sku_df = cat_agg.sort_values("SKU_Count", ascending=False).head(display_limit).sort_values("SKU_Count", ascending=True)
+
         # 4. Interactive Visuals
-        t1, t2, t3, t4 = st.tabs(["💰 Value Distribution", "📦 Volume Analysis", "🛒 Smart Restock", "📉 Dead Stock"])
+        t1, t2, t3, t4, t5 = st.tabs(["💰 Value & Volume", "📦 Breadth Analysis", "🛒 Smart Restock", "📉 Dead Stock", "🤝 Bundle Intel"])
         
         with t1:
             v1, v2 = st.columns(2)
             with v1:
-                fig_donut = ui.donut_chart(cat_agg, values="Selected_Value", names="Display Category", title=f"{group_label} Share by {val_basis}")
-                fig_donut.update_traces(texttemplate="<b>%{label}</b><br>৳%{value:,.0f}<br>(%{percent:.1%})", textinfo="none")
-                st.plotly_chart(fig_donut, width="stretch")
+                fig_unit_bar = ui.bar_chart(top_unit_df, x="Total_Units", y="Display Category", title=f"Total Unit Volume per {group_label}", color="Total_Units")
+                fig_unit_bar.update_traces(texttemplate="%{x:,} Units", textposition="auto")
+                fig_unit_bar.update_layout(height=max(450, len(top_unit_df) * 30))
+                st.plotly_chart(fig_unit_bar, width="stretch")
             with v2:
-                fig_val_bar = ui.bar_chart(cat_agg.sort_values("Selected_Value", ascending=True), x="Selected_Value", y="Display Category", title=f"Absolute {val_basis} per {group_label}", color="Selected_Value")
+                fig_val_bar = ui.bar_chart(top_val_df, x="Selected_Value", y="Display Category", title=f"Absolute {val_basis} per {group_label}", color="Selected_Value")
                 fig_val_bar.update_traces(texttemplate="৳%{x:,.0f}", textposition="auto")
+                fig_val_bar.update_layout(height=max(450, len(top_val_df) * 30))
                 st.plotly_chart(fig_val_bar, width="stretch")
                 
         with t2:
-            v3, v4 = st.columns(2)
-            with v3:
-                fig_unit_bar = ui.bar_chart(cat_agg.sort_values("Total_Units", ascending=True), x="Total_Units", y="Display Category", title=f"Total Unit Volume per {group_label}", color="Total_Units")
-                fig_unit_bar.update_traces(texttemplate="%{x:,} Units", textposition="auto")
-                st.plotly_chart(fig_unit_bar, width="stretch")
-            with v4:
-                fig_sku_bar = ui.bar_chart(cat_agg.sort_values("SKU_Count", ascending=True), x="SKU_Count", y="Display Category", title=f"SKU Breadth per {group_label}", color="SKU_Count")
-                fig_sku_bar.update_traces(texttemplate="%{x:,} SKUs", textposition="auto")
-                st.plotly_chart(fig_sku_bar, width="stretch")
+            breadth_label = "Variants" if group_basis == "Variant" else "SKUs"
+            fig_sku_bar = ui.bar_chart(top_sku_df, x="SKU_Count", y="Display Category", title=f"{breadth_label} Breadth per {group_label}", color="SKU_Count")
+            fig_sku_bar.update_traces(texttemplate=f"%{{x:,}} {breadth_label}", textposition="auto")
+            fig_sku_bar.update_layout(height=max(450, len(top_sku_df) * 30))
+            st.plotly_chart(fig_sku_bar, width="stretch")
 
         with t3:
             st.markdown("##### 🚀 Velocity-Based Inventory Planning")
@@ -272,6 +301,78 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
                 ).sort_values("Capital Locked", ascending=False), width="stretch", hide_index=True)
             else:
                 st.success("No significant dead stock detected for this period.")
+
+        with t5:
+            st.markdown("##### 🤝 Bundle-Aware Inventory Intelligence")
+            st.caption("Analyzes frequent product combinations to detect missing components (Orphan Stock).")
+            
+            if df_sales is None or df_sales.empty:
+                st.info("Sales data is required to compute bundle intelligence.")
+            else:
+                # 1. Identify Top Bundles (Frequent Pairs)
+                basket_df = df_sales.copy()
+                if "_clean_name" not in basket_df.columns:
+                    basket_df["_clean_name"] = basket_df["item_name"].apply(get_clean_product_name)
+                
+                basket_df = basket_df.groupby("order_id")["_clean_name"].apply(list).reset_index()
+                basket_df = basket_df[basket_df["_clean_name"].apply(len) > 1]
+
+                if basket_df.empty:
+                    st.info("No bundle history found in current sales window to analyze dependency.")
+                else:
+                    all_pairs = []
+                    for products in basket_df["_clean_name"]:
+                        unique_products = sorted(list(set(products)))
+                        if len(unique_products) > 1:
+                            all_pairs.extend(list(combinations(unique_products, 2)))
+                    
+                    top_pairs = Counter(all_pairs).most_common(10)
+                    
+                    if not top_pairs:
+                        st.info("Not enough pair data.")
+                    else:
+                        # 2. Calculate Bundle Fulfillment Rate
+                        full_count = 0
+                        total_bundles = len(top_pairs)
+                        orphan_skus = []
+                        bundle_data = []
+
+                        for pair, count in top_pairs:
+                            stock_a = inventory[inventory["_clean_name"] == pair[0]]["Stock Quantity"].sum()
+                            stock_b = inventory[inventory["_clean_name"] == pair[1]]["Stock Quantity"].sum()
+                            
+                            status = "✅ Fulfilled"
+                            if stock_a > 0 and stock_b > 0:
+                                full_count += 1
+                            elif (stock_a > 0 and stock_b <= 0) or (stock_b > 0 and stock_a <= 0):
+                                orphan_skus.append(pair[0] if stock_a > 0 else pair[1])
+                                status = "⚠️ Orphaned"
+                            else:
+                                status = "❌ Both OOS"
+                                
+                            bundle_data.append({
+                                "Product A": pair[0],
+                                "Stock A": int(stock_a),
+                                "Product B": pair[1],
+                                "Stock B": int(stock_b),
+                                "Co-Purchases": count,
+                                "Status": status
+                            })
+                            
+                        fulfillment_rate = (full_count / total_bundles * 100) if total_bundles > 0 else 0
+                        unique_clean_names = inventory["_clean_name"].nunique()
+                        orphan_pct = (len(set(orphan_skus)) / unique_clean_names * 100) if unique_clean_names > 0 else 0
+                        
+                        bm1, bm2, bm3 = st.columns(3)
+                        with bm1: st.metric("Bundle Fulfillment", f"{fulfillment_rate:.0f}%", help="Percentage of top 10 bundles where BOTH items are in stock.")
+                        with bm2: st.metric("Orphan Stock Rate", f"{orphan_pct:.1f}%", help="Percentage of catalog items stranded without their frequent paired product.", delta="Action Required" if orphan_pct > 10 else "Normal", delta_color="inverse")
+                        with bm3: st.metric("Dependency Links", f"{total_bundles}", help="Number of strong product correlations found.")
+                        
+                        if fulfillment_rate < 50:
+                            st.error("⚠️ **Fulfillment Critical**: High rate of lost sales due to bundle imbalance (one item out of stock).")
+                            
+                        st.markdown("**Strategic Reorder Intelligence (Top Combinations)**")
+                        st.dataframe(pd.DataFrame(bundle_data), width="stretch", hide_index=True)
     else:
         st.info("Category-wise breakdown is not yet available in the stock cache.")
         
