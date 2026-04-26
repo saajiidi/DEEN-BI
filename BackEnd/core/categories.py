@@ -26,7 +26,7 @@ CATEGORIES_PRIORITY = [
     "Sweatshirt", "Sweatshirt - Cotton Terry Sweatshirt", "Sweatshirt - French Terry Sweatshirt",
     "Polo Shirt", "Turtle-Neck",
     "Twill", "Twill - Twill Chino", "Twill - Twill Joggers", "Twill - Five Pockets",
-    "Trousers", "Trousers - Trousers", "Trousers - Joggers", "Trousers - Cotton Trousers",
+    "Trousers", "Trousers - Trousers", "Trousers - Joggers", "Trousers - Cotton Trousers", "Trousers - French Terry Trousers",
     "Boxer", "Leather Bag", "Belt", "Jacket", "Sweater", "Cap", "Mask", "Water Bottle", "Bundles", "Others"
 ]
 
@@ -117,9 +117,9 @@ def get_category_for_sales(name) -> str:
         return "Jeans"
 
     # T-Shirt (Must be before general Shirt)
-    if _has_any(["t-shirt", "t shirt", "tee"], name_str):
+    if _has_any(["t-shirt", "t shirt", "tee", "tank top", "tanktop", "tank", "active wear", "activewear", "jersey", "jersy", "drop shoulder"], name_str):
         if _has_any(["drop shoulder"], name_str): return "T-Shirt - Drop Shoulder"
-        if _has_any(["tank top"], name_str): return "T-Shirt - Tank Top"
+        if _has_any(["tank top", "tanktop", "tank"], name_str): return "T-Shirt - Tank Top"
         if _has_any(["active wear", "activewear"], name_str): return "T-Shirt - Active Wear"
         if _has_any(["jersey", "jersy"], name_str): return "T-Shirt - Jersey"
         
@@ -168,7 +168,8 @@ def get_category_for_sales(name) -> str:
         return "Twill Chino - Twill Chino Pant"
 
     # Trousers
-    if _has_any(["trouser", "jogger", "pants", "gabardine"], name_str):
+    if _has_any(["trouser", "jogger", "pants", "pant", "gabardine"], name_str):
+        if _has_any(["french terry"], name_str): return "Trousers - French Terry Trousers"
         if _has_any(["regular"], name_str) and _has_any(["fit"], name_str): return "Trousers - Cotton Trousers"
         if _has_any(["jogger"], name_str): return "Trousers - Joggers"
         return "Trousers - Trousers"

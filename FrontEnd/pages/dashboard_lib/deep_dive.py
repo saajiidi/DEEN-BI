@@ -302,11 +302,11 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
     st.markdown("#### ⚡ Strategic Pulse")
     p_c1, p_c2, p_c3, p_c4, p_c5 = st.columns(5)
     
-    with p_c1: ui.icon_metric("Total Items Sold", f"{total_items_sold:,}", icon="📦", delta=d_items_label, delta_val=d_items_val)
-    with p_c2: ui.icon_metric("Top Variation", top_var_display, icon="🎯")
-    with p_c3: ui.icon_metric("Gross Revenue", f"৳{total_revenue:,.0f}", icon="💰", delta=d_rev_label, delta_val=d_rev_val)
-    with p_c4: ui.icon_metric("Avg Item Price", f"৳{avg_item_price:,.0f}", icon="🏷️", delta=d_price_label, delta_val=d_price_val)
-    with p_c5: ui.icon_metric("Unique Cluster Buyers", f"{unique_customers:,}", icon="👥", delta=d_cust_label, delta_val=d_cust_val)
+    with p_c1: st.metric("📦 Total Items Sold", f"{total_items_sold:,}", delta=d_items_label)
+    with p_c2: st.metric("🎯 Top Variation", top_var_display)
+    with p_c3: st.metric("💰 Gross Revenue", f"৳{total_revenue:,.0f}", delta=d_rev_label)
+    with p_c4: st.metric("🏷️ Avg Item Price", f"৳{avg_item_price:,.0f}", delta=d_price_label)
+    with p_c5: st.metric("👥 Unique Buyers", f"{unique_customers:,}", delta=d_cust_label)
 
     st.markdown(f"🚩 **Strategic Intelligence:** This segment is powered by **{unique_customers:,}** unique customers across **{total_items_sold:,}** total units sold. The dominant variation is **{top_var_name}** accounting for **{top_var_units}** units.")
 

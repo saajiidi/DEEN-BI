@@ -201,10 +201,11 @@ def render_returns_tracker_page() -> None:
     metrics = calculate_net_sales_metrics(df, sales_df=sales_df, total_items_sold=total_items_sold)
 
     # ── TABS ──
-    tab_dash, tab_recovery, tab_inventory, tab_ledger = st.tabs([
+    tab_dash, tab_recovery, tab_inventory, tab_items, tab_ledger = st.tabs([
         "📊 Executive Dashboard", 
         "🛡️ Recovery & Loyalty", 
         "📦 Return Inventory", 
+        "🛍️ Returned Items List",
         "📋 Detailed Ledger"
     ])
 
@@ -229,6 +230,9 @@ def render_returns_tracker_page() -> None:
 
     with tab_inventory:
         _render_return_inventory(df, sales_df, key_prefix="top_tab")
+
+    with tab_items:
+        _render_returned_items_list(df)
 
     with tab_ledger:
         _render_details_table(df, sales_df)
@@ -511,14 +515,11 @@ def _render_charts(df: pd.DataFrame, metrics: dict, sales_df: pd.DataFrame) -> N
         st.info("📊 Charts will appear once return data is loaded.")
         return
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "📈 Monthly Trends",
         "🎯 Category Insights",
         "🥧 Return Reasons",
-        "📦 Product Heatmap",
-        "🛡️ Customer Recovery",
-        "📋 Return Inventory",
-        "📦 Returned Items List",
+        "📦 Product Heatmap"
     ])
 
     with tab1:
@@ -532,15 +533,6 @@ def _render_charts(df: pd.DataFrame, metrics: dict, sales_df: pd.DataFrame) -> N
 
     with tab4:
         _render_product_heatmap(df)
-
-    with tab5:
-        _render_customer_recovery(df, sales_df)
-
-    with tab6:
-        _render_return_inventory(df, sales_df, key_prefix="charts_tab")
-
-    with tab7:
-        _render_returned_items_list(df)
 
 
 def _render_category_insights(metrics: dict) -> None:
@@ -1278,16 +1270,15 @@ def _render_export(df: pd.DataFrame, metrics: dict) -> None:
 
     st.markdown("### 📤 Export Report")
 
-    if st.button("📊 Export Returns Report", type="primary", width="content"):
-        with st.spinner("Generating report..."):
-            buffer = _generate_excel_report(df, metrics)
-            st.download_button(
-                label="⬇️ Download Excel Report",
-                data=buffer,
-                file_name=f"deen_returns_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="returns_excel_export_btn"
-            )
+    buffer = _generate_excel_report(df, metrics)
+    st.download_button(
+        label="📊 Download Excel Report",
+        data=buffer,
+        file_name=f"deen_returns_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        type="primary",
+        key="returns_excel_export_btn"
+    )
 
 
 def _safe_scalar(value, default=0, cast_type=int):

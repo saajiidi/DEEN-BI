@@ -2,7 +2,7 @@ import pandas as pd
 
 CATEGORY_MAPPING = {
     'Boxer': ['boxer'],
-    'Tank Top': ['tank top', 'tanktop', 'tank', 'top'],
+    'T-Shirt - Tank Top': ['tank top', 'tanktop', 'tank', 'top'],
     'Jeans': ['jeans'],
     'FS Shirt - Denim Shirt': ['denim'],
     'FS Shirt - Flannel Shirt': ['flannel'],
@@ -16,11 +16,11 @@ CATEGORY_MAPPING = {
     'Water Bottle': ['water bottle'],
     'HS Shirt - Contrast Shirt': ['contrast'],
     'Turtleneck': ['turtleneck', 'mock neck'],
-    'Drop Shoulder': ['drop', 'shoulder'],
+    'T-Shirt - Drop Shoulder': ['drop shoulder'],
     'Wallet': ['wallet'],
     'FS Shirt - Kaftan Shirt': ['kaftan'],
-    'Active Wear': ['active wear'],
-    'Jersy': ['jersy'],
+    'T-Shirt - Active Wear': ['active wear', 'activewear'],
+    'T-Shirt - Jersey': ['jersy', 'jersey'],
     'Sweatshirt': ['sweatshirt', 'hoodie', 'pullover'],
     'Jacket': ['jacket', 'outerwear', 'coat'],
     'Belt': ['belt'],
