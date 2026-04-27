@@ -7,6 +7,7 @@ from itertools import combinations
 from collections import Counter
 from FrontEnd.components import ui
 from BackEnd.core.categories import get_category_for_sales, parse_sku_variants, get_clean_product_name, get_master_category_list, format_category_label, get_subcategory_name, classify_velocity_trend
+from BackEnd.commerce_ops.persistence import KeyManager
 
 def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, df_sales: pd.DataFrame = None):
     c1, c2 = st.columns([3, 1])
@@ -82,7 +83,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
     # Vectorized Trend Classification
     inventory["Trend"] = classify_velocity_trend(inventory["daily_velocity"])
 
-    show_exact = st.session_state.get("inventory_show_exact", False)
+    show_exact = st.session_state.get(KeyManager.get_key("inventory", "show_exact"), False)
 
     def format_val(num):
         if show_exact: return f"{num:,}"
@@ -103,9 +104,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
     with m2: ui.icon_metric("Low Stock Alerts", format_val(len(low_stock)), icon="⚠️")
     with m3: ui.icon_metric("Inventory Asset Value", format_curr(inventory['Value'].sum()), icon="💰")
     
-    t_col1, t_col2 = st.columns([8, 2])
-    with t_col2:
-        st.toggle("Show Exact Values", key="inventory_show_exact")
+    st.toggle("Show Exact Values", key=KeyManager.get_key("inventory", "show_exact"))
 
     st.divider()
 
@@ -118,12 +117,12 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
     with f_c1:
         # Use master category list for consistent hierarchy display
         cat_list = get_master_category_list()
-        sel_cat = st.selectbox("Category", ["All"] + cat_list, index=0, key="sniper_cat_select", format_func=format_category_label)
+        sel_cat = st.selectbox("Category", ["All"] + cat_list, index=0, key=KeyManager.get_key("inventory", "sniper_cat"), format_func=format_category_label)
         active_cat = None if sel_cat == "All" else sel_cat
 
     with f_c2:
         avail_trends = sorted(inventory["Trend"].unique())
-        sel_trend = st.selectbox("Trend Classification", ["All"] + avail_trends, index=0, key="sniper_trend_select")
+        sel_trend = st.selectbox("Trend Classification", ["All"] + avail_trends, index=0, key=KeyManager.get_key("inventory", "sniper_trend"))
         active_trend = None if sel_trend == "All" else sel_trend
 
     with f_c3:
@@ -136,7 +135,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
         prod_options["_display_name"] = prod_options["_clean_name"] + " [" + prod_options["SKU"].astype(str) + "]"
         
         avail_prods = sorted([str(p) for p in prod_options["_display_name"].unique() if str(p).strip()])
-        sel_prod = st.selectbox("Product Selection", ["All"] + avail_prods, index=0, key="sniper_prod_select")
+        sel_prod = st.selectbox("Product Selection", ["All"] + avail_prods, index=0, key=KeyManager.get_key("inventory", "sniper_prod"))
         active_prod = None if sel_prod == "All" else sel_prod
 
     # Determine Sniper Results
@@ -448,5 +447,5 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
             file_name=f"deen_inventory_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
-            key="inv_custom_export_btn"
+            key=KeyManager.get_key("inventory", "custom_export_btn")
         )

@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import requests
 import json
+from BackEnd.commerce_ops.persistence import KeyManager
 
 @st.cache_resource
 def load_bangladesh_geojson():
@@ -45,7 +46,7 @@ def render_district_map(df_sales: pd.DataFrame):
         "Map focus",
         options=["Revenue", "Orders"],
         default="Revenue",
-        key="geo_map_metric_toggle",
+        key=KeyManager.get_key("geo", "map_metric_toggle"),
         label_visibility="collapsed"
     )
 

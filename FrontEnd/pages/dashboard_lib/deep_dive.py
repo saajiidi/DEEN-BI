@@ -4,6 +4,7 @@ import plotly.express as px
 from FrontEnd.components import ui
 from BackEnd.core.categories import parse_sku_variants, get_clean_product_name, get_master_category_list, format_category_label, get_subcategory_name, classify_velocity_trend, get_densed_name
 from BackEnd.core.geo import get_region_display
+from BackEnd.commerce_ops.persistence import KeyManager
 
 def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev: pd.DataFrame = None, window_label: str = "period"):
 
@@ -352,7 +353,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             file_name=f"deen_strategic_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
-            key="btn_export_strategic"
+            key=KeyManager.get_key("deep_dive", "export_strategic")
         )
 
     cluster_t1, cluster_t2, cluster_t3, cluster_t4 = st.tabs(["📈 Performance Mix", "🔍 Variant Analysis", "🛒 Basket Context", "📋 Cluster Data Ledger"])
@@ -361,10 +362,10 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         # Leaderboard Strategy Controls
         lc1, lc2 = st.columns([2, 1])
         with lc1:
-            leader_mode = st.radio("Spotlight Strategy", ["💰 Top 10", "💰 Top 20", "📉 Underperformers", "⚙️ Custom Window"], 
-                                  index=0, horizontal=True, key="leader_mode_sel")
+            leader_mode = st.radio("Spotlight Strategy", ["💰 Top 10", "💰 Top 20", "📉 Underperformers", "⚙️ Custom Window"],
+                                  index=0, horizontal=True, key=KeyManager.get_key("deep_dive", "leader_mode_sel"))
         with lc2:
-            granularity = st.radio("Granularity", ["📦 Master Product", "🆔 Variant"], index=0, horizontal=True)
+            granularity = st.radio("Granularity", ["📦 Master Product", "🆔 Variant"], index=0, horizontal=True, key=KeyManager.get_key("deep_dive", "granularity_sel"))
             
         limit = 10
         if leader_mode == "💰 Top 20": limit = 20
