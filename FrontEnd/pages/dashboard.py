@@ -427,9 +427,13 @@ def render_intelligence_hub_page():
     d_cust_label, d_cust_val = calc_delta(cust_count, prev_cust_val)
     d_aov_label, d_aov_val = calc_delta(aov, prev_aov_val)
 
+    show_exact = st.session_state.get("global_show_exact", False)
+
     def format_compact(num):
         import pandas as pd
         if pd.isna(num): return "0"
+        if show_exact:
+            return f"{num:,.0f}" if isinstance(num, (int, float)) else str(num)
         if num >= 1_000_000: return f"{num/1_000_000:.1f}M".replace(".0M", "M")
         if num >= 1_000: return f"{num/1_000:.1f}K".replace(".0K", "K")
         return f"{num:,.0f}" if isinstance(num, (int, float)) else str(num)
@@ -447,6 +451,10 @@ def render_intelligence_hub_page():
         ui.icon_metric("Customers", format_compact(cust_count), icon="👥", delta=d_cust_label, delta_val=d_cust_val)
     with c6:
         ui.icon_metric("Basket Size", f"৳{format_compact(aov)}", icon="💎", delta=d_aov_label, delta_val=d_aov_val)
+
+    t_col1, t_col2 = st.columns([8, 2])
+    with t_col2:
+        st.toggle("Show Exact Values", key="global_show_exact")
 
     st.markdown("<br>", unsafe_allow_html=True)
 

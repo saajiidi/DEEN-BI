@@ -209,9 +209,15 @@ def render_returns_tracker_page() -> None:
     ])
 
     with tab_dash:
+        show_exact = st.session_state.get("global_show_exact", False)
+
         # ── KPI Cards ──
-        _render_kpi_cards(metrics)
-        _render_financial_impact_summary(metrics)
+        _render_kpi_cards(metrics, show_exact=show_exact)
+        _render_financial_impact_summary(metrics, show_exact=show_exact)
+
+        t_col1, t_col2 = st.columns([8, 2])
+        with t_col2:
+            st.toggle("Show Exact Values", key="global_show_exact")
 
         if df.empty:
             st.info("No returns logged within this specific time frame.")
@@ -296,7 +302,7 @@ def _get_gross_sales_context():
 # KPI CARDS
 # ═══════════════════════════════════════════════════════════════════
 
-def _render_kpi_cards(metrics: dict) -> None:
+def _render_kpi_cards(metrics: dict, show_exact: bool = False) -> None:
     """Render the executive KPI cards using premium components."""
     st.markdown("#### 📦 Operational Intelligence")
     
@@ -304,10 +310,17 @@ def _render_kpi_cards(metrics: dict) -> None:
     t_ord = metrics.get('total_orders', 0)
     t_ord = int(t_ord) if hasattr(t_ord, '__int__') else 0
     
+    def format_val(num):
+        if show_exact: return f"{num:,}"
+        if num >= 1_000_000: return f"{num/1_000_000:.1f}M".replace(".0M", "M")
+        if num >= 1_000: return f"{num/1_000:.1f}K".replace(".0K", "K")
+        return f"{num:,}"
+
     def format_pct(val):
+        val_str = format_val(val)
         if t_ord > 0:
-            return f"{val:,} ({(val / t_ord * 100):.1f}%)"
-        return f"{val:,}"
+            return f"{val_str} ({(val / t_ord * 100):.1f}%)"
+        return f"{val_str}"
 
     cols = st.columns(4)
     
@@ -315,7 +328,7 @@ def _render_kpi_cards(metrics: dict) -> None:
         ui.metric_highlight(
             label="Total Issues",
             value=format_pct(metrics.get('total_issues', 0)),
-            help_text=f"Out of {t_ord:,} total orders",
+            help_text=f"Out of {format_val(t_ord)} total orders",
             icon="📦"
         )
 
@@ -323,7 +336,7 @@ def _render_kpi_cards(metrics: dict) -> None:
         ui.metric_highlight(
             label="Returns",
             value=format_pct(metrics.get('return_count', 0)),
-            help_text=f"Paid: {metrics.get('paid_return_count', 0)} | Non-Paid: {metrics.get('non_paid_return_count', 0)}",
+            help_text=f"Paid: {format_val(metrics.get('paid_return_count', 0))} | Non-Paid: {format_val(metrics.get('non_paid_return_count', 0))}",
             icon="🔴"
         )
 
@@ -331,7 +344,7 @@ def _render_kpi_cards(metrics: dict) -> None:
         ui.metric_highlight(
             label="Partials",
             value=format_pct(metrics.get('partial_count', 0)),
-            help_text=f"৳{metrics.get('partial_amounts', 0):,.0f} impact",
+            help_text=f"৳{format_val(metrics.get('partial_amounts', 0))} impact",
             icon="🟡"
         )
 
@@ -344,9 +357,21 @@ def _render_kpi_cards(metrics: dict) -> None:
         )
 
 
-def _render_financial_impact_summary(metrics: dict) -> None:
+def _render_financial_impact_summary(metrics: dict, show_exact: bool = False) -> None:
     """Render decision-ready financial impact cards using premium components."""
     st.markdown("#### 💰 Financial Integrity & Yield")
+    
+    def format_curr(num):
+        if show_exact: return f"৳{num:,.0f}"
+        if num >= 1_000_000: return f"৳{num/1_000_000:.1f}M".replace(".0M", "M")
+        if num >= 1_000: return f"৳{num/1_000:.1f}K".replace(".0K", "K")
+        return f"৳{num:,.0f}"
+        
+    def format_val(num):
+        if show_exact: return f"{num:,}"
+        if num >= 1_000_000: return f"{num/1_000_000:.1f}M".replace(".0M", "M")
+        if num >= 1_000: return f"{num/1_000:.1f}K".replace(".0K", "K")
+        return f"{num:,}"
 
     # Defensive: ensure all metrics are scalars (not Series/arrays)
     gross = float(metrics.get('gross_sales', 0) or 0)
@@ -364,21 +389,21 @@ def _render_financial_impact_summary(metrics: dict) -> None:
     with c1:
         ui.metric_highlight(
             label="Net Settled Sales",
-            value=f"৳{net_sales:,.0f}",
-            help_text=f"After {metrics.get('return_count', 0)} returns & {metrics.get('partial_count', 0)} partials",
+            value=format_curr(net_sales),
+            help_text=f"After {format_val(metrics.get('return_count', 0))} returns & {format_val(metrics.get('partial_count', 0))} partials",
             icon="💰"
         )
     with c2:
         ui.metric_highlight(
             label="Net Revenue Yield",
             value=f"{net_yield_pct:.1f}%",
-            help_text=f"Efficiency: ৳{net_sales:,.0f} / ৳{gross:,.0f}",
+            help_text=f"Efficiency: {format_curr(net_sales)} / {format_curr(gross)}",
             icon="📊"
         )
     with c3:
         ui.metric_highlight(
             label="Total Loss Attribution",
-            value=f"৳{(metrics.get('return_value_extracted', 0) + partial_loss):,.0f}",
+            value=format_curr(metrics.get('return_value_extracted', 0) + partial_loss),
             help_text="Revenue lost to returns and partials",
             icon="📉"
         )
@@ -386,10 +411,10 @@ def _render_financial_impact_summary(metrics: dict) -> None:
     # Secondary Row: Operational impact
     c4, c5, c6 = st.columns(3)
     with c4:
-        items_pct_text = f"{total_returned_items_pct:.1f}% of {total_items_sold:,} units" if total_items_sold > 0 else "0% items returned"
+        items_pct_text = f"{total_returned_items_pct:.1f}% of {format_val(total_items_sold)} units" if total_items_sold > 0 else "0% items returned"
         ui.metric_highlight(
             label="Returned Item Volume",
-            value=f"{total_ret_qty} Units",
+            value=f"{format_val(total_ret_qty)} Units",
             help_text=items_pct_text,
             icon="📦"
         )
@@ -397,13 +422,13 @@ def _render_financial_impact_summary(metrics: dict) -> None:
         ui.metric_highlight(
             label="Returned Order Share",
             value=f"{returned_orders_pct:.1f}%",
-            help_text=f"1 in every {int(100/returned_orders_pct) if returned_orders_pct > 0 else 'N/A'} orders",
+            help_text=f"1 in every {format_val(int(100/returned_orders_pct)) if returned_orders_pct > 0 else 'N/A'} orders",
             icon="📈"
         )
     with c6:
         ui.metric_highlight(
             label="Exchanged Items",
-            value=f"{metrics.get('total_exchanged_items', 0)} Units",
+            value=f"{format_val(metrics.get('total_exchanged_items', 0))} Units",
             help_text="Product swaps (No revenue loss)",
             icon="🔄"
         )
