@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import hashlib
 from datetime import datetime, date, timedelta
-from typing import Optional, Union, List
+from typing import Optional, Union, List, Dict, Any
 from urllib.parse import urlparse
 
 import pandas as pd
@@ -331,3 +331,90 @@ def calculate_date_range(window: str) -> tuple[Optional[date], date]:
     start = today - timedelta(days=days)
     
     return start, today
+
+
+def calculate_customer_metrics(orders_df: pd.DataFrame) -> Dict[str, Any]:
+    """Calculate aggregate metrics for a specific customer from their order history.
+    
+    Args:
+        orders_df: DataFrame containing orders for a single customer
+        
+    Returns:
+        Dictionary with total_orders, total_items, total_value, avg_order_value, etc.
+    """
+    if orders_df is None or orders_df.empty:
+        return {
+            "total_orders": 0,
+            "total_items": 0,
+            "total_value": 0.0,
+            "avg_order_value": 0.0,
+            "first_order_date": None,
+            "last_order_date": None,
+            "customer_lifespan_days": 0,
+        }
+    
+    # Create a copy to avoid SettingWithCopyWarning
+    df = orders_df.copy()
+    
+    # Identify date column
+    date_col = "date_created"
+    if "date_created" not in df.columns and "order_date" in df.columns:
+        date_col = "order_date"
+    
+    # Ensure dates are datetime
+    if date_col in df.columns:
+        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+    
+    # Identify total column
+    total_col = "total"
+    if "total" not in df.columns and "order_total" in df.columns:
+        total_col = "order_total"
+    
+    # Total Orders (unique IDs if possible)
+    id_col = "order_id" if "order_id" in df.columns else ("id" if "id" in df.columns else None)
+    if id_col:
+        total_orders = df[id_col].nunique()
+    else:
+        total_orders = len(df)
+    
+    # Total Items
+    total_items = 0
+    if "items_count" in df.columns:
+        total_items = pd.to_numeric(df["items_count"], errors="coerce").sum()
+    elif "quantity" in df.columns:
+        total_items = pd.to_numeric(df["quantity"], errors="coerce").sum()
+    elif "line_items" in df.columns:
+        # Line items might be a list of dicts (from _normalize_orders)
+        for items in df["line_items"]:
+            if isinstance(items, list):
+                total_items += sum(item.get("quantity", 0) for item in items if isinstance(item, dict))
+    
+    # Total Value
+    total_value = 0.0
+    if total_col in df.columns:
+        total_value = pd.to_numeric(df[total_col], errors="coerce").sum()
+    
+    # Avg Order Value
+    avg_order_value = total_value / total_orders if total_orders > 0 else 0.0
+    
+    # Dates & Lifespan
+    first_order_date = None
+    last_order_date = None
+    lifespan = 0
+    
+    if date_col in df.columns:
+        valid_dates = df[df[date_col].notna()][date_col]
+        if not valid_dates.empty:
+            first_order_date = valid_dates.min()
+            last_order_date = valid_dates.max()
+            lifespan = (last_order_date - first_order_date).days
+            
+    return {
+        "total_orders": total_orders,
+        "total_items": int(total_items),
+        "total_value": float(total_value),
+        "avg_order_value": float(avg_order_value),
+        "first_order_date": first_order_date,
+        "last_order_date": last_order_date,
+        "customer_lifespan_days": lifespan,
+    }

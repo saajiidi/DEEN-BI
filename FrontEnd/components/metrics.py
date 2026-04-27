@@ -57,6 +57,31 @@ def badge(note: str):
     st.markdown(f'<div class="bi-kpi-note">{note}</div>', unsafe_allow_html=True)
 
 
+def _get_comparison_data(delta_text: str, delta_val: float, color_mode: str) -> tuple[str, str, str]:
+    """
+    Unified single source of truth for calculating metric comparison visuals.
+    Guarantees a comparison is always shown for UI consistency.
+    Returns: (delta_icon, display_text, color_css)
+    """
+    display_text = delta_text if delta_text else "-"
+    if not delta_text:
+        delta_val = 0.0
+
+    if delta_val > 0:
+        delta_icon = "↑"
+    elif delta_val < 0:
+        delta_icon = "↓"
+    else:
+        delta_icon = "→"
+        
+    if color_mode == "inverse":
+        color = "var(--red)" if delta_val > 0 else "var(--green)" if delta_val < 0 else "var(--on-surface-variant)"
+    elif color_mode == "off":
+        color = "var(--on-surface-variant)"
+    else:
+        color = "var(--green)" if delta_val > 0 else "var(--red)" if delta_val < 0 else "var(--on-surface-variant)"
+        
+    return delta_icon, display_text, color
 
 
 def icon_metric(label: str, value: str, icon: str = "📊", delta: str = "", delta_val: float = 0, loading: bool = False, delta_color: str = "normal"):
@@ -65,17 +90,9 @@ def icon_metric(label: str, value: str, icon: str = "📊", delta: str = "", del
         skeleton_metric(icon=icon)
         return
 
-    delta_icon = "↑" if delta_val >= 0 else "↓"
-    
-    if delta_color == "inverse":
-        color = "var(--red)" if delta_val > 0 else "var(--green)" if delta_val < 0 else "var(--on-surface-variant)"
-    elif delta_color == "off":
-        color = "var(--on-surface-variant)"
-    else:
-        color = "var(--green)" if delta_val > 0 else "var(--red)" if delta_val < 0 else "var(--on-surface-variant)"
-        
+    delta_icon, display_text, color = _get_comparison_data(delta, delta_val, delta_color)
     value_color = color if delta else "var(--on-surface)"
-    delta_html = f'<div class="metric-delta" style="color: {color}; font-size: clamp(0.6rem, 6cqi, 0.7rem); font-weight: 700; overflow-wrap: break-word; line-height: 1.2;">{delta_icon} {delta}</div>' if delta else ""
+    delta_html = f'<div class="metric-delta" style="color: {color}; font-size: clamp(0.6rem, 6cqi, 0.7rem); font-weight: 700; overflow-wrap: break-word; line-height: 1.2;">{delta_icon} {display_text}</div>'
 
     st.markdown(
         f"""
@@ -114,17 +131,12 @@ def icon_metric(label: str, value: str, icon: str = "📊", delta: str = "", del
 
 def metric_highlight(label: str, value: str, delta: str = "", delta_type: str = "up", help_text: str = "", icon: str = None, delta_color_mode: str = "normal"):
     """Premium Enterprise KPI card with glassmorphism, motion transitions, and optional icon."""
-    delta_icon = "↑" if delta_type == "up" else "↓"
+    # Convert legacy delta_type to delta_val for unified logic
+    delta_val = 1.0 if delta_type == "up" else -1.0 if delta_type == "down" else 0.0
     
-    if delta_color_mode == "inverse":
-        delta_color = "var(--red)" if delta_type == "up" else "var(--green)"
-    elif delta_color_mode == "off":
-        delta_color = "var(--on-surface-variant)"
-    else:
-        delta_color = "var(--green)" if delta_type == "up" else "var(--red)"
-        
-    value_color = delta_color if delta else "var(--on-surface)"
-    delta_html = f'<span class="metric-highlight-delta" style="color: {delta_color}; font-weight: 700;">{delta_icon} {delta}</span>' if delta else ""
+    delta_icon, display_text, color = _get_comparison_data(delta, delta_val, delta_color_mode)
+    value_color = color if delta else "var(--on-surface)"
+    delta_html = f'<span class="metric-highlight-delta" style="color: {color}; font-weight: 700;">{delta_icon} {display_text}</span>'
     help_html = f'<span class="metric-highlight-help" style="color: #64748b; font-weight: 500;">{help_text}</span>' if help_text else ""
     
     footer_content = f"{delta_html} {help_html}".strip()
@@ -192,17 +204,10 @@ def date_context(
 
 def operational_card(title: str, order_count: int, item_count: int, revenue: float, icon: str = "📦", delta_text: str = "", delta_val: int = 0, item_label: str = "Items", is_alert: bool = False, delta_color: str = "normal"):
     """Premium multi-line operational metric card with optional alert pulse."""
-    delta_icon = "↑" if delta_val >= 0 else "↓"
-    
-    if delta_color == "inverse":
-        color = "var(--red)" if delta_val > 0 else "var(--green)" if delta_val < 0 else "var(--on-surface-variant)"
-    elif delta_color == "off":
-        color = "var(--on-surface-variant)"
-    else:
-        color = "var(--green)" if delta_val > 0 else "var(--red)" if delta_val < 0 else "var(--on-surface-variant)"
-        
+    delta_icon, display_text, color = _get_comparison_data(delta_text, delta_val, delta_color)
     value_color = color if delta_text else "var(--primary)"
-    delta_html = f'<div class="op-card-delta" style="color: {color}; font-size: clamp(0.6rem, 6cqi, 0.7rem); font-weight:700; overflow-wrap: break-word; line-height: 1.2;">{delta_icon} {delta_text}</div>' if delta_text else ""
+    
+    delta_html = f'<div class="op-card-delta" style="color: {color}; font-size: clamp(0.6rem, 6cqi, 0.7rem); font-weight:700; overflow-wrap: break-word; line-height: 1.2;">{delta_icon} {display_text}</div>'
 
     pulse_css = "animation: pulse-amber 2s infinite;" if is_alert else ""
     border_style = "2px solid var(--warning)" if is_alert else "1px solid var(--outline)"
