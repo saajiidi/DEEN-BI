@@ -27,7 +27,7 @@ from .dashboard_lib.data_helpers import (
 )
 
 DASHBOARD_SALES_COLUMNS = [
-    "order_id", "order_date", "order_total", "customer_key", "customer_name",
+    "order_id", "order_date", "shipped_date", "order_total", "customer_key", "customer_name",
     "order_status", "source", "city", "state", "qty", "item_name",
     "item_revenue", "line_total", "item_cost", "price", "sku", "Category", "Coupons"
 ]
@@ -575,6 +575,16 @@ def render_intelligence_hub_page():
                 """,
                 unsafe_allow_html=True,
             )
+
+            # Format for WhatsApp (WhatsApp uses * for bold instead of **)
+            whatsapp_text = f"📊 *DEEN-BI Executive Briefing ({window})*\n\n"
+            for point in all_points:
+                clean_point = point.replace("**", "*")
+                whatsapp_text += f"• {clean_point}\n\n"
+                
+            with st.expander("📱 Click to Copy WhatsApp Briefing"):
+                st.caption("Click the copy icon in the top-right corner of the block below to copy.")
+                st.code(whatsapp_text.strip(), language="markdown")
 
         st.divider()
         
