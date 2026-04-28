@@ -3,7 +3,7 @@ import os
 import streamlit as st
 import pandas as pd
 import tempfile
-import logging
+import logging # Keep logging for general use
 from typing import Dict, Any
 
 # Use unified data directory from root
@@ -11,6 +11,16 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 DATA_DIR = os.path.join(REPO_ROOT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 STATE_FILE = os.path.join(DATA_DIR, "session_state.json")
+
+# --- KeyManager for Streamlit Widgets ---
+class KeyManager:
+    """
+    Manages unique keys for Streamlit widgets to prevent duplicate key errors.
+    """
+    @staticmethod
+    def get_key(prefix: str, identifier: str) -> str:
+        """Generates a unique key string."""
+        return f"{prefix}_{identifier}"
 
 
 class AppState:

@@ -10,6 +10,41 @@ os.makedirs(DATA_DIR, exist_ok=True)
 STATE_FILE = os.path.join(DATA_DIR, "session_state.json")
 
 
+class KeyManager:
+    """Utility for generating unique Streamlit widget keys to avoid conflicts."""
+
+    _key_registry = {}
+
+    @classmethod
+    def get_key(cls, namespace: str, key: str) -> str:
+        """Generate a unique key for Streamlit widgets.
+
+        Args:
+            namespace: The feature/module namespace (e.g., "returns", "inventory")
+            key: The specific widget key name
+
+        Returns:
+            A unique key string in format "namespace__key"
+        """
+        full_key = f"{namespace}__{key}"
+        return full_key
+
+    @classmethod
+    def register_key(cls, namespace: str, key: str) -> str:
+        """Register and return a unique key, tracking usage."""
+        full_key = cls.get_key(namespace, key)
+        cls._key_registry[full_key] = cls._key_registry.get(full_key, 0) + 1
+        return full_key
+
+    @classmethod
+    def clear_namespace(cls, namespace: str):
+        """Clear all keys for a given namespace from session state."""
+        keys_to_clear = [k for k in st.session_state.keys() if k.startswith(f"{namespace}__")]
+        for k in keys_to_clear:
+            if k in st.session_state:
+                del st.session_state[k]
+
+
 def save_state():
     """Saves relevant session state keys to a local file."""
     state_to_save = {}
