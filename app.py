@@ -122,10 +122,10 @@ def _render_workspace_sidebar():
         nav_map = {
             "💎 Sales Overview": "💎 Sales Overview",
             "📥 Sales Data Ingestion": "📥 Sales Data Ingestion",
-            "📊 Traffic & Acquisition": "📊 Traffic & Acquisition",
+            "📦 Stock Insight": "📦 Stock Insight",
             "👥 Customer Insight": "👥 Customer Insight",
             "🔄 Returns Insights": "🔄 Returns Insights",
-            "📦 Stock Insight": "📦 Stock Insight",
+            "📊 Traffic & Acquisition": "📊 Traffic & Acquisition",
             "🚀 Data Pilot": "🚀 Data Pilot"
         }
 
