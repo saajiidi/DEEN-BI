@@ -40,8 +40,8 @@ def render_today_vs_last_day_sales_chart(df_sales: pd.DataFrame, df_customers: p
     order_df = build_order_level_dataset(df_sales)
     if not order_df.empty and "order_status" in order_df.columns:
         status_map = {"completed": "Shipped", "on-hold": "Waiting", "processing": "Processing", "cancelled": "Cancelled", "refunded": "Refunded", "pending": "Pending", "failed": "Failed"}
-        status_counts = order_df["order_status"].str.lower().value_counts().reset_index()
-        status_counts.columns = ["Status", "Orders"]
+        status_counts = order_df["order_status"].str.lower().value_counts().reset_index(name="Orders")
+        status_counts = status_counts.rename(columns={"index": "Status", "order_status": "Status"})
         rows = (len(status_counts) + 3) // 4
         for r in range(rows):
             cols = st.columns(4)

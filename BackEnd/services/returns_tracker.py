@@ -1413,7 +1413,7 @@ def calculate_net_sales_metrics(
         .count()
         .reset_index()
     )
-    monthly.columns = ["month", "issue_count"]
+    monthly = monthly.rename(columns={"date": "month", "order_id": "issue_count"})
 
     # ── Issue type by month ──
     monthly_by_type = (

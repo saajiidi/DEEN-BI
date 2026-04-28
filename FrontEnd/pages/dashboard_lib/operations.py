@@ -34,8 +34,8 @@ def render_operational_health(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
         
         with c2:
             # Latency Distribution
-            latency_counts = shipped_df['latency'].value_counts().reset_index()
-            latency_counts.columns = ['Days', 'Count']
+            latency_counts = shipped_df['latency'].value_counts().reset_index(name='Count')
+            latency_counts = latency_counts.rename(columns={'index': 'Days', 'latency': 'Days'})
             fig = px.bar(latency_counts.sort_values('Days'), x='Days', y='Count', 
                          title="Shipping Velocity Distribution",
                          labels={'Count': 'Orders'},
@@ -68,8 +68,8 @@ def render_operational_health(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
         df['is_refunded'] = df['order_status'].astype(str).str.lower() == 'refunded'
         weekly_totals = df.groupby('week')['order_id'].nunique()
         weekly_refunded = df[df['is_refunded']].groupby('week')['order_id'].nunique()
-        weekly_refunds = (weekly_refunded / weekly_totals * 100).fillna(0).reset_index()
-        weekly_refunds.columns = ['Week', 'Refund Rate']
+        weekly_refunds = (weekly_refunded / weekly_totals * 100).fillna(0).reset_index(name='Refund Rate')
+        weekly_refunds = weekly_refunds.rename(columns={'week': 'Week'})
         
         fig_ref = px.line(weekly_refunds, x='Week', y='Refund Rate', title="Weekly Refund Rate Trend",
                           markers=True, color_discrete_sequence=['#EF4444'])
@@ -99,7 +99,7 @@ def render_operational_health(df_sales: pd.DataFrame, stock_df: pd.DataFrame):
             'ID': 'count',
             'Stock Quantity': 'sum'
         }).reset_index()
-        cat_stock.columns = ['Category', 'Product Count', 'Total Stock']
+        cat_stock = cat_stock.rename(columns={'ID': 'Product Count', 'Stock Quantity': 'Total Stock'})
         
         # Guard against NaNs in Plotly Treemap path
         plot_stock = stock_df.copy()

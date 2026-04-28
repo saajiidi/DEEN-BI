@@ -23,6 +23,10 @@ jobs:
         pip install -r requirements.txt
         pip install pytest ruff black
 
+    - name: Check for Python syntax and indentation errors
+      run: |
+        python -m compileall -q .
+
     - name: Lint with Ruff
       run: |
         # stop the build if there are Python syntax errors or undefined names

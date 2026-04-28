@@ -1091,8 +1091,8 @@ def _render_returned_items_list(df: pd.DataFrame) -> None:
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown("**📊 Return Reason Breakdown:**")
-                reason_df = reason_counts.reset_index()
-                reason_df.columns = ['Reason', 'Count']
+                reason_df = reason_counts.reset_index(name='Count')
+                reason_df = reason_df.rename(columns={'index': 'Reason', 'Return Reason': 'Reason'})
                 reason_df['% of Returns'] = (reason_df['Count'] / reason_df['Count'].sum() * 100).round(1)
                 st.dataframe(reason_df, width="stretch", hide_index=True)
 
@@ -1153,10 +1153,7 @@ def _render_details_table(df: pd.DataFrame, sales_df: pd.DataFrame) -> None:
 
     # Apply SKU mapping and item breakdown
     with st.spinner("Resolving Order Items..."):
-        display_df["Item Breakdown"] = display_df.apply(
-            lambda row: get_order_items_breakdown(row["order_id"], row["returned_items"], sales_df),
-            axis=1
-        )
+        display_df["Item Breakdown"] = get_order_items_breakdown(display_df, sales_df)
     
     # Format the items list for display
     def format_item_list(items):

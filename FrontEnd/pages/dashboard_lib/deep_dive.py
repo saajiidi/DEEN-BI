@@ -490,8 +490,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         b_c1, b_c2 = st.columns(2)
         with b_c1:
             # Quantity Distribution (Basket logic)
-            q_dist = w_df.groupby("qty")["order_id"].nunique().reset_index()
-            q_dist.columns = ["Items in Line", "Orders"]
+            q_dist = w_df.groupby("qty")["order_id"].nunique().reset_index().rename(columns={"qty": "Items in Line", "order_id": "Orders"})
             fig = px.bar(q_dist, x="Items in Line", y="Orders", title="Distribution of Units per Line Item",
                          text_auto=True, color_discrete_sequence=["#F59E0B"])
             st.plotly_chart(fig, width="stretch", key=KeyManager.get_key("deep_dive", "dist_units_per_line_bar"))

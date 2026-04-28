@@ -51,17 +51,13 @@ def render_district_map(df_sales: pd.DataFrame):
     )
 
     if map_metric == "Revenue":
-        agg_raw = df_map.groupby("District_Parent")["order_total"].sum().reset_index()
-        spot_raw = df_map.groupby("Display_Region")["order_total"].sum().reset_index()
-        agg_raw.columns = ["District", "Value"]
-        spot_raw.columns = ["Region", "Value"]
+        agg_raw = df_map.groupby("District_Parent")["order_total"].sum().reset_index().rename(columns={"District_Parent": "District", "order_total": "Value"})
+        spot_raw = df_map.groupby("Display_Region")["order_total"].sum().reset_index().rename(columns={"Display_Region": "Region", "order_total": "Value"})
         color_scale = "Tealgrn"
         labels = {"Value": "Revenue (৳)"}
     else:
-        agg_raw = df_map.groupby("District_Parent")["order_id"].nunique().reset_index()
-        spot_raw = df_map.groupby("Display_Region")["order_id"].nunique().reset_index()
-        agg_raw.columns = ["District", "Value"]
-        spot_raw.columns = ["Region", "Value"]
+        agg_raw = df_map.groupby("District_Parent")["order_id"].nunique().reset_index().rename(columns={"District_Parent": "District", "order_id": "Value"})
+        spot_raw = df_map.groupby("Display_Region")["order_id"].nunique().reset_index().rename(columns={"Display_Region": "Region", "order_id": "Value"})
         color_scale = "Purp"
         labels = {"Value": "Orders"}
 

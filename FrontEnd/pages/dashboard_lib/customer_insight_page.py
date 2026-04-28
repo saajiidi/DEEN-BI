@@ -631,8 +631,8 @@ def _render_legacy_insights(df_sales: pd.DataFrame) -> None:
     
     with t_seg:
         st.markdown("### 📊 Value Segments")
-        mix_df = df["segment"].value_counts().reset_index()
-        mix_df.columns = ["Segment", "Count"]
+        mix_df = df["segment"].value_counts().reset_index(name="Count")
+        mix_df = mix_df.rename(columns={"index": "Segment", "segment": "Segment"})
         
         c1, c2 = st.columns(2)
         with c1:
