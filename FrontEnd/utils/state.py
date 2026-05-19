@@ -1,3 +1,4 @@
+import gc
 import json
 import os
 import streamlit as st
@@ -127,3 +128,23 @@ def clear_state_keys(keys):
         if key in st.session_state:
             del st.session_state[key]
     save_state()
+
+
+def garbage_collect_session_state(clear_data: bool = False):
+    """
+    Frees up memory by removing large dataframes from session state
+    and explicitly running the Python garbage collector.
+    """
+    if clear_data:
+        # Keys containing large Pandas DataFrames that should be rebuilt
+        heavy_keys = ["dashboard_data", "returns_data", "pbi_export_bytes"]
+        for key in heavy_keys:
+            if key in st.session_state:
+                del st.session_state[key]
+                
+        # Clean up dynamically generated Data Pilot terminal datasets
+        dynamic_keys = [k for k in st.session_state.keys() if "sql_result" in k]
+        for key in dynamic_keys:
+            del st.session_state[key]
+            
+    gc.collect()

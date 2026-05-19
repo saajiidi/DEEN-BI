@@ -3,9 +3,18 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 
 from FrontEnd.utils.config import APP_TITLE, APP_DATA_START_DATE
+
+# MUST BE THE FIRST STREAMLIT COMMAND
+st.set_page_config(
+    page_title=APP_TITLE,
+    page_icon="AP",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+from streamlit_autorefresh import st_autorefresh
 from FrontEnd.utils.error_handler import ERROR_LOG_FILE, get_logs, log_error
 from FrontEnd.utils.state import init_state
 from FrontEnd.components import ui
@@ -48,13 +57,6 @@ def _transparent_plotly_chart(figure_or_data, *args, **kwargs):
 
 st.plotly_chart = _transparent_plotly_chart
 
-st.set_page_config(
-    page_title=APP_TITLE,
-    page_icon="AP",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
 
 def _clear_error_logs():
     if os.path.exists(ERROR_LOG_FILE):
@@ -68,6 +70,10 @@ def _render_workspace_sidebar():
         if "time_window" not in st.session_state:
             st.session_state.time_window = "Last Month"
 
+        def _on_time_window_change():
+            from FrontEnd.utils.state import garbage_collect_session_state
+            garbage_collect_session_state(clear_data=True)
+
         st.markdown('<div class="sidebar-group-label">⏱️ Operational Range</div>', unsafe_allow_html=True)
         st.select_slider(
             "Time Window",
@@ -75,7 +81,7 @@ def _render_workspace_sidebar():
                 "Last Day", "Last 3 Days", "Last 7 Days", "Last 15 Days", "Last Month",
                 "Last 3 Months", "Last Quarter", "Last Half Year", "Last 9 Months", "Last Year", "Custom Date Range"
             ],
-            key="time_window", label_visibility="collapsed"
+            key="time_window", label_visibility="collapsed", on_change=_on_time_window_change
         )
         
 
@@ -92,10 +98,10 @@ def _render_workspace_sidebar():
         if st.session_state.get("time_window") == "Custom Date Range":
             col1, col2 = st.columns(2)
             with col1:
-                st.date_input("Start Date", value=datetime.now().date() - timedelta(days=30), min_value=APP_DATA_START_DATE, max_value=datetime.now().date(), key="wc_sync_start_date")
+                st.date_input("Start Date", value=datetime.now().date() - timedelta(days=30), min_value=APP_DATA_START_DATE, max_value=datetime.now().date(), key="wc_sync_start_date", on_change=_on_time_window_change)
                 
             with col2:
-                st.date_input("End Date", value=datetime.now().date(), min_value=APP_DATA_START_DATE, max_value=datetime.now().date(), key="wc_sync_end_date")
+                st.date_input("End Date", value=datetime.now().date(), min_value=APP_DATA_START_DATE, max_value=datetime.now().date(), key="wc_sync_end_date", on_change=_on_time_window_change)
                 
         st.divider()
 
@@ -144,12 +150,17 @@ def _render_workspace_sidebar():
         except ValueError:
             current_index = 0
 
+        def _on_nav_change():
+            from FrontEnd.utils.state import garbage_collect_session_state
+            garbage_collect_session_state(clear_data=False)
+
         selection = st.radio(
             "Navigation",
             labels,
             index=current_index,
             key="main_nav",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            on_change=_on_nav_change
         )
         
         # Update formal state
@@ -176,9 +187,12 @@ def _render_workspace_sidebar():
         st.divider()
 
         # 3. Global Sync Trigger
-        if st.button("🔄 Sync Operations", type="primary", use_container_width=True):
+        def _trigger_sync():
             st.session_state["global_sync_request"] = True
-            st.rerun()
+            from FrontEnd.utils.state import garbage_collect_session_state
+            garbage_collect_session_state(clear_data=True)
+            
+        st.button("🔄 Sync Operations", type="primary", use_container_width=True, on_click=_trigger_sync)
             
         # 4. Global Export & Utilities
         with st.expander("🛠️ Advanced Controls"):
@@ -206,9 +220,13 @@ def _render_workspace_sidebar():
                         use_container_width=True,
                         type="primary"
                     )
-                    if st.button("🔄 Clear Schema Cache", use_container_width=True):
-                        del st.session_state.pbi_export_bytes
-                        st.rerun()
+                    def _clear_pbi_cache():
+                        if "pbi_export_bytes" in st.session_state:
+                            del st.session_state["pbi_export_bytes"]
+                        from FrontEnd.utils.state import garbage_collect_session_state
+                        garbage_collect_session_state(clear_data=False)
+                        
+                    st.button("🔄 Clear Schema Cache", use_container_width=True, on_click=_clear_pbi_cache)
 
                 st.divider()
                 sales_export_df = st.session_state.dashboard_data.get("sales", pd.DataFrame())
