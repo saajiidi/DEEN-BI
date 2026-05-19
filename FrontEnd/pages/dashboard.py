@@ -469,38 +469,6 @@ def render_intelligence_hub_page():
     st.markdown("<br>", unsafe_allow_html=True)
 
     if selection == "💎 Sales Overview":
-        # --- Feature 14: Goal Tracking & Target Pacing ---
-        default_target = prev_rev_val * 1.15 if prev_rev_val > 0 else 500000
-        target_revenue = st.session_state.get("revenue_target", default_target)
-        progress_pct = min(total_rev / target_revenue if target_revenue > 0 else 0, 1.0)
-        
-        g_col1, g_col2 = st.columns([8, 2])
-        with g_col1:
-            st.markdown("#### 🎯 Revenue Target Pacing")
-            st.caption(f"Tracking current period revenue against the {data['window_label']} growth goal.")
-            st.markdown(
-                f"""
-                <div style="width: 100%; background-color: rgba(255,255,255,0.05); border-radius: 12px; margin-top: 5px; margin-bottom: 5px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);">
-                    <div style="width: {max(progress_pct * 100, 2)}%; background: linear-gradient(90deg, #3b82f6 0%, #10b981 100%); height: 28px; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; transition: width 0.5s ease-in-out; border-radius: 12px;">
-                        <span style="color: white; font-weight: 800; font-size: 0.85rem; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">{(progress_pct * 100):.1f}%</span>
-                    </div>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-top: 5px; font-size: 0.85rem; color: #94a3b8; font-weight: 600;">
-                    <span>Current: ৳{total_rev:,.0f}</span>
-                    <span>Target: ৳{target_revenue:,.0f}</span>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        with g_col2:
-            st.markdown("<br>", unsafe_allow_html=True)
-            with st.popover("⚙️ Adjust Goal"):
-                new_target = st.number_input("Target Revenue (৳)", min_value=0, value=int(target_revenue), step=50000)
-                if st.button("Save Target"):
-                    st.session_state["revenue_target"] = new_target
-                    st.rerun()
-        st.divider()
-
         # --- Sales Integrity Gap Chart ---
         from BackEnd.services.returns_tracker import calculate_net_sales_metrics
         import plotly.graph_objects as go
