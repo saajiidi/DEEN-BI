@@ -128,12 +128,16 @@ def _render_workspace_sidebar():
             "👥 Customer Insight": "👥 Customer Insight",
             "🔄 Returns Insights": "🔄 Returns Insights",
             "📊 Traffic & Acquisition": "📊 Traffic & Acquisition",
-            "🚀 Data Pilot": "🚀 Data Pilot"
+            "🛡️ Strategic Command": "🛡️ Strategic Command"
         }
 
         # Initialize section if not set
         if "active_section" not in st.session_state:
             st.session_state.active_section = "💎 Sales Overview"
+
+        # Migration: Handle renamed Data Pilot
+        if st.session_state.active_section == "🚀 Data Pilot":
+            st.session_state.active_section = "🛡️ Strategic Command"
 
         # Migration: Handle renamed tabs
         if st.session_state.active_section == "🔄 Returns & Net Sales":
@@ -165,6 +169,23 @@ def _render_workspace_sidebar():
         
         # Update formal state
         st.session_state.active_section = nav_map[selection]
+
+        st.divider()
+        st.markdown('<div class="sidebar-group-label">🤖 AI ASSISTANT</div>', unsafe_allow_html=True)
+        
+        pilot_popover = st.popover("🚀 Activate Data Pilot", use_container_width=True, help="Open the AI assistant to ask questions about your data.")
+
+        with pilot_popover:
+            # Check if data is loaded
+            dashboard_data = st.session_state.get("dashboard_data")
+            if dashboard_data and not dashboard_data.get("sales", pd.DataFrame()).empty:
+                sales_df = dashboard_data.get("sales", pd.DataFrame())
+                from FrontEnd.components.data_display import render_ai_pilot_chat_ui
+                render_ai_pilot_chat_ui(sales_df)
+            else:
+                st.info("Navigate to a dashboard and load data to activate the pilot.")
+
+        st.divider()
 
         st.markdown('<div class="sidebar-group-label">⚙️ Workspace Status</div>', unsafe_allow_html=True)
         st.markdown(

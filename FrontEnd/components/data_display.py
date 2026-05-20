@@ -130,6 +130,49 @@ def export_to_excel(
     output.seek(0)
     return output.read()
 
+def render_ai_pilot_chat_ui(sales_df: pd.DataFrame):
+    """Renders the AI Data Pilot chat interface inside a container like a popover."""
+    st.markdown("#### 🤖 Operations Data Pilot")
+    st.caption("Ask natural language questions about your e-commerce health.")
+
+    # Initialize chat history in session state if it doesn't exist
+    if "pilot_messages" not in st.session_state:
+        st.session_state.pilot_messages = [{"role": "assistant", "content": "How can I help you analyze the data?"}]
+
+    # Display prior chat messages
+    for message in st.session_state.pilot_messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Accept user input
+    if prompt := st.chat_input("e.g., 'What are my top 5 selling products?'"):
+        # Add user message to history and display it
+        st.session_state.pilot_messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Generate and display a mock assistant response
+        with st.chat_message("assistant"):
+            with st.spinner("Analyzing..."):
+                try:
+                    from BackEnd.services.nlp_engine import get_nlp_response
+                    
+                    agent_type = "Standard"
+                    try:
+                        if "GEMINI_API_KEY" in st.secrets:
+                            agent_type = "Google Gemini"
+                    except Exception:
+                        pass
+                    
+                    response = get_nlp_response(prompt, sales_df, agent_type=agent_type)
+                except Exception as e:
+                    response = f"Sorry, I encountered an error during analysis: {e}"
+                
+                st.markdown(response)
+        
+        # Add assistant response to history
+        st.session_state.pilot_messages.append({"role": "assistant", "content": response})
+
 
 def show_last_updated(path: str):
     if not os.path.exists(path):

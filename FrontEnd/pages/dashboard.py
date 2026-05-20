@@ -746,7 +746,7 @@ def render_intelligence_hub_page():
         render_inventory_health(data["stock"], (data.get("ml") or {}).get("forecast"), data["sales"])
 
     elif selection == "🚀 Data Pilot":
-        render_data_pilot_page(data["sales"], data["stock"], data.get("customers"))
+        render_strategic_command_page(data["sales"], data["stock"], data.get("customers"))
 
 
 # --- MERGED COMPONENT LOGIC ---
@@ -765,28 +765,21 @@ def render_customer_insight_tab(reg_rev: float, guest_rev: float, total_accounts
 
 # End of Dashboard controller logic
 
-def render_data_pilot_page(sales_df: pd.DataFrame, stock_df: pd.DataFrame, customers_df: pd.DataFrame = None):
-    """The AI-first command interface for natural language operations and Strategic Intelligence."""
-    st.markdown('<div class="live-indicator"><span class="live-dot" style="background:#4f46e5; box-shadow: 0 0 10px #4f46e5;"></span>Intelligence Center Active | Data Pilot v11.0</div>', unsafe_allow_html=True)
+def render_strategic_command_page(sales_df: pd.DataFrame, stock_df: pd.DataFrame, customers_df: pd.DataFrame = None):
+    """The command interface for advanced strategic analysis and market intelligence."""
+    st.markdown('<div class="live-indicator"><span class="live-dot" style="background:#4f46e5; box-shadow: 0 0 10px #4f46e5;"></span>Intelligence Center Active | Strategic Command</div>', unsafe_allow_html=True)
     
-    tab1, tab2, tab3 = st.tabs([
-        "🚀 Ask Data Pilot", 
+    tab1, tab2 = st.tabs([
         "🚨 Strategic War-Room", 
         "📦 Market Basket Intel"
     ])
     
     with tab1:
-        st.markdown("### 🤖 Operations Data Pilot")
-        st.caption("Ask natural language questions about your e-commerce health, stockouts, or revenue trends.")
-        from FrontEnd.components.insights import render_ai_pilot_chat
-        render_ai_pilot_chat(sales_df)
-    
-    with tab2:
         from .dashboard_lib.war_room import render_war_room_page
         returns_df = st.session_state.get("returns_data", pd.DataFrame())
         render_war_room_page(sales_df, returns_df)
 
-    with tab3:
+    with tab2:
         st.markdown("#### 🔍 Automated Market Basket Intelligence")
         from BackEnd.services.affinity_engine import MarketBasketEngine
         engine = MarketBasketEngine(sales_df)
