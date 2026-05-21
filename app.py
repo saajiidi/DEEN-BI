@@ -32,7 +32,7 @@ def _numbered_dataframe(data, *args, **kwargs):
             if isinstance(data.index, pd.RangeIndex):
                 copied = data.copy()
                 if len(copied) > 0:
-                    copied.index = range(1, len(copied) + 1)
+                    copied.index = pd.RangeIndex(start=1, stop=len(copied) + 1)
                 return _original_dataframe(copied, *args, **kwargs)
     except Exception:
         pass
@@ -181,8 +181,9 @@ def _render_workspace_sidebar():
             if dashboard_data and not dashboard_data.get("sales", pd.DataFrame()).empty:
                 sales_df = dashboard_data.get("sales", pd.DataFrame())
                 returns_df = st.session_state.get("returns_data", pd.DataFrame())
+                stock_df = dashboard_data.get("stock", pd.DataFrame())
                 from FrontEnd.components.data_display import render_ai_pilot_chat_ui
-                render_ai_pilot_chat_ui(sales_df=sales_df)
+                render_ai_pilot_chat_ui(sales_df=sales_df, returns_df=returns_df, stock_df=stock_df)
             else:
                 st.info("Navigate to a dashboard and load data to activate the pilot.")
 
@@ -294,6 +295,18 @@ def _render_workspace_sidebar():
                 if os.path.exists(STATE_FILE): os.remove(STATE_FILE)
                 st.session_state.clear()
                 st.rerun()
+                
+            if st.button("🧹 Clear Embedding Cache", use_container_width=True, help="Free up memory and refresh the AI context"):
+                from pathlib import Path
+                cache_file = Path("BackEnd/cache/embedding_cache.parquet")
+                try:
+                    if cache_file.exists():
+                        cache_file.unlink()
+                except Exception:
+                    pass
+                if "embedding_cache" in st.session_state:
+                    del st.session_state["embedding_cache"]
+                st.toast("Embedding cache cleared!", icon="🧹")
             
             _render_system_logs()
 

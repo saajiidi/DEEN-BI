@@ -64,7 +64,7 @@ def detect_business_anomalies(
         if not recent_returns.empty:
             courier_stats = recent_returns.groupby('courier').size()
             avg_returns = courier_stats.mean()
-            poor_couriers = courier_stats[courier_stats > (avg_returns * 1.5)]
+            poor_couriers = courier_stats[courier_stats > (avg_returns * 1.5)]  # type: ignore
             
             for courier, count in poor_couriers.items():
                 anomalies.append({

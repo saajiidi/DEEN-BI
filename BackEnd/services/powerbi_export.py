@@ -24,12 +24,12 @@ def build_star_schema(data: Dict[str, Any], returns_df: pd.DataFrame) -> Tuple[b
             max_date = pd.to_datetime('today')
             
         dim_date = pd.DataFrame({'Date': pd.date_range(start=min_date, end=max_date)})
-        dim_date['DateKey'] = dim_date['Date'].dt.strftime('%Y%m%d').astype(int)
-        dim_date['Year'] = dim_date['Date'].dt.year
-        dim_date['Month'] = dim_date['Date'].dt.month
-        dim_date['MonthName'] = dim_date['Date'].dt.strftime('%B')
-        dim_date['Quarter'] = dim_date['Date'].dt.quarter
-        dim_date['DayOfWeek'] = dim_date['Date'].dt.day_name()
+        dim_date['DateKey'] = dim_date['Date'].dt.strftime('%Y%m%d').astype(int)  # type: ignore
+        dim_date['Year'] = dim_date['Date'].dt.year  # type: ignore
+        dim_date['Month'] = dim_date['Date'].dt.month  # type: ignore
+        dim_date['MonthName'] = dim_date['Date'].dt.strftime('%B')  # type: ignore
+        dim_date['Quarter'] = dim_date['Date'].dt.quarter  # type: ignore
+        dim_date['DayOfWeek'] = dim_date['Date'].dt.strftime('%A')  # type: ignore
         dim_date['IsWeekend'] = dim_date['DayOfWeek'].isin(['Friday', 'Saturday'])
         
         dim_date.to_excel(writer, sheet_name='Dim_Date', index=False)

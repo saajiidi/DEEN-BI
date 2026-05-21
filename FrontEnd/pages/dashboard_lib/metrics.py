@@ -62,3 +62,36 @@ def render_executive_summary(df_sales: pd.DataFrame, df_customers: pd.DataFrame,
         if vip_count: insights.append(f"{vip_count} VIP customers are active. Prioritize their experience.")
     if not insights: insights.append("Business pulse is stable. Focus on retention programs.")
     ui.commentary("Intelligence Commentary", insights)
+
+    st.markdown("---")
+    if st.button("✨ Generate AI Executive Brief", use_container_width=True):
+        with st.spinner("Analyzing business performance via AI..."):
+            try:
+                from BackEnd.services.nlp_engine import LLMAgent
+                import os
+                agent_type = "Standard"
+                if "GROQ_API_KEY" in st.secrets or os.environ.get("GROQ_API_KEY"):
+                    agent_type = "Groq"
+                elif "GEMINI_API_KEY" in st.secrets or os.environ.get("GEMINI_API_KEY"):
+                    agent_type = "Google Gemini"
+                    
+                agent = LLMAgent(agent_type=agent_type)
+                context_dfs = {"sales": df_sales}
+                prompt = "You are a CEO-level Executive Data Analyst. Provide a concise, 3-bullet-point executive brief on the current sales performance, identifying the biggest win and the biggest risk based on the data summary provided. Keep it strictly under 100 words. Format cleanly using markdown."
+                
+                ai_brief = agent.query(prompt, context_dfs)
+                st.session_state["ai_executive_brief"] = ai_brief
+            except Exception as e:
+                st.error(f"Could not generate AI brief: {e}")
+                
+    if "ai_executive_brief" in st.session_state:
+        st.markdown(
+            f"""
+            <div style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%); 
+                        padding: 20px; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.2); 
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-top: 10px;">
+                <div style="color: var(--primary); font-weight: 800; font-size: 0.75rem; letter-spacing: 1px; margin-bottom: 8px;">✨ AI EXECUTIVE BRIEF</div>
+                <div style="font-size: 0.95rem; line-height: 1.5;">{st.session_state['ai_executive_brief']}</div>
+            </div>
+            """, unsafe_allow_html=True
+        )

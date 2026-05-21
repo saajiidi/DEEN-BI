@@ -463,6 +463,36 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         fig.update_layout(yaxis={'categoryorder': sort_order}, height=max(400, limit*25))
         st.plotly_chart(fig, width="stretch", key=KeyManager.get_key("deep_dive", "products_spotlight"))
         
+        if st.button("✨ Generate AI Product Summary", use_container_width=True, key=KeyManager.get_key("deep_dive", "ai_prod_summary")):
+            with st.spinner("AI is analyzing the top products..."):
+                try:
+                    from BackEnd.services.nlp_engine import LLMAgent
+                    import os
+                    agent_type = "Standard"
+                    if "GROQ_API_KEY" in st.secrets or os.environ.get("GROQ_API_KEY"):
+                        agent_type = "Groq"
+                    elif "GEMINI_API_KEY" in st.secrets or os.environ.get("GEMINI_API_KEY"):
+                        agent_type = "Google Gemini"
+                    agent = LLMAgent(agent_type=agent_type)
+                    
+                    summary_df = leader_df.head(10).copy()
+                    prompt = f"Analyze the following top-selling products data:\n\n{summary_df.to_string()}\n\nProvide a concise 3-bullet insight on what is driving the revenue, pointing out any specific categories or products that stand out. Keep it under 100 words. Format cleanly using markdown."
+                    
+                    ai_response = agent.query(prompt, {})
+                    st.session_state[KeyManager.get_key("deep_dive", "ai_summary_result")] = ai_response
+                except Exception as e:
+                    st.error(f"Could not generate summary: {e}")
+                    
+        if KeyManager.get_key("deep_dive", "ai_summary_result") in st.session_state:
+            st.markdown(
+                f"""
+                <div style="background: rgba(99, 102, 241, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid var(--primary); margin-top: 10px; margin-bottom: 20px;">
+                    <div style="color: var(--primary); font-weight: 800; font-size: 0.75rem; letter-spacing: 1px; margin-bottom: 8px;">✨ AI TOP 10 SUMMARY</div>
+                    <div style="font-size: 0.9rem;">{st.session_state[KeyManager.get_key("deep_dive", "ai_summary_result")]}</div>
+                </div>
+                """, unsafe_allow_html=True
+            )
+
         c1, c2 = st.columns(2)
         with c1:
             # Trend Revenue Pie - Descending Contribution

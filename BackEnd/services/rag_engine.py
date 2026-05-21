@@ -5,6 +5,7 @@ import json
 import hashlib
 import streamlit as st
 from typing import List, Dict, Any
+from pathlib import Path
 from BackEnd.core.logging_config import get_logger
 
 logger = get_logger("rag_engine")
@@ -49,15 +50,46 @@ class RAGAgent:
         self.base_url = base_url.rstrip('/')
         self.agent_type = agent_type
         self.vector_store = SimpleVectorStore()
-        self._api_key = st.secrets.get("GEMINI_API_KEY") if agent_type == "Google Gemini" else None
+        import os
+        self._api_key = (st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")) if agent_type == "Google Gemini" else None
+
+    def _load_embedding_cache(self):
+        if "embedding_cache" not in st.session_state:
+            st.session_state.embedding_cache = {}
+            cache_dir = Path("BackEnd/cache")
+            cache_file = cache_dir / "embedding_cache.parquet"
+            if cache_file.exists():
+                try:
+                    df = pd.read_parquet(cache_file)
+                    cache = dict(zip(df['cache_key'], df['embedding']))
+                    st.session_state.embedding_cache = cache
+                except Exception as e:
+                    logger.error(f"Failed to load embedding cache: {e}")
+
+    def _save_embedding_cache(self):
+        if "embedding_cache" in st.session_state and st.session_state.embedding_cache:
+            cache_dir = Path("BackEnd/cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_file = cache_dir / "embedding_cache.parquet"
+            try:
+                embeddings_list = [
+                    emb.tolist() if isinstance(emb, np.ndarray) else emb
+                    for emb in st.session_state.embedding_cache.values()
+                ]
+                df = pd.DataFrame({
+                    'cache_key': list(st.session_state.embedding_cache.keys()),
+                    'embedding': embeddings_list
+                })
+                df.to_parquet(cache_file, index=False)
+            except Exception as e:
+                logger.error(f"Failed to save embedding cache: {e}")
 
     def _get_embeddings(self, texts: List[str]) -> np.ndarray:
         """Generate embeddings using the configured provider with local session caching."""
         if not texts:
             return np.array([])
             
-        if "embedding_cache" not in st.session_state:
-            st.session_state.embedding_cache = {}
+        self._load_embedding_cache()
             
         embeddings = []
         texts_to_fetch = []
@@ -110,6 +142,9 @@ class RAGAgent:
                 st.session_state.embedding_cache[cache_key] = emb
                 embeddings[i] = emb
                 
+        if texts_to_fetch:
+            self._save_embedding_cache()
+                
         return np.array(embeddings)
 
     def _ingest_dataframe(self, df: pd.DataFrame, max_rows: int = 500):
@@ -134,10 +169,15 @@ class RAGAgent:
         if embeddings.size > 0:
             self.vector_store.add_documents(docs, embeddings)
 
-    def query(self, prompt: str, context_df: pd.DataFrame) -> str:
+    def query(self, prompt: str, context_dfs: dict[str, pd.DataFrame]) -> str:
         """Full RAG Pipeline: Ingest -> Embed Query -> Retrieve -> Generate."""
         # 0. Clear previous vector store to prevent unbounded growth per session
         self.vector_store = SimpleVectorStore()
+        
+        # Extract individual DFs
+        sales_df = context_dfs.get("sales", pd.DataFrame())
+        returns_df = context_dfs.get("returns", pd.DataFrame())
+        stock_df = context_dfs.get("stock", pd.DataFrame())
         
         # 1. Determine active page context to prioritize
         active_section = st.session_state.get("active_section", "💎 Sales Overview")
@@ -145,15 +185,15 @@ class RAGAgent:
         
         active_df = None
         if active_section == "📦 Stock Insight":
-            active_df = dashboard_data.get("stock", pd.DataFrame())
+            active_df = stock_df
         elif active_section == "👥 Customer Insight":
             active_df = dashboard_data.get("customers", pd.DataFrame())
         elif active_section == "🔄 Returns Insights":
-            active_df = st.session_state.get("returns_data", pd.DataFrame())
+            active_df = returns_df
         elif active_section == "💎 Sales Overview" or active_section == "🛡️ Strategic Command":
-            active_df = dashboard_data.get("sales_active", pd.DataFrame())
+            active_df = sales_df
             
-        ingested_site_data = False
+        ingested_datasets = set()
         
         # 2. Ingest Active Page Data (High Priority)
         if active_df is not None and not active_df.empty:
@@ -161,15 +201,53 @@ class RAGAgent:
             active_context["_Data_Context"] = f"Active Page: {active_section}"
             self._ingest_dataframe(active_context, max_rows=300)
             
-            # Check if active_df is identical to context_df to avoid double ingestion
-            if context_df is not None and not context_df.empty and active_df.equals(context_df):
-                ingested_site_data = True
+            # Keep track of what we ingested
+            if active_df.equals(sales_df): ingested_datasets.add("sales")
+            if active_df.equals(returns_df): ingested_datasets.add("returns")
+            if active_df.equals(stock_df): ingested_datasets.add("stock")
 
-        # 3. Ingest Whole Site Data (Fallback / General Context)
-        if not ingested_site_data and context_df is not None and not context_df.empty:
-            site_context = context_df.copy()
+        # 3. Ingest Relevant Cross-Domain Data based on Prompt Context
+        if "return" in prompt.lower() and "returns" not in ingested_datasets and not returns_df.empty:
+            ret_context = returns_df.copy()
+            ret_context["_Data_Context"] = "Global Site Data (Returns)"
+            self._ingest_dataframe(ret_context, max_rows=200)
+            ingested_datasets.add("returns")
+            
+        if ("stock" in prompt.lower() or "inventory" in prompt.lower()) and "stock" not in ingested_datasets and not stock_df.empty:
+            stk_context = stock_df.copy()
+            stk_context["_Data_Context"] = "Global Site Data (Stock)"
+            self._ingest_dataframe(stk_context, max_rows=200)
+            ingested_datasets.add("stock")
+
+        # Ingest Sales as general fallback if not already ingested
+        if "sales" not in ingested_datasets and not sales_df.empty:
+            site_context = sales_df.copy()
             site_context["_Data_Context"] = "Global Site Data (Sales/Orders)"
             self._ingest_dataframe(site_context, max_rows=200)
+            ingested_datasets.add("sales")
+            
+        # Extract global aggregates to provide wide intelligence across all active dataframes
+        global_stats = {
+            "sales_summary": {
+                "total_revenue": sales_df['item_revenue'].sum() if not sales_df.empty and 'item_revenue' in sales_df.columns else 0,
+                "total_orders": sales_df['order_id'].nunique() if not sales_df.empty and 'order_id' in sales_df.columns else 0,
+                "top_selling_items": sales_df['item_name'].value_counts().head(5).to_dict() if not sales_df.empty and 'item_name' in sales_df.columns else {}
+            }
+        }
+        if not returns_df.empty:
+            global_stats["returns_summary"] = {
+                "total_returns": len(returns_df),
+                "top_reasons": returns_df['return_reason'].value_counts().head(5).to_dict() if 'return_reason' in returns_df.columns else {}
+            }
+            if 'returned_items' in returns_df.columns:
+                items_list = [i.get('name') for items in returns_df['returned_items'] if isinstance(items, list) for i in items if isinstance(i, dict) and 'name' in i]
+                if items_list:
+                    global_stats["returns_summary"]["top_returned_items"] = pd.Series(items_list).value_counts().head(5).to_dict()
+        if not stock_df.empty:
+            global_stats["stock_summary"] = {
+                "out_of_stock_count": len(stock_df[stock_df['Stock Status'] == 'outofstock']) if 'Stock Status' in stock_df.columns else 0,
+                "total_inventory_value": (pd.to_numeric(stock_df['Stock Quantity'], errors='coerce').fillna(0) * pd.to_numeric(stock_df['Price'], errors='coerce').fillna(0)).sum() if 'Stock Quantity' in stock_df.columns and 'Price' in stock_df.columns else 0
+            }
         
         # 4. Embed the User Query
         query_emb = self._get_embeddings([prompt])
@@ -184,30 +262,92 @@ class RAGAgent:
         # 6. Augmented Generation
         system_prompt = f"""
         You are DEEN-BI Data Pilot, an expert e-commerce analyst.
-        You have performed a semantic search on the database. Here are the most relevant row records for the user's query:
+        
+        GLOBAL AGGREGATES (Existing System Analysis across all domains):
+        {json.dumps(global_stats, indent=2)}
+        
+        SPECIFIC RECORDS (Semantic search on recent rows):
         
         {context_block}
         
         The provided records prioritize the user's currently active page ("{active_section}"), followed by general site data.
-        Answer the user's question accurately based ONLY on these specific records. Be concise, professional, and use markdown.
+        Answer the user's question accurately based on the global aggregates and specific records above. Be concise, professional, and use markdown.
+        If the user asks to compare datasets (e.g., "Is the highest returned item also my best-selling item?"), proactively cross-reference the top_returned_items and top_selling_items.
+        When asked for return reasons or similar distributions, present them using visual markdown charts (e.g., `Reason | ██████ 60%`).
         When queried about top-performing items, sales rankings, or categories, present the data in a clean Markdown table.
+        If the user asks for a chart or visualization, output valid Python Plotly code (using plotly.express or plotly.graph_objects) inside a ```python block, defining the data inline within the code based on the records.
         """
         
-        if self.agent_type == "Google Gemini":
+        def try_gemini():
             import google.generativeai as genai
+            import os
+            import streamlit as st
+            api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+            if not api_key: return "MISSING_KEY"
+            genai.configure(api_key=api_key)
             model = genai.GenerativeModel('gemini-1.5-flash')
             response = model.generate_content(f"{system_prompt}\n\nUser Question: {prompt}")
             return response.text
-        else:
-            is_ollama = "11434" in self.base_url
-            url = f"{self.base_url}/api/generate" if is_ollama else f"{self.base_url}/v1/chat/completions"
             
+        def try_groq():
+            from groq import Groq
+            import os
+            import streamlit as st
+            api_key = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
+            if not api_key: return "MISSING_KEY"
+            client = Groq(api_key=api_key)
+            completion = client.chat.completions.create(
+                model="llama3-70b-8192",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+            )
+            return completion.choices[0].message.content
+            
+        def try_local():
+            is_ollama = "11434" in self.base_url
+            url = f"{self.base_url}/api/generate" if is_ollama else (f"{self.base_url}/v1/chat/completions" if "/v1" not in self.base_url else f"{self.base_url}/chat/completions")
             payload = {
                 "model": self.model_name,
                 "prompt": f"{system_prompt}\n\nUser Question: {prompt}",
                 "stream": False
+            } if is_ollama else {
+                "model": self.model_name,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.2
             }
+            try:
+                response = requests.post(url, json=payload, timeout=30)
+                if response.status_code == 200:
+                    res_json = response.json()
+                    return res_json.get("response", "No response.") if is_ollama else res_json.get("choices", [{}])[0].get("message", {}).get("content", "No response.")
+                return "LOCAL_ERROR"
+            except Exception:
+                return "LOCAL_ERROR"
+
+        fallback_order = []
+        if self.agent_type == "Groq":
+            fallback_order = [("Groq", try_groq), ("Google Gemini", try_gemini), ("Local AI", try_local)]
+        elif self.agent_type == "Google Gemini":
+            fallback_order = [("Google Gemini", try_gemini), ("Groq", try_groq), ("Local AI", try_local)]
+        else:
+            fallback_order = [("Local AI", try_local), ("Groq", try_groq), ("Google Gemini", try_gemini)]
             
-            response = requests.post(url, json=payload, timeout=30)
-            res_json = response.json()
-            return res_json.get("response", "No response.") if is_ollama else res_json.get("choices", [{}])[0].get("message", {}).get("content", "No response.")
+        last_error = "❌ **AI Generation Failed:** No valid models available."
+        
+        for name, func in fallback_order:
+            try:
+                res = func()
+                if res in ["MISSING_KEY", "LOCAL_ERROR"]:
+                    continue
+                return res
+            except Exception as e:
+                last_error = f"❌ **{name} Error:** {str(e)}"
+                continue
+                
+        return last_error

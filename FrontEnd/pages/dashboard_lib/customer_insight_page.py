@@ -625,7 +625,7 @@ def _render_legacy_insights(df_sales: pd.DataFrame) -> None:
         return
     
     # Visual Segments and Retention
-    t_seg, t_coh = st.tabs(["📊 Value Segments", "📅 Retention Cohorts"])
+    t_seg, t_coh, t_churn = st.tabs(["📊 Value Segments", "📅 Retention Cohorts", "🚨 Churn Analysis"])
     
     with t_seg:
         st.markdown("### 📊 Value Segments")
@@ -647,20 +647,57 @@ def _render_legacy_insights(df_sales: pd.DataFrame) -> None:
             
     with t_coh:
         st.markdown("### 📅 Customer Retention Cohorts")
-        st.caption("Percentage of customers returning in subsequent months after their first purchase.")
-        cohort_df = generate_cohort_matrix(df_sales, period='M')
+        st.caption("Percentage of customers (or revenue) returning in subsequent months after their first purchase.")
+        
+        cohort_metric = st.radio("Retention Metric", ["Customers", "Revenue"], horizontal=True, key=KeyManager.get_key("ci", "cohort_metric"))
+        metric_param = "revenue" if cohort_metric == "Revenue" else "customers"
+        
+        cohort_df = generate_cohort_matrix(df_sales, period='M', metric=metric_param)
         if not cohort_df.empty:
             import plotly.express as px
             cohort_df.index = cohort_df.index.astype(str)  # Format period index for Plotly
             fig_coh = px.imshow(
-                cohort_df, text_auto=".1f", aspect="auto", color_continuous_scale="Tealgrn",
-                labels=dict(x="Months Since First Order", y="Cohort Month", color="Retention %"),
+                cohort_df, text_auto=".1f", aspect="auto", color_continuous_scale="Purpor" if cohort_metric == "Revenue" else "Tealgrn",
+                labels=dict(x="Months Since First Order", y="Cohort Month", color=f"{cohort_metric} Retention %"),
             )
             fig_coh.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig_coh, use_container_width=True, key=KeyManager.get_key("ci", "retention_cohorts_matrix"))
         else:
             st.info("Insufficient longitudinal data to generate retention cohorts.")
 
+    with t_churn:
+        st.markdown("### 🚨 Customer Churn Analysis")
+        st.caption("Identify 'At Risk' and 'Churned' customers based on their RFM modeling.")
+        
+        if "segment" in df.columns:
+            churn_df = df[df["segment"].isin(["At Risk", "Churned"])].copy()
+            
+            if not churn_df.empty:
+                c1, c2 = st.columns(2)
+                with c1:
+                    ui.metric_highlight("At Risk Customers", f"{len(df[df['segment'] == 'At Risk']):,}", icon="⚠️")
+                with c2:
+                    ui.metric_highlight("Churned Customers", f"{len(df[df['segment'] == 'Churned']):,}", icon="❌")
+                
+                st.markdown("#### Actionable Churn Ledger")
+                st.dataframe(
+                    churn_df[["customer_id", "primary_name", "segment", "recency_days", "total_orders", "total_revenue"]].sort_values("total_revenue", ascending=False),
+                    width="stretch",
+                    hide_index=True
+                )
+                
+                churn_excel = export_to_excel(churn_df, "Churn Analysis")
+                st.download_button(
+                    label="📥 Download Churn Report (Excel)",
+                    data=churn_excel,
+                    file_name=f"churn_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            else:
+                st.success("No 'At Risk' or 'Churned' customers identified in this period! 🎉")
+        else:
+            st.info("RFM segmentation is required for Churn Analysis.")
 
 def _render_compact_results(filters: Dict[str, Any]) -> None:
     """Render compact results for tab view using existing data.

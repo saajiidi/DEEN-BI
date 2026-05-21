@@ -51,7 +51,17 @@ def render_ai_pilot_chat(sales_df: pd.DataFrame):
     # AI Configuration Bar
     c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
-        agent_type = st.selectbox("🤖 Brain Type", ["Standard", "Google Gemini", "RAG Agent (Deep Data)", "Local AI Agent"], help="Standard is fast/rule-based. Gemini requires API key. RAG uses vector-search to answer questions about specific rows. Local uses Ollama.")
+        import os
+        agent_options = ["Google Gemini", "Groq", "RAG Agent (Deep Data)", "Standard", "Local AI Agent"]
+        default_idx = 3 # Standard
+        try:
+            if "GROQ_API_KEY" in st.secrets or os.environ.get("GROQ_API_KEY"):
+                default_idx = 1
+            elif "GEMINI_API_KEY" in st.secrets or os.environ.get("GEMINI_API_KEY"):
+                default_idx = 0
+        except Exception:
+            pass
+        agent_type = st.selectbox("🤖 Brain Type", agent_options, index=default_idx, help="Gemini/Groq require API keys. RAG uses vector-search. Standard is fast/rule-based. Local uses Ollama.")
     with c2:
         model_name = st.text_input("📦 Model Name", value="gemma", help="Model name (e.g., gemma, llama3, mistral)")
     with c3:
@@ -64,14 +74,18 @@ def render_ai_pilot_chat(sales_df: pd.DataFrame):
     if query:
         with st.spinner(f"🧠 {agent_type} is querying the data streams..."):
             response = get_nlp_response(query, sales_df, agent_type=agent_type, model_name=model_name, base_url=base_url)
-            st.markdown(f"""
-            <div style="background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.1) 0%, rgba(var(--primary-rgb), 0.05) 100%); 
-                        padding: 20px; border-radius: 12px; border: 1px solid rgba(var(--primary-rgb), 0.2); 
-                        margin-top: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-                <div style="color: var(--primary); font-weight: 800; font-size: 0.75rem; letter-spacing: 1px; margin-bottom: 8px;">🚀 DATA PILOT RESPONSE</div>
-                <div style="font-size: 1.05rem; line-height: 1.5; color: var(--text-color);">{response}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            
+            st.markdown('<div style="background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.1) 0%, rgba(var(--primary-rgb), 0.05) 100%); padding: 20px; border-radius: 12px; border: 1px solid rgba(var(--primary-rgb), 0.2); margin-top: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"><div style="color: var(--primary); font-weight: 800; font-size: 0.75rem; letter-spacing: 1px; margin-bottom: 8px;">🚀 DATA PILOT RESPONSE</div>', unsafe_allow_html=True)
+            
+            def stream_data(text):
+                import time
+                for word in text.split(" "):
+                    yield word + " "
+                    time.sleep(0.015)
+            
+            st.write_stream(stream_data(response))
+            
+            st.markdown('</div>', unsafe_allow_html=True)
             
             # Predictive follow-up
             if "revenue" in query.lower():

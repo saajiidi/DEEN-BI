@@ -130,7 +130,7 @@ def export_to_excel(
     output.seek(0)
     return output.read()
 
-def render_ai_pilot_chat_ui(sales_df: pd.DataFrame):
+def render_ai_pilot_chat_ui(sales_df: pd.DataFrame, returns_df: pd.DataFrame = None, stock_df: pd.DataFrame = None):
     """Renders the AI Data Pilot chat interface inside a container like a popover."""
     st.markdown("#### 🤖 Operations Data Pilot")
     st.caption("Ask natural language questions about your e-commerce health.")
@@ -157,18 +157,26 @@ def render_ai_pilot_chat_ui(sales_df: pd.DataFrame):
                 try:
                     from BackEnd.services.nlp_engine import get_nlp_response
                     
+                    import os
                     agent_type = "Standard"
                     try:
-                        if "GEMINI_API_KEY" in st.secrets:
+                        if "GROQ_API_KEY" in st.secrets or os.environ.get("GROQ_API_KEY"):
+                            agent_type = "Groq"
+                        elif "GEMINI_API_KEY" in st.secrets or os.environ.get("GEMINI_API_KEY"):
                             agent_type = "Google Gemini"
                     except Exception:
                         pass
                     
-                    response = get_nlp_response(prompt, sales_df, agent_type=agent_type)
+                    response = get_nlp_response(prompt, sales_df, returns_df=returns_df, stock_df=stock_df, agent_type=agent_type)
                 except Exception as e:
                     response = f"Sorry, I encountered an error during analysis: {e}"
                 
-                st.markdown(response)
+                def stream_data(text):
+                    import time
+                    for word in text.split(" "):
+                        yield word + " "
+                        time.sleep(0.015)
+                st.write_stream(stream_data(response))
         
         # Add assistant response to history
         st.session_state.pilot_messages.append({"role": "assistant", "content": response})

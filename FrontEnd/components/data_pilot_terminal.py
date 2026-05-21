@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import json
+import uuid
 from datetime import datetime
 from BackEnd.commerce_ops.persistence import KeyManager
 from BackEnd.services.nlp_engine import LLMAgent
@@ -250,12 +251,37 @@ def render_advanced_sql_terminal(sales_df: pd.DataFrame = None, returns_df: pd.D
         ]
         
     # Render chat history
+    import re
+    import streamlit.components.v1 as components
+    
     for msg in st.session_state.pilot_chat_messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
+            if msg.get("html_snippets"):
+                for snippet in msg["html_snippets"]:
+                    components.html(snippet, height=450)
+            elif msg["role"] == "assistant" and "```python" in msg["content"] and "plotly" in msg["content"]:
+                code_blocks = re.findall(r'```python\n(.*?)\n```', msg["content"], re.DOTALL)
+                for code in code_blocks:
+                    if "plotly" in code:
+                        try:
+                            hist_df = st.session_state.get(KeyManager.get_key("pilot", "sql_result"), pd.DataFrame())
+                            local_vars = {"df": hist_df.copy()}
+                            safe_code = code.replace("fig.show()", "")
+                            exec(safe_code, globals(), local_vars)
+                            if "fig" in local_vars:
+                                st.plotly_chart(
+                                    local_vars["fig"], 
+                                    use_container_width=True, 
+                                    config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'ai_chart_export'}}
+                                )
+                        except Exception as e:
+                            st.error(f"Could not render chart from history: {e}")
             
     # Chat input
     prompt_user_input = st.chat_input("Ask a question about your data or request a SQL query...")
+    
+    chat_prompt = None
     
     # Handle explain request
     if st.session_state.get(KeyManager.get_key("pilot", "chat_explain_request"), False):
@@ -306,8 +332,52 @@ Otherwise, provide a concise, professional analysis based on the user's query an
 """
                     
                     response = agent.query(enhanced_prompt, ctx_df)
-                    st.markdown(response)
-                    st.session_state.pilot_chat_messages.append({"role": "assistant", "content": response})
+                    
+                    def stream_data(text):
+                        import time
+                        for word in text.split(" "):
+                            yield word + " "
+                            time.sleep(0.015)
+                    st.write_stream(stream_data(response))
+                    
+                    code_blocks = re.findall(r'```python\n(.*?)\n```', response, re.DOTALL)
+                    html_snippets = []
+                    for code in code_blocks:
+                        if "plotly" in code:
+                            # Auto-write the generated code back to the SQL text area for visibility
+                            st.session_state[KeyManager.get_key("pilot", "sql_input")] = code
+                            
+                        if "plotly" in code:
+                            try:
+                                local_vars = {"df": ctx_df.copy()}
+                                safe_code = code.replace("fig.show()", "")
+                                exec(safe_code, globals(), local_vars)
+                                if "fig" in local_vars:
+                                    st.plotly_chart(
+                                        local_vars["fig"], 
+                                        use_container_width=True, 
+                                        config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'ai_chart_export'}}
+                                    )
+                                    html_snippets.append(local_vars["fig"].to_html(full_html=False, include_plotlyjs='cdn'))
+                                    
+                                    # Excel Export for the generated chart data
+                                    if "df" in local_vars and isinstance(local_vars["df"], pd.DataFrame):
+                                        excel_bytes = export_to_excel(local_vars["df"], "Chart Data")
+                                        st.download_button(
+                                            label="📥 Download Chart Data (Excel)",
+                                            data=excel_bytes,
+                                            file_name=f"ai_chart_data_{uuid.uuid4().hex[:6]}.xlsx",
+                                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                            key=f"dl_chart_{uuid.uuid4().hex[:6]}"
+                                        )
+                            except Exception as e:
+                                st.error(f"Could not render generated chart: {e}")
+                                
+                    st.session_state.pilot_chat_messages.append({
+                        "role": "assistant", 
+                        "content": response,
+                        "html_snippets": html_snippets
+                    })
                 except Exception as e:
                     err_msg = f"Sorry, I encountered an error connecting to the LLM: {str(e)}"
                     st.error(err_msg)

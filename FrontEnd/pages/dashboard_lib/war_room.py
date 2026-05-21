@@ -113,4 +113,25 @@ def render_war_room_page(sales_df: pd.DataFrame, returns_df: pd.DataFrame):
                 key=KeyManager.get_key("war_room", "dl_vips")
             )
         with c2:
-            st.button("🔔 Send Retention Notification (Mock)", width="stretch", disabled=True, key=KeyManager.get_key("war_room", "notify_vips"))
+            if st.button("✨ Draft AI Win-Back SMS", width="stretch", key=KeyManager.get_key("war_room", "draft_sms")):
+                with st.spinner("Generating personalized SMS drafts..."):
+                    try:
+                        from BackEnd.services.nlp_engine import LLMAgent
+                        import os
+                        agent_type = "Standard"
+                        if "GROQ_API_KEY" in st.secrets or os.environ.get("GROQ_API_KEY"):
+                            agent_type = "Groq"
+                        elif "GEMINI_API_KEY" in st.secrets or os.environ.get("GEMINI_API_KEY"):
+                            agent_type = "Google Gemini"
+                        agent = LLMAgent(agent_type=agent_type)
+                        
+                        sample_vip = display_df.iloc[0]
+                        prompt = f"Write a short, personalized, and urgent SMS (under 160 characters) to win back a VIP customer named '{sample_vip['Customer Key']}'. They last purchased {sample_vip['Recency']}. Offer a special secret discount code 'VIPCOMEBACK15'."
+                        draft = agent.query(prompt, {})
+                        st.session_state["vip_sms_draft"] = draft
+                    except Exception as e:
+                        st.error(f"Could not generate SMS draft: {e}")
+                        
+        if "vip_sms_draft" in st.session_state:
+            st.success("Draft Generated!")
+            st.code(st.session_state["vip_sms_draft"], language="markdown")

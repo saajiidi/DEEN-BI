@@ -182,7 +182,7 @@ def _aggregate_customer_metrics(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
         
-    lz_df = pl.from_pandas(df).lazy()
+    lz_df = pl.from_pandas(df).lazy()  # type: ignore
     
     lz_df = lz_df.with_columns([
         pl.col("clean_email").fill_null("").cast(pl.String),
@@ -357,30 +357,30 @@ def get_favorite_products(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def classify_rfm_segments(df: pd.DataFrame) -> pd.DataFrame:
-    result = df.copy()
+    import polars as pl
+    
+    if df.empty:
+        return df.copy()
 
-    def get_segment(row: pd.Series) -> str:
-        r, f, m, recency = row["r_score"], row["f_score"], row["m_score"], row["recency_days"]
-        if recency > 180:
-            return "Churned"
-        if r >= 4 and f >= 4 and m >= 4:
-            return "VIP"
-        if f <= 2 and r >= 4:
-            return "New"
-        if recency > 60 and (f >= 3 or m >= 4):
-            return "At Risk"
-        if r >= 3 and f >= 2:
-            return "Potential Loyalist"
-        return "Regular"
-
-    result["segment"] = result.apply(get_segment, axis=1)
-    return result
+    lz_df = pl.from_pandas(df).lazy()  # type: ignore
+    
+    lz_df = lz_df.with_columns(
+        pl.when(pl.col("recency_days") > 180).then(pl.lit("Churned"))
+        .when((pl.col("r_score") >= 4) & (pl.col("f_score") >= 4) & (pl.col("m_score") >= 4)).then(pl.lit("VIP"))
+        .when((pl.col("f_score") <= 2) & (pl.col("r_score") >= 4)).then(pl.lit("New"))
+        .when((pl.col("recency_days") > 60) & ((pl.col("f_score") >= 3) | (pl.col("m_score") >= 4))).then(pl.lit("At Risk"))
+        .when((pl.col("r_score") >= 3) & (pl.col("f_score") >= 2)).then(pl.lit("Potential Loyalist"))
+        .otherwise(pl.lit("Regular"))
+        .alias("segment")
+    )
+    
+    return lz_df.collect().to_pandas()
 
 
 def _classify_without_rfm(row: pd.Series) -> str:
-    recency = pd.to_numeric(row.get("recency_days"), errors="coerce")
-    total_orders = pd.to_numeric(row.get("total_orders"), errors="coerce")
-    total_revenue = pd.to_numeric(row.get("total_revenue"), errors="coerce")
+    recency = pd.to_numeric(str(row.get("recency_days", "")), errors="coerce")
+    total_orders = pd.to_numeric(str(row.get("total_orders", "")), errors="coerce")
+    total_revenue = pd.to_numeric(str(row.get("total_revenue", "")), errors="coerce")
 
     if pd.notna(recency) and recency > 180:
         return "Churned"
@@ -424,67 +424,96 @@ def search_customers(query: str, df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_segment_summary(df: pd.DataFrame) -> pd.DataFrame:
+    import polars as pl
+
     if df.empty or "segment" not in df.columns:
         return pd.DataFrame()
-    summary = (
-        df.groupby("segment")
-        .agg(
-            Count=("customer_id", "count"),
-            Total_Revenue=("total_revenue", "sum"),
-            Avg_Revenue=("total_revenue", "mean"),
-            Avg_Orders=("total_orders", "mean"),
-            Avg_AOV=("avg_order_value", "mean"),
-            Avg_Recency_days=("recency_days", "mean"),
-            Avg_R_Score=("r_score", "mean"),
-            Avg_F_Score=("f_score", "mean"),
-            Avg_M_Score=("m_score", "mean"),
-        )
-        .reset_index()
-    )
-    return summary.rename(
-        columns={
-            "segment": "Segment",
-            "Total_Revenue": "Total Revenue",
-            "Avg_Revenue": "Avg Revenue",
-            "Avg_Orders": "Avg Orders",
-            "Avg_AOV": "Avg AOV",
-            "Avg_Recency_days": "Avg Recency (days)",
-            "Avg_R_Score": "Avg R Score",
-            "Avg_F_Score": "Avg F Score",
-            "Avg_M_Score": "Avg M Score",
-        }
-    ).sort_values("Total Revenue", ascending=False)
+        
+    lz_df = pl.from_pandas(df).lazy()  # type: ignore
+    
+    summary = lz_df.group_by("segment").agg([
+        pl.col("customer_id").count().alias("Count"),
+        pl.col("total_revenue").sum().alias("Total Revenue"),
+        pl.col("total_revenue").mean().alias("Avg Revenue"),
+        pl.col("total_orders").mean().alias("Avg Orders"),
+        pl.col("avg_order_value").mean().alias("Avg AOV"),
+        pl.col("recency_days").mean().alias("Avg Recency (days)"),
+        pl.col("r_score").mean().alias("Avg R Score"),
+        pl.col("f_score").mean().alias("Avg F Score"),
+        pl.col("m_score").mean().alias("Avg M Score"),
+    ]).collect().to_pandas()
+    
+    return summary.rename(columns={"segment": "Segment"}).sort_values("Total Revenue", ascending=False)
 
 
-def generate_cohort_matrix(df: pd.DataFrame, period: str = 'M') -> pd.DataFrame:
+def generate_cohort_matrix(df: pd.DataFrame, period: str = 'M', metric: str = 'customers') -> pd.DataFrame:
     """
     Generates a retention cohort matrix.
     period: 'M' for monthly, 'W' for weekly.
+    metric: 'customers' for unique customer count, 'revenue' for revenue sum.
     """
+    import polars as pl
+
     if df.empty or 'order_date' not in df.columns:
         return pd.DataFrame()
         
     df = df.copy()
-    df['order_date'] = pd.to_datetime(df['order_date'])
+    
+    # Ensure order_date is datetimelike before using Polars operations
+    df['order_date'] = pd.to_datetime(df['order_date'], errors='coerce')
+    df = df.dropna(subset=['order_date'])
+    
     # Need a consistent primary key for grouping
     if 'customer_id' not in df.columns:
-        # Fallback to customer_key or hashing phone
-        df['customer_id'] = df.apply(lambda row: row.get('customer_key', row.get('phone', 'anon')), axis=1)
-
-    # Ensure order_date is datetimelike before using .dt
-    df['order_date'] = pd.to_datetime(df['order_date'], errors='coerce')
+        if 'customer_key' in df.columns:
+            df['customer_id'] = df['customer_key']
+        elif 'phone' in df.columns:
+            df['customer_id'] = df['phone']
+        else:
+            df['customer_id'] = 'anon'
+            
+    # Use Lazy Polars for fast aggregation on large datasets
+    lz_df = pl.from_pandas(df).lazy()  # type: ignore
     
-    # Calculate cohort using transform, then ensure result is datetimelike
-    min_dates = df.groupby('customer_id')['order_date'].transform('min')
-    df['cohort'] = pd.to_datetime(min_dates, errors='coerce').dt.to_period(period)
-    df['order_period'] = df['order_date'].dt.to_period(period)
+    truncate_fmt = "1mo" if period == 'M' else "1w"
     
-    cohort_group = df.groupby(['cohort', 'order_period']).agg(n_customers=('customer_id', 'nunique')).reset_index()
+    lz_df = lz_df.with_columns(
+        pl.col("order_date").dt.truncate(truncate_fmt).alias("order_period")
+    ).with_columns(
+        pl.col("order_period").min().over("customer_id").alias("cohort")
+    )
     
-    # Calculate period offset (Month 0, Month 1, etc.)
-    cohort_group['period_number'] = (cohort_group.order_period.view(dtype='int64') - cohort_group.cohort.view(dtype='int64'))
+    if period == 'M':
+        lz_df = lz_df.with_columns(
+            ((pl.col("order_period").dt.year() - pl.col("cohort").dt.year()) * 12 + 
+             (pl.col("order_period").dt.month() - pl.col("cohort").dt.month())).alias("period_number")
+        )
+    else:
+        lz_df = lz_df.with_columns(
+            ((pl.col("order_period") - pl.col("cohort")).dt.total_days() // 7).cast(pl.Int32).alias("period_number")
+        )
+        
+    if metric == 'revenue':
+        revenue_col = "item_revenue" if "item_revenue" in df.columns else "order_total" if "order_total" in df.columns else None
+        if revenue_col:
+            cohort_group = lz_df.group_by(["cohort", "period_number"]).agg(
+                pl.col(revenue_col).sum().alias("metric_value")
+            ).collect().to_pandas()
+        else:
+            return pd.DataFrame()
+    else:
+        # Group and count unique customers
+        cohort_group = lz_df.group_by(["cohort", "period_number"]).agg(
+            pl.col("customer_id").n_unique().alias("metric_value")
+        ).collect().to_pandas()
     
-    cohort_pivot = cohort_group.pivot_table(index='cohort', columns='period_number', values='n_customers')
+    if cohort_group.empty:
+        return pd.DataFrame()
+        
+    # Format cohort back to Pandas Period for UI visualization compatibility
+    cohort_group['cohort'] = pd.to_datetime(cohort_group['cohort']).dt.to_period(period)
+    
+    cohort_pivot = cohort_group.pivot_table(index='cohort', columns='period_number', values='metric_value')
     
     # Calculate percentage
     cohort_size = cohort_pivot.iloc[:, 0]

@@ -72,7 +72,7 @@ def fetch_products(
     try:
         params = {"status": status}
         if category:
-            params["category"] = category
+            params["category"] = str(category)
         if search:
             params["search"] = search
         
