@@ -41,7 +41,7 @@ def query_app_data(prompt: str, df: pd.DataFrame, context: str = "") -> tuple[st
 
     return generic_chat(prompt, context), None
 
-def generic_chat(prompt: str, context: str = "", history: list = None) -> str:
+def generic_chat(prompt: str, context: str = "", history: list | None = None) -> str:
     """Fallback generic chat logic."""
     # This would normally call an LLM. For now, it provides a smart context-aware placeholder.
     return (

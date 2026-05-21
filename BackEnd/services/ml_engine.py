@@ -116,6 +116,9 @@ def croston_method(ts, extra_periods=1, alpha=0.15, beta=0.15, variant='sba'):
     
     return np.full(extra_periods, final_forecast)
 
+import streamlit as st
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def run_automl_forecast(daily_df: pd.DataFrame, metric: str = "revenue", horizon: int = 7) -> dict:
     """Executes the high-performance AutoML tournament with defensive memory guarding."""
     

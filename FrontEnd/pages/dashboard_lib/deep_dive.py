@@ -469,7 +469,11 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
                     from BackEnd.services.nlp_engine import LLMAgent
                     import os
                     agent_type = "Standard"
-                    if "GROQ_API_KEY" in st.secrets or os.environ.get("GROQ_API_KEY"):
+                    if "OPENROUTER_API_KEY" in st.secrets or os.environ.get("OPENROUTER_API_KEY"):
+                        agent_type = "OpenRouter"
+                    elif "HUGGINGFACE_API_KEY" in st.secrets or os.environ.get("HUGGINGFACE_API_KEY"):
+                        agent_type = "HuggingFace"
+                    elif "GROQ_API_KEY" in st.secrets or os.environ.get("GROQ_API_KEY"):
                         agent_type = "Groq"
                     elif "GEMINI_API_KEY" in st.secrets or os.environ.get("GEMINI_API_KEY"):
                         agent_type = "Google Gemini"

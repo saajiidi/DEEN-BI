@@ -52,16 +52,20 @@ def render_ai_pilot_chat(sales_df: pd.DataFrame):
     c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
         import os
-        agent_options = ["Google Gemini", "Groq", "RAG Agent (Deep Data)", "Standard", "Local AI Agent"]
-        default_idx = 3 # Standard
+        agent_options = ["Google Gemini", "Groq", "OpenRouter", "HuggingFace", "RAG Agent (Deep Data)", "Standard", "Local AI Agent"]
+        default_idx = 5 # Standard
         try:
-            if "GROQ_API_KEY" in st.secrets or os.environ.get("GROQ_API_KEY"):
+            if "OPENROUTER_API_KEY" in st.secrets or os.environ.get("OPENROUTER_API_KEY"):
+                default_idx = 2
+            elif "HUGGINGFACE_API_KEY" in st.secrets or os.environ.get("HUGGINGFACE_API_KEY"):
+                default_idx = 3
+            elif "GROQ_API_KEY" in st.secrets or os.environ.get("GROQ_API_KEY"):
                 default_idx = 1
             elif "GEMINI_API_KEY" in st.secrets or os.environ.get("GEMINI_API_KEY"):
                 default_idx = 0
         except Exception:
             pass
-        agent_type = st.selectbox("🤖 Brain Type", agent_options, index=default_idx, help="Gemini/Groq require API keys. RAG uses vector-search. Standard is fast/rule-based. Local uses Ollama.")
+        agent_type = st.selectbox("🤖 Brain Type", agent_options, index=default_idx, help="API keys required for cloud providers. Standard is fast/rule-based. Local uses Ollama.")
     with c2:
         model_name = st.text_input("📦 Model Name", value="gemma", help="Model name (e.g., gemma, llama3, mistral)")
     with c3:
@@ -71,9 +75,15 @@ def render_ai_pilot_chat(sales_df: pd.DataFrame):
                          placeholder="Type your command here...",
                          key="nlp_query_input")
     
+    def sanitize_input(user_input: str) -> str:
+        """Prevent prompt injection and limit length."""
+        if not user_input: return ""
+        return user_input[:1000].strip()
+
     if query:
+        sanitized_query = sanitize_input(query)
         with st.spinner(f"🧠 {agent_type} is querying the data streams..."):
-            response = get_nlp_response(query, sales_df, agent_type=agent_type, model_name=model_name, base_url=base_url)
+            response = get_nlp_response(sanitized_query, sales_df, agent_type=agent_type, model_name=model_name, base_url=base_url)
             
             st.markdown('<div style="background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.1) 0%, rgba(var(--primary-rgb), 0.05) 100%); padding: 20px; border-radius: 12px; border: 1px solid rgba(var(--primary-rgb), 0.2); margin-top: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"><div style="color: var(--primary); font-weight: 800; font-size: 0.75rem; letter-spacing: 1px; margin-bottom: 8px;">🚀 DATA PILOT RESPONSE</div>', unsafe_allow_html=True)
             

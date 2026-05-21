@@ -619,15 +619,29 @@ def setup_theme():
             /* Mobile Tables */
             .stDataFrame {
                 font-size: 0.8rem !important;
+                width: 100% !important;
+                overflow-x: auto !important;
+            }
+            .stDataFrame [data-testid="stTable"] {
+                min-width: 500px !important; /* Ensure content doesn't crush */
+            }
+            /* Plotly Charts Mobile Scaling */
+            .js-plotly-plot, .plotly, .js-plotly-plot .plot-container {
+                width: 100% !important;
             }
             /* Mobile Buttons */
             .stButton > button {
                 font-size: 0.85rem !important;
                 padding: 6px 12px !important;
+                width: 100% !important;
             }
             /* Mobile Sidebar */
             [data-testid="stSidebar"] {
                 width: 280px !important;
+            }
+            /* Prevent horizontal scroll on body */
+            .stApp {
+                overflow-x: hidden !important;
             }
         }
         

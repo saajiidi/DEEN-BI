@@ -226,12 +226,32 @@ class RAGAgent:
             self._ingest_dataframe(site_context, max_rows=200)
             ingested_datasets.add("sales")
             
+        # Pre-compute an ASCII visual trend chart to supply to the LLM context
+        recent_trend_str = "Not available"
+        if not sales_df.empty and 'order_date' in sales_df.columns:
+            temp = sales_df.copy()
+            temp['date'] = pd.to_datetime(temp['order_date'], errors='coerce').dt.date
+            daily = temp.groupby('date').agg(
+                revenue=('item_revenue', 'sum') if 'item_revenue' in temp.columns else ('qty', 'sum'),
+                orders=('order_id', 'nunique') if 'order_id' in temp.columns else ('qty', 'count')
+            ).tail(10)
+            if not daily.empty:
+                max_rev = daily['revenue'].max()
+                res = "| Date | Revenue | Orders | Visual |\n|---|---|---|---|\n"
+                for date_idx, row in daily.iterrows():
+                    rev = row['revenue']
+                    ord_cnt = int(row['orders'])
+                    blocks = "█" * int((rev / max_rev) * 10) if max_rev > 0 else "▏"
+                    res += f"| {date_idx} | ৳{rev:,.0f} | {ord_cnt} | `{blocks}` |\n"
+                recent_trend_str = res
+
         # Extract global aggregates to provide wide intelligence across all active dataframes
         global_stats = {
             "sales_summary": {
                 "total_revenue": sales_df['item_revenue'].sum() if not sales_df.empty and 'item_revenue' in sales_df.columns else 0,
                 "total_orders": sales_df['order_id'].nunique() if not sales_df.empty and 'order_id' in sales_df.columns else 0,
-                "top_selling_items": sales_df['item_name'].value_counts().head(5).to_dict() if not sales_df.empty and 'item_name' in sales_df.columns else {}
+                "top_selling_items": sales_df['item_name'].value_counts().head(5).to_dict() if not sales_df.empty and 'item_name' in sales_df.columns else {},
+                "recent_trend_chart_markdown": recent_trend_str
             }
         }
         if not returns_df.empty:
@@ -275,7 +295,8 @@ class RAGAgent:
         If the user asks to compare datasets (e.g., "Is the highest returned item also my best-selling item?"), proactively cross-reference the top_returned_items and top_selling_items.
         When asked for return reasons or similar distributions, present them using visual markdown charts (e.g., `Reason | ██████ 60%`).
         When queried about top-performing items, sales rankings, or categories, present the data in a clean Markdown table.
-        If the user asks for a chart or visualization, output valid Python Plotly code (using plotly.express or plotly.graph_objects) inside a ```python block, defining the data inline within the code based on the records.
+        If the user asks for a trend, ASCII chart, or textual graph, utilize the pre-calculated `recent_trend_chart_markdown` from the global aggregates.
+        If the user explicitly asks for an interactive chart or visualization, output valid Python Plotly code (using plotly.express or plotly.graph_objects) inside a ```python block, defining the data inline within the code based on the records.
         """
         
         def try_gemini():

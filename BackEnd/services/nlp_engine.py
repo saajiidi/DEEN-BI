@@ -132,8 +132,8 @@ class DataNLPInterpreter:
                         for _, r in summary_df.iterrows(): md_table += f"| {r.iloc[0]} | {r.iloc[1]} |\n"
                         return f"Here is the returns data summary **{time_label}**:\n\n{md_table}"
 
-                if any(kw in query for kw in ["how many", "count"]):
-                    return f"There are **{len(filtered_returns_df)}** issues logged as returns **{time_label}**."
+                if any(kw in query for kw in ["how many", "count", "total"]):
+                    return f"There are **{len(filtered_returns_df)}** issues/returns logged **{time_label}**."
                 
                 if any(kw in query for kw in ["value", "loss", "cost", "money", "amount"]):
                     total_loss = 0
@@ -208,9 +208,41 @@ class DataNLPInterpreter:
             val = filtered_df['item_revenue'].sum() if 'item_revenue' in filtered_df.columns else 0
             return f"💰 Your total revenue **{time_label}** is **৳{val:,.2f}**."
             
-        if any(kw in query for kw in ["order", "count", "how many"]):
+        if any(kw in query for kw in ["order", "count", "how many"]) and not any(kw in query for kw in ["customer", "buyer", "people", "user"]):
             val = filtered_df['order_id'].nunique() if 'order_id' in filtered_df.columns else 0
             return f"🛒 You had **{val:,}** unique orders **{time_label}**."
+
+        if any(kw in query for kw in ["customer", "buyer", "people", "user"]):
+            val = filtered_df['customer_key'].nunique() if 'customer_key' in filtered_df.columns else (filtered_df['phone'].nunique() if 'phone' in filtered_df.columns else 0)
+            return f"👥 You had **{val:,}** unique customers **{time_label}**."
+
+        if any(kw in query for kw in ["average order value", "aov", "average order", "basket size"]):
+            val = filtered_df['item_revenue'].sum() if 'item_revenue' in filtered_df.columns else 0
+            orders = filtered_df['order_id'].nunique() if 'order_id' in filtered_df.columns else 0
+            aov = val / orders if orders > 0 else 0
+            return f"💳 Your Average Order Value (AOV) **{time_label}** is **৳{aov:,.0f}**."
+
+        if any(kw in query for kw in ["trend", "chart", "graph", "plot"]):
+            if 'order_date' in filtered_df.columns and not filtered_df.empty:
+                temp = filtered_df.copy()
+                temp['date'] = pd.to_datetime(temp['order_date'], errors='coerce').dt.date
+                daily = temp.groupby('date').agg(
+                    revenue=('item_revenue', 'sum') if 'item_revenue' in temp.columns else ('qty', 'sum'),
+                    orders=('order_id', 'nunique') if 'order_id' in temp.columns else ('qty', 'count')
+                ).tail(10)
+                
+                if not daily.empty:
+                    max_rev = daily['revenue'].max()
+                    res = f"📈 **Trend Chart ({time_label.title()}):**\n\n"
+                    res += "| Date | Revenue | Orders | Visual |\n|---|---|---|---|\n"
+                    for date_idx, row in daily.iterrows():
+                        rev = row['revenue']
+                        ord_cnt = int(row['orders'])
+                        blocks = "█" * int((rev / max_rev) * 10) if max_rev > 0 else ""
+                        if not blocks: blocks = "▏"
+                        res += f"| {date_idx} | ৳{rev:,.0f} | {ord_cnt} | `{blocks}` |\n"
+                    return res
+            return "I don't have enough time-series data to draw a trend chart."
 
         if "category" in query and any(kw in query for kw in ["top", "best", "highest", "most"]):
              if 'Category' in filtered_df.columns and not filtered_df.empty:
@@ -241,10 +273,35 @@ class DataNLPInterpreter:
         # Fallback for complex queries
         val = filtered_df['item_revenue'].sum() if 'item_revenue' in filtered_df.columns else 0
         orders = filtered_df['order_id'].nunique() if 'order_id' in filtered_df.columns else 0
-        return (f"📊 **Data Summary ({time_label.title()}):**\n"
-                f"- **Orders:** {orders:,}\n"
-                f"- **Revenue:** ৳{val:,.0f}\n\n"
-                f"I am running in 'Standard' (rule-based) mode. For advanced answers, switch to **Google Gemini** or try asking specifically about 'top products', 'return reasons', or 'sales revenue'.")
+        items_sold = int(filtered_df['qty'].sum()) if 'qty' in filtered_df.columns else 0
+        aov = val / orders if orders > 0 else 0
+        
+        summary_parts = [
+            f"📊 **Data Summary ({time_label.title()}):**",
+            f"- **Orders:** {orders:,}",
+            f"- **Revenue:** ৳{val:,.0f}",
+            f"- **Items Sold:** {items_sold:,}",
+            f"- **Average Order Value:** ৳{aov:,.0f}"
+        ]
+        
+        if 'Category' in filtered_df.columns and not filtered_df.empty:
+            cat_sums = filtered_df.groupby('Category')['item_revenue'].sum()
+            if not cat_sums.empty:
+                top_cat = cat_sums.idxmax()
+                summary_parts.append(f"- **Top Category:** {top_cat}")
+                
+        if 'item_name' in filtered_df.columns and not filtered_df.empty:
+            counts = filtered_df['item_name'].value_counts()
+            if not counts.empty:
+                top_item = counts.idxmax()
+                summary_parts.append(f"- **Top Product:** {top_item}")
+                
+        if not self.returns_df.empty:
+            summary_parts.append(f"- **Recorded Returns/Issues:** {len(self.returns_df):,}")
+
+        summary_parts.append("\n*I am running in 'Standard' (rule-based) mode. For conversational answers, switch the brain to **Google Gemini / Groq / Local AI**, or try asking me specifically about 'top products', 'return reasons', or 'sales revenue'.*")
+        
+        return "\n".join(summary_parts)
 
 class LLMAgent:
     """Agent that communicates with local or remote LLMs (Ollama, LM Studio, etc.)."""
@@ -363,13 +420,62 @@ class LLMAgent:
             except Exception:
                 return "LOCAL_ERROR"
 
+        def try_openrouter():
+            import streamlit as st
+            import os
+            import requests
+            api_key = st.secrets.get("OPENROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
+            if not api_key:
+                return "MISSING_KEY"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "HTTP-Referer": "http://localhost:8501",
+                "X-Title": "DEEN-BI"
+            }
+            payload = {
+                "model": "meta-llama/llama-3-8b-instruct:free",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ]
+            }
+            resp = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=30)
+            if resp.status_code == 200:
+                return resp.json().get("choices", [{}])[0].get("message", {}).get("content", "No response.")
+            return "LOCAL_ERROR"
+
+        def try_huggingface():
+            import streamlit as st
+            import os
+            import requests
+            api_key = st.secrets.get("HUGGINGFACE_API_KEY") or os.environ.get("HUGGINGFACE_API_KEY")
+            if not api_key:
+                return "MISSING_KEY"
+            headers = {"Authorization": f"Bearer {api_key}"}
+            payload = {
+                "inputs": f"<|system|>\n{system_prompt}</s>\n<|user|>\n{prompt}</s>\n<|assistant|>",
+                "parameters": {"max_new_tokens": 512, "temperature": 0.2, "return_full_text": False}
+            }
+            resp = requests.post("https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta", headers=headers, json=payload, timeout=30)
+            if resp.status_code == 200:
+                res = resp.json()
+                if isinstance(res, list) and len(res) > 0:
+                    return res[0].get("generated_text", "No response.")
+            return "LOCAL_ERROR"
+
         fallback_order = []
+        all_funcs = [("Groq", try_groq), ("Google Gemini", try_gemini), ("OpenRouter", try_openrouter), ("HuggingFace", try_huggingface), ("Local AI", try_local)]
+        
         if self.agent_type == "Groq":
-            fallback_order = [("Groq", try_groq), ("Google Gemini", try_gemini), ("Local AI", try_local)]
+            fallback_order = [("Groq", try_groq)] + [f for f in all_funcs if f[0] != "Groq"]
         elif self.agent_type == "Google Gemini":
-            fallback_order = [("Google Gemini", try_gemini), ("Groq", try_groq), ("Local AI", try_local)]
+            fallback_order = [("Google Gemini", try_gemini)] + [f for f in all_funcs if f[0] != "Google Gemini"]
+        elif self.agent_type == "OpenRouter":
+            fallback_order = [("OpenRouter", try_openrouter)] + [f for f in all_funcs if f[0] != "OpenRouter"]
+        elif self.agent_type == "HuggingFace":
+            fallback_order = [("HuggingFace", try_huggingface)] + [f for f in all_funcs if f[0] != "HuggingFace"]
         else:
-            fallback_order = [("Local AI", try_local), ("Groq", try_groq), ("Google Gemini", try_gemini)]
+            fallback_order = [("Local AI", try_local)] + [f for f in all_funcs if f[0] != "Local AI"]
             
         last_error = "❌ **AI Generation Failed:** No valid models available."
         
@@ -409,7 +515,7 @@ def get_nlp_response(query: str, sales_df: pd.DataFrame, returns_df: pd.DataFram
         "stock": stock_df
     }
 
-    if agent_type in ["Local AI Agent", "Google Gemini", "Groq"]:
+    if agent_type in ["Local AI Agent", "Google Gemini", "Groq", "OpenRouter", "HuggingFace"]:
         agent = LLMAgent(model_name=model_name, base_url=base_url, agent_type=agent_type)
         return agent.query(query, context_dfs)
     elif agent_type == "RAG Agent (Deep Data)":

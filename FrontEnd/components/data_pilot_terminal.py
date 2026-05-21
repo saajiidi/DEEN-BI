@@ -9,7 +9,7 @@ from BackEnd.services.nlp_engine import LLMAgent
 from BackEnd.core.paths import SYSTEM_LOG_FILE
 from FrontEnd.components.ui import export_to_excel
 
-def render_advanced_sql_terminal(sales_df: pd.DataFrame = None, returns_df: pd.DataFrame = None, stock_df: pd.DataFrame = None):
+def render_advanced_sql_terminal(sales_df: pd.DataFrame | None = None, returns_df: pd.DataFrame | None = None, stock_df: pd.DataFrame | None = None):
     st.markdown("### 🚀 Advanced SQL Data Pilot")
     
     # Initialize in-memory database
@@ -229,8 +229,21 @@ def render_advanced_sql_terminal(sales_df: pd.DataFrame = None, returns_df: pd.D
                     schema_context = "\n".join(schema_info)
                     prompt = f"Given the following SQLite schemas:\n{schema_context}\n\nWrite a valid SQLite query for: '{nl_query}'. Return ONLY the SQL code, no markdown ticks, no explanation."
                     
-                    agent = LLMAgent()
-                    sql_suggestion = agent.query(prompt, pd.DataFrame()) 
+                    import os
+                    agent_type = "Standard"
+                    try:
+                        if "OPENROUTER_API_KEY" in st.secrets or os.environ.get("OPENROUTER_API_KEY"):
+                            agent_type = "OpenRouter"
+                        elif "HUGGINGFACE_API_KEY" in st.secrets or os.environ.get("HUGGINGFACE_API_KEY"):
+                            agent_type = "HuggingFace"
+                        elif "GROQ_API_KEY" in st.secrets or os.environ.get("GROQ_API_KEY"):
+                            agent_type = "Groq"
+                        elif "GEMINI_API_KEY" in st.secrets or os.environ.get("GEMINI_API_KEY"):
+                            agent_type = "Google Gemini"
+                    except Exception:
+                        pass
+                    agent = LLMAgent(agent_type=agent_type)
+                    sql_suggestion = agent.query(prompt, {}) 
                     sql_suggestion = sql_suggestion.replace('```sql', '').replace('```', '').strip()
                     
                     log_to_term(f"AI Suggested SQL for: '{nl_query}'")
@@ -283,6 +296,11 @@ def render_advanced_sql_terminal(sales_df: pd.DataFrame = None, returns_df: pd.D
     
     chat_prompt = None
     
+    def sanitize_input(user_input: str) -> str:
+        """Prevent prompt injection and limit length."""
+        if not user_input: return ""
+        return user_input[:1000].strip()
+    
     # Handle explain request
     if st.session_state.get(KeyManager.get_key("pilot", "chat_explain_request"), False):
         st.session_state[KeyManager.get_key("pilot", "chat_explain_request")] = False
@@ -296,7 +314,7 @@ def render_advanced_sql_terminal(sales_df: pd.DataFrame = None, returns_df: pd.D
         st.session_state.pilot_chat_messages.append({"role": "user", "content": "📈 *Requested Plotly Code*"})
         with st.chat_message("user"): st.markdown("📈 *Requested Plotly Code*")
     elif prompt_user_input:
-        chat_prompt = prompt_user_input
+        chat_prompt = sanitize_input(prompt_user_input)
         st.session_state.pilot_chat_messages.append({"role": "user", "content": chat_prompt})
         with st.chat_message("user"): st.markdown(chat_prompt)
 
@@ -306,7 +324,20 @@ def render_advanced_sql_terminal(sales_df: pd.DataFrame = None, returns_df: pd.D
             with st.spinner("AI is analyzing..."):
                 try:
                     import re
-                    agent = LLMAgent()
+                    import os
+                    agent_type = "Standard"
+                    try:
+                        if "OPENROUTER_API_KEY" in st.secrets or os.environ.get("OPENROUTER_API_KEY"):
+                            agent_type = "OpenRouter"
+                        elif "HUGGINGFACE_API_KEY" in st.secrets or os.environ.get("HUGGINGFACE_API_KEY"):
+                            agent_type = "HuggingFace"
+                        elif "GROQ_API_KEY" in st.secrets or os.environ.get("GROQ_API_KEY"):
+                            agent_type = "Groq"
+                        elif "GEMINI_API_KEY" in st.secrets or os.environ.get("GEMINI_API_KEY"):
+                            agent_type = "Google Gemini"
+                    except Exception:
+                        pass
+                    agent = LLMAgent(agent_type=agent_type)
                     ctx_df = st.session_state.get(KeyManager.get_key("pilot", "sql_result"), pd.DataFrame())
                     recent_logs = "\n".join([re.sub(r'<[^>]+>', '', log) for log in st.session_state.pilot_term_logs[-5:]]) # Clean HTML from logs
                     schema_context = "\n".join(schema_info) # Corrected escaping
