@@ -21,7 +21,7 @@ CATEGORIES_PRIORITY = [
     "Jeans - Regular Fit", "Jeans - Slim Fit", "Jeans - Straight Fit",
     "T-Shirt", "T-Shirt - HS T-Shirt", "T-Shirt - FS T-Shirt", "T-Shirt - Drop Shoulder", "T-Shirt - Tank Top", "T-Shirt - Active Wear", "T-Shirt - Jersey",
     "FS Shirt", "FS Shirt - Flannel Shirt", "FS Shirt - Denim Shirt", "FS Shirt - Oxford Shirt", "FS Shirt - Kaftan Shirt", "FS Shirt - Formal Shirt", "FS Shirt - FS Casual Shirt",
-    "HS Shirt", "HS Shirt - Contrast Shirt", "HS Shirt - HS Casual Shirt",
+    "HS Shirt", "HS Shirt - Contrast Shirt", "HS Shirt - Cuban", "HS Shirt - HS Casual Shirt",
     "Wallet", "Wallet - Passport Holder", "Wallet - Card Holder", "Wallet - Long Wallet", "Wallet - Bifold Wallet", "Wallet - Trifold Wallet",
     "Panjabi", "Panjabi - Panjabi", "Panjabi - Embroidered Panjabi",
     "Sweatshirt", "Sweatshirt - Cotton Terry Sweatshirt", "Sweatshirt - French Terry Sweatshirt",
@@ -165,7 +165,8 @@ def get_category_for_sales(name) -> str:
     # HS Shirt
     if is_shirt:
         if _has_any(["contrast", "stitch"], name_str): return "HS Shirt - Contrast Shirt"
-        if _has_any(["half sleeve", "hs", "casual", "cuban", "resort", "camp collar", "hawaiian"], name_str): return "HS Shirt - HS Casual Shirt"
+        if _has_any(["cuban", "cuban collar"], name_str): return "HS Shirt - Cuban"
+        if _has_any(["half sleeve", "hs", "casual", "resort", "camp collar", "hawaiian"], name_str): return "HS Shirt - HS Casual Shirt"
         return "HS Shirt"
 
     # Wallet
