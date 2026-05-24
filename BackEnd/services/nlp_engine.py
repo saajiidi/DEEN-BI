@@ -2,6 +2,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import requests
 import json
+import streamlit as st
 
 class DataNLPInterpreter:
     """Interprets natural language queries into Pandas operations for DEEN-BI."""
@@ -411,7 +412,7 @@ class LLMAgent:
             import google.generativeai as genai
             import streamlit as st
             import os
-            api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+            api_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("llm", {}).get("gemini_key") or os.environ.get("GEMINI_API_KEY")
             if not api_key:
                 return "MISSING_KEY"
             genai.configure(api_key=api_key)
@@ -423,7 +424,7 @@ class LLMAgent:
             from groq import Groq
             import streamlit as st
             import os
-            api_key = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
+            api_key = st.secrets.get("GROQ_API_KEY") or st.secrets.get("llm", {}).get("groq_key") or os.environ.get("GROQ_API_KEY")
             if not api_key:
                 return "MISSING_KEY"
             client = Groq(api_key=api_key)
@@ -469,7 +470,7 @@ class LLMAgent:
             import streamlit as st
             import os
             import requests
-            api_key = st.secrets.get("OPENROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
+            api_key = st.secrets.get("OPENROUTER_API_KEY") or st.secrets.get("llm", {}).get("openrouter_key") or os.environ.get("OPENROUTER_API_KEY")
             if not api_key:
                 return "MISSING_KEY"
             headers = {
@@ -493,7 +494,7 @@ class LLMAgent:
             import streamlit as st
             import os
             import requests
-            api_key = st.secrets.get("HUGGINGFACE_API_KEY") or os.environ.get("HUGGINGFACE_API_KEY")
+            api_key = st.secrets.get("HUGGINGFACE_API_KEY") or st.secrets.get("llm", {}).get("huggingface_key") or os.environ.get("HUGGINGFACE_API_KEY")
             if not api_key:
                 return "MISSING_KEY"
             headers = {"Authorization": f"Bearer {api_key}"}
@@ -587,15 +588,22 @@ def get_nlp_response(query: str, sales_df: pd.DataFrame, returns_df: pd.DataFram
         "stock": stock_df
     }
 
+    res = ""
     if agent_type in ["Local AI Agent", "Google Gemini", "Groq", "OpenRouter", "HuggingFace"]:
         agent = LLMAgent(model_name=model_name, base_url=base_url, agent_type=agent_type)
-        return agent.query(query, context_dfs)
+        res = agent.query(query, context_dfs)
     elif agent_type == "RAG Agent (Deep Data)":
         from BackEnd.services.rag_engine import RAGAgent
         # Using Google Gemini as the default underlying LLM for the RAG demo here, or mapping it to the selected one
-        rag_backend = "Google Gemini" if st.secrets.get("GEMINI_API_KEY") else "Local AI Agent"
+        rag_backend = "Google Gemini" if (st.secrets.get("GEMINI_API_KEY") or st.secrets.get("llm", {}).get("gemini_key")) else "Local AI Agent"
         agent = RAGAgent(model_name=model_name, base_url=base_url, agent_type=rag_backend)
-        return agent.query(query, context_dfs)
-    else:
+        res = agent.query(query, context_dfs)
+        
+    if not res or str(res).startswith("❌") or "Vector Search Unavailable" in str(res):
         interpreter = DataNLPInterpreter(sales_df, returns_df, stock_df)
-        return interpreter.process_query(query)
+        standard_res = interpreter.process_query(query)
+        if res and (str(res).startswith("❌") or "Vector Search Unavailable" in str(res)):
+            return f"⚠️ **AI Models Unavailable (Network/API Error).** Falling back to Standard Data Analysis Mode.\n\n---\n\n{standard_res}"
+        return standard_res
+        
+    return res

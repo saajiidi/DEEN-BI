@@ -88,7 +88,7 @@ class RAGAgent:
         self.agent_type = agent_type
         self.vector_store = SimpleVectorStore()
         import os
-        self._api_key = (st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")) if agent_type == "Google Gemini" else None
+        self._api_key = (st.secrets.get("GEMINI_API_KEY") or st.secrets.get("llm", {}).get("gemini_key") or os.environ.get("GEMINI_API_KEY")) if agent_type == "Google Gemini" else None
 
     def _load_embedding_cache(self):
         if "embedding_cache" not in st.session_state:
@@ -359,46 +359,46 @@ class RAGAgent:
         If the user explicitly asks for an interactive chart or visualization, you must use the `[TOOL_CALL: GENERATE_PLOTLY]` tool and define the data inline based on the records.
         """
         
-        def try_gemini():
+        def try_gemini(sys_prompt=system_prompt, user_query=prompt):
             import google.generativeai as genai
             import os
             import streamlit as st
-            api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+            api_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("llm", {}).get("gemini_key") or os.environ.get("GEMINI_API_KEY")
             if not api_key: return "MISSING_KEY"
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content(f"{system_prompt}\n\nUser Question: {prompt}")
+            response = model.generate_content(f"{sys_prompt}\n\nUser Question: {user_query}")
             return response.text
             
-        def try_groq():
+        def try_groq(sys_prompt=system_prompt, user_query=prompt):
             from groq import Groq
             import os
             import streamlit as st
-            api_key = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
+            api_key = st.secrets.get("GROQ_API_KEY") or st.secrets.get("llm", {}).get("groq_key") or os.environ.get("GROQ_API_KEY")
             if not api_key: return "MISSING_KEY"
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
                 model="llama3-70b-8192",
                 messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_query}
                 ],
                 temperature=0.2,
             )
             return completion.choices[0].message.content
             
-        def try_local():
+        def try_local(sys_prompt=system_prompt, user_query=prompt):
             is_ollama = "11434" in self.base_url
             url = f"{self.base_url}/api/generate" if is_ollama else (f"{self.base_url}/v1/chat/completions" if "/v1" not in self.base_url else f"{self.base_url}/chat/completions")
             payload = {
                 "model": self.model_name,
-                "prompt": f"{system_prompt}\n\nUser Question: {prompt}",
+                "prompt": f"{sys_prompt}\n\nUser Question: {user_query}",
                 "stream": False
             } if is_ollama else {
                 "model": self.model_name,
                 "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_query}
                 ],
                 "temperature": 0.2
             }
