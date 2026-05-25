@@ -50,7 +50,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
     clean_window = window_label.replace('last ', '').title() if window_label else "Period"
 
     # CATEGORY PERFORMANCE MATRIX
-    st.markdown("#### 📊 Category Performance Matrix")
+    st.markdown("**📊 Category Performance Matrix**")
     st.caption(f"Master and Sub-categories ranked by revenue, comparing current vs previous {clean_window.lower()}.")
 
     if not df_sales.empty:
@@ -75,6 +75,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
                     if issue_type in ["Paid Return", "Non Paid Return", "Partial"]:
                         items = r_row.get("returned_items", [])
                         oid = str(r_row.get("order_id", "")).strip()
+                        if hasattr(items, "tolist"): items = items.tolist()
                         if isinstance(items, list):
                             for item in items:
                                 if isinstance(item, dict):
@@ -87,6 +88,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
                     elif issue_type == "Exchange":
                         items = r_row.get("returned_items", [])
                         oid = str(r_row.get("order_id", "")).strip()
+                        if hasattr(items, "tolist"): items = items.tolist()
                         if isinstance(items, list):
                             for item in items:
                                 if isinstance(item, dict):
@@ -189,7 +191,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         st.info("Insufficient data for category matrix generation.")
 
     st.divider()
-    st.markdown("#### 📊 Weekly Sub-Category Report")
+    st.markdown("**📊 Weekly Sub-Category Report**")
     
     report_window = st.selectbox(
         "Select Reporting Period",
@@ -217,13 +219,12 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             inventory = stock_df.copy() if stock_df is not None else pd.DataFrame()
             subcat_units = pd.DataFrame()
             if not inventory.empty:
-                if "Sub Category" not in inventory.columns:
-                    if "Category" not in inventory.columns:
-                        names = inventory.get("Name", pd.Series(dtype=str)).fillna("").astype(str)
-                        skus = inventory.get("SKU", pd.Series(dtype=str)).fillna("").astype(str)
-                        from BackEnd.core.categories import get_category_for_sales
-                        inventory["Category"] = [get_category_for_sales(n + " " + s) for n, s in zip(names, skus)]
-                    inventory["Sub Category"] = inventory["Category"].apply(get_subcategory_name)
+                # Force system-defined categories instead of relying on raw WooCommerce tags
+                names = inventory.get("Name", pd.Series(dtype=str)).fillna("").astype(str)
+                skus = inventory.get("SKU", pd.Series(dtype=str)).fillna("").astype(str)
+                from BackEnd.core.categories import get_category_for_sales
+                inventory["Category"] = [get_category_for_sales(n + " " + s) for n, s in zip(names, skus)]
+                inventory["Sub Category"] = inventory["Category"].apply(get_subcategory_name)
                 
                 inventory["Stock Quantity"] = pd.to_numeric(inventory.get("Stock Quantity", 0), errors="coerce").fillna(0)
                 subcat_units = inventory.groupby("Sub Category")["Stock Quantity"].sum().reset_index()
@@ -291,6 +292,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
                     
                     if issue_type == "Exchange":
                         items = row.get("returned_items", [])
+                        if hasattr(items, "tolist"): items = items.tolist()
                         if isinstance(items, list):
                             for item in items:
                                 if isinstance(item, dict):
@@ -303,6 +305,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
                                     
                     if issue_type in ["Paid Return", "Non Paid Return", "Partial"]:
                         items = row.get("returned_items", [])
+                        if hasattr(items, "tolist"): items = items.tolist()
                         if not isinstance(items, list): continue
                         for item in items:
                             if not isinstance(item, dict): continue
@@ -537,8 +540,8 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
     top_var_display = f"{top_var_name} ({top_var_units})"
     
     # VISUALIZATION SUITE
-    st.markdown("#### ⚡ Strategic Pulse")
-    p_c1, p_c2, p_c3, p_c4, p_c5 = st.columns(5)
+    st.markdown("**⚡ Strategic Pulse**")
+    p_c1, p_c2, p_c3, p_c4, p_c5 = st.columns(5, gap="small")
     
     with p_c1: ui.icon_metric("Total Items Sold", f"{total_items_sold:,}", icon="📦", delta=d_items_label, delta_val=d_items_val)
     with p_c2: ui.icon_metric("Top Variation", top_var_display, icon="🎯")
@@ -550,7 +553,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
 
     # --- Cluster Time Series Analysis ---
     st.divider()
-    st.markdown("#### 📈 Cluster Performance Over Time")
+    st.markdown("**📈 Cluster Performance Over Time**")
     
     # Pre-process for Time Series
     ts_df = w_df.copy()
@@ -600,7 +603,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
 
     rd1, rd2 = st.columns([3, 1])
     with rd1:
-        st.markdown(f"#### 📊 Strategic Analytics Export")
+        st.markdown(f"**📊 Strategic Analytics Export**")
         st.caption(f"Generate a professional multi-sheet intelligence report for the **{len(w_df):,}** items in this selection.")
     with rd2:
         from datetime import datetime
@@ -811,7 +814,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
 
         # Operational Category Mix (Sub-Category Focus)
         st.divider()
-        st.markdown("##### 📦 Operational Sub-Category Performance")
+        st.markdown("**📦 Operational Sub-Category Performance**")
         occ1, occ2 = st.columns(2)
         
         cat_intell = w_df.copy()
@@ -865,7 +868,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
 
     with cluster_t3:
         # --- ML Analytics: Bulk Purchase Dynamics ---
-        st.markdown("##### 🧠 Bulk Purchase Dynamics (ML Analysis)")
+        st.markdown("**🧠 Bulk Purchase Dynamics (ML Analysis)**")
         st.caption("Analyzing the propensity for bulk purchasing within this cluster. (Single Piece vs 3+ Units)")
         
         if total_orders_in_cluster > 0:
@@ -909,7 +912,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         total_count = len(w_df)
         others_pct = (others_count / total_count * 100) if total_count > 0 else 0
         
-        st.markdown("##### 🛠️ Categorization Health Audit")
+        st.markdown("**🛠️ Categorization Health Audit**")
         ac1, ac2 = st.columns([1.2, 2])
         with ac1:
             ui.metric_highlight(
@@ -943,7 +946,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         st.dataframe(ledger_df, width="stretch", hide_index=True)
         
     st.divider()
-    st.markdown("#### 🤖 Deep Dive Contextual AI Agent")
+    st.markdown("**🤖 Deep Dive Contextual AI Agent**")
     st.caption("Ask specific questions about this active cluster of data.")
     from FrontEnd.components.data_display import render_ai_pilot_chat_ui
     returns_data = st.session_state.get("returns_data", pd.DataFrame())

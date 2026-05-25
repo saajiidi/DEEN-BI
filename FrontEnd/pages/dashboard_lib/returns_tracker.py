@@ -315,7 +315,7 @@ def _render_kpi_cards(metrics: dict, show_exact: bool = False) -> None:
             return f"{val_str} ({(val / t_ord * 100):.1f}%)"
         return f"{val_str}"
 
-    cols = st.columns(4)
+    cols = st.columns(4, gap="small")
     
     with cols[0]:
         ui.metric_highlight(
@@ -402,7 +402,7 @@ def _render_financial_impact_summary(metrics: dict, show_exact: bool = False) ->
         )
 
     # Secondary Row: Operational impact
-    c4, c5, c6 = st.columns(3)
+    c4, c5, c6 = st.columns(3, gap="small")
     with c4:
         items_pct_text = f"{total_returned_items_pct:.1f}% of {format_val(total_items_sold)} units" if total_items_sold > 0 else "0% items returned"
         ui.metric_highlight(
@@ -849,6 +849,7 @@ def _render_return_inventory(df: pd.DataFrame, sales_df: pd.DataFrame, key_prefi
 
     for _, row in return_df.iterrows():
         items = row.get("returned_items", [])
+        if hasattr(items, "tolist"): items = items.tolist()
         if not isinstance(items, list): continue
         
         for item in items:
@@ -967,6 +968,7 @@ def _render_returned_items_list(df: pd.DataFrame) -> None:
     item_rows = []
     for _, row in returns_df.iterrows():
         items = row.get("returned_items", [])
+        if hasattr(items, "tolist"): items = items.tolist()
         if not isinstance(items, list):
             continue
 
@@ -1155,6 +1157,7 @@ def _render_details_table(df: pd.DataFrame, sales_df: pd.DataFrame) -> None:
     def format_item_list(items):
         if items is None or (hasattr(items, '__len__') and len(items) == 0):
             return "N/A"
+        if hasattr(items, "tolist"): items = items.tolist()
         if not isinstance(items, list): return str(items)
         
         formatted = []

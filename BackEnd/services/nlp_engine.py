@@ -379,7 +379,6 @@ class LLMAgent:
 
         # LLM Response Cache Check
         import hashlib
-        import streamlit as st
         if "llm_response_cache" not in st.session_state:
             st.session_state.llm_response_cache = {}
             
@@ -408,39 +407,60 @@ class LLMAgent:
         Be professional, concise, and use markdown.
         """
         
+        # Aggressive timeout to prevent cascading delays (Wait of Death)
+        GLOBAL_TIMEOUT = 15
+        CIRCUIT_BREAKER_COOLDOWN = 60
+        import time
+        if "circuit_breaker" not in st.session_state:
+            st.session_state.circuit_breaker = {}
+        
         def try_gemini(sys_prompt=system_prompt, user_query=prompt):
             import google.generativeai as genai
-            import streamlit as st
             import os
             api_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("llm", {}).get("gemini_key") or os.environ.get("GEMINI_API_KEY")
             if not api_key:
                 return "MISSING_KEY"
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content(f"{sys_prompt}\n\nUser Question: {user_query}")
-            return response.text
+            try:
+                response = model.generate_content(f"{sys_prompt}\n\nUser Question: {user_query}", request_options={"timeout": GLOBAL_TIMEOUT})
+                return response.text
+            except Exception as e:
+                if "timeout" in str(e).lower() or "deadline" in str(e).lower():
+                    return "TIMEOUT"
+                return "LOCAL_ERROR"
 
         def try_groq(sys_prompt=system_prompt, user_query=prompt):
             from groq import Groq
-            import streamlit as st
             import os
             api_key = st.secrets.get("GROQ_API_KEY") or st.secrets.get("llm", {}).get("groq_key") or os.environ.get("GROQ_API_KEY")
             if not api_key:
                 return "MISSING_KEY"
-            client = Groq(api_key=api_key)
-            completion = client.chat.completions.create(
-                model="llama3-70b-8192",
-                messages=[
-                    {"role": "system", "content": sys_prompt},
-                    {"role": "user", "content": user_query}
-                ],
-                temperature=0.2,
-            )
-            return completion.choices[0].message.content
+            try:
+                client = Groq(api_key=api_key, timeout=GLOBAL_TIMEOUT)
+                completion = client.chat.completions.create(
+                    model="llama3-70b-8192",
+                    messages=[
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": user_query}
+                    ],
+                    temperature=0.2,
+                )
+                return completion.choices[0].message.content
+            except Exception as e:
+                if "timeout" in str(e).lower():
+                    return "TIMEOUT"
+                return "LOCAL_ERROR"
             
         def try_local(sys_prompt=system_prompt, user_query=prompt):
             is_ollama = "11434" in self.base_url
             url = f"{self.base_url}/api/generate" if is_ollama else (f"{self.base_url}/v1/chat/completions" if "/v1" not in self.base_url else f"{self.base_url}/chat/completions")
+            
+            # Dynamic Payload Truncation for local models (e.g., Llama 3 8B ~8k limit)
+            max_sys_chars = 15000
+            if len(sys_prompt) > max_sys_chars:
+                sys_prompt = sys_prompt[:max_sys_chars] + "\n...[TRUNCATED FOR CONTEXT LIMIT]"
+                
             payload = {
                     "model": self.model_name,
                     "prompt": f"{sys_prompt}\n\nUser Question: {user_query}",
@@ -454,7 +474,7 @@ class LLMAgent:
                     "temperature": 0.2
             }
             try:
-                response = requests.post(url, json=payload, timeout=30)
+                response = requests.post(url, json=payload, timeout=GLOBAL_TIMEOUT)
                 if response.status_code == 200:
                     res_json = response.json()
                     if is_ollama:
@@ -463,16 +483,23 @@ class LLMAgent:
                         return res_json.get("choices", [{}])[0].get("message", {}).get("content", "No response.")
                 else:
                     return "LOCAL_ERROR"
+            except requests.exceptions.Timeout:
+                return "TIMEOUT"
             except Exception:
                 return "LOCAL_ERROR"
 
         def try_openrouter(sys_prompt=system_prompt, user_query=prompt):
-            import streamlit as st
             import os
             import requests
             api_key = st.secrets.get("OPENROUTER_API_KEY") or st.secrets.get("llm", {}).get("openrouter_key") or os.environ.get("OPENROUTER_API_KEY")
             if not api_key:
                 return "MISSING_KEY"
+                
+            # Dynamic Payload Truncation for smaller contexts (e.g., Llama 3 8B ~8k limit)
+            max_sys_chars = 15000
+            if len(sys_prompt) > max_sys_chars:
+                sys_prompt = sys_prompt[:max_sys_chars] + "\n...[TRUNCATED FOR CONTEXT LIMIT]"
+                
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "HTTP-Referer": "http://localhost:8501",
@@ -485,28 +512,43 @@ class LLMAgent:
                     {"role": "user", "content": user_query}
                 ]
             }
-            resp = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=30)
-            if resp.status_code == 200:
-                return resp.json().get("choices", [{}])[0].get("message", {}).get("content", "No response.")
+            try:
+                resp = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=GLOBAL_TIMEOUT)
+                if resp.status_code == 200:
+                    return resp.json().get("choices", [{}])[0].get("message", {}).get("content", "No response.")
+            except requests.exceptions.Timeout:
+                return "TIMEOUT"
+            except Exception:
+                pass
             return "LOCAL_ERROR"
 
         def try_huggingface(sys_prompt=system_prompt, user_query=prompt):
-            import streamlit as st
             import os
             import requests
             api_key = st.secrets.get("HUGGINGFACE_API_KEY") or st.secrets.get("llm", {}).get("huggingface_key") or os.environ.get("HUGGINGFACE_API_KEY")
             if not api_key:
                 return "MISSING_KEY"
+                
+            # Dynamic Payload Truncation for Zephyr-7b (8k context)
+            max_sys_chars = 15000
+            if len(sys_prompt) > max_sys_chars:
+                sys_prompt = sys_prompt[:max_sys_chars] + "\n...[TRUNCATED FOR CONTEXT LIMIT]"
+                
             headers = {"Authorization": f"Bearer {api_key}"}
             payload = {
                 "inputs": f"<|system|>\n{sys_prompt}</s>\n<|user|>\n{user_query}</s>\n<|assistant|>",
                 "parameters": {"max_new_tokens": 512, "temperature": 0.2, "return_full_text": False}
             }
-            resp = requests.post("https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta", headers=headers, json=payload, timeout=30)
-            if resp.status_code == 200:
-                res = resp.json()
-                if isinstance(res, list) and len(res) > 0:
-                    return res[0].get("generated_text", "No response.")
+            try:
+                resp = requests.post("https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta", headers=headers, json=payload, timeout=GLOBAL_TIMEOUT)
+                if resp.status_code == 200:
+                    res = resp.json()
+                    if isinstance(res, list) and len(res) > 0:
+                        return res[0].get("generated_text", "No response.")
+            except requests.exceptions.Timeout:
+                return "TIMEOUT"
+            except Exception:
+                pass
             return "LOCAL_ERROR"
 
         fallback_order = []
@@ -525,39 +567,36 @@ class LLMAgent:
             
         last_error = "❌ **AI Generation Failed:** No valid models available."
         
-        eval_system_prompt = "You are an objective AI judge. Evaluate the response against the rules. Reply ONLY with 'YES' if it violates the rules, or 'NO' if it complies."
-        
         for name, func in fallback_order:
-            try:
-                for attempt in range(2):
-                    res = func(system_prompt, prompt)
-                    if res in ["MISSING_KEY", "LOCAL_ERROR"]:
-                        break # Move to next provider
-                        
-                    # LLM-as-a-Judge Validation
-                    eval_user_prompt = f"RULES:\n1. 'Total Orders' ALWAYS refers to a distinct count of unique `order_id` values.\n2. Do NOT use row counts when asked for order counts.\n\nRESPONSE TO EVALUATE:\n{res}\n\nDoes the response violate these rules? (YES/NO)"
-                    eval_res = func(eval_system_prompt, eval_user_prompt)
-                    
-                    if "YES" in str(eval_res).upper() and attempt == 0:
-                        import logging
-                        logging.warning(f"[{name}] NLP Validation failed on attempt {attempt+1}. Regenerating...")
-                        continue
-                        
-                    import re
-                    from pathlib import Path
-                    updates = re.findall(r'\[KNOWLEDGE_UPDATE:\s*(.*?)\]', res)
-                    if updates:
-                        knowledge_file = Path("BackEnd/data/pilot_knowledge.txt")
-                        knowledge_file.parent.mkdir(parents=True, exist_ok=True)
-                        with open(knowledge_file, "a", encoding="utf-8") as f:
-                            for update in updates:
-                                f.write(f"- {update.strip()}\n")
-                        res = re.sub(r'\[KNOWLEDGE_UPDATE:\s*.*?\]', '', res).strip()
-                        import streamlit as st
-                        st.toast("🤖 Auto-learned a new rule from your correction.", icon="🧠")
+            if time.time() - st.session_state.circuit_breaker.get(name, 0) < CIRCUIT_BREAKER_COOLDOWN:
+                last_error = f"❌ **{name} Skipped:** Circuit breaker open due to recent timeout."
+                continue
 
-                    st.session_state.llm_response_cache[cache_key] = res
-                    return res
+            try:
+                res = func(system_prompt, prompt)
+                if res == "TIMEOUT":
+                    st.session_state.circuit_breaker[name] = time.time()
+                    last_error = f"❌ **{name} Error:** Connection timed out."
+                    continue
+                elif res in ["MISSING_KEY", "LOCAL_ERROR"]:
+                    continue
+                
+                st.session_state.circuit_breaker[name] = 0
+                        
+                import re
+                from pathlib import Path
+                updates = re.findall(r'\[KNOWLEDGE_UPDATE:\s*(.*?)\]', res)
+                if updates:
+                    knowledge_file = Path("BackEnd/data/pilot_knowledge.txt")
+                    knowledge_file.parent.mkdir(parents=True, exist_ok=True)
+                    with open(knowledge_file, "a", encoding="utf-8") as f:
+                        for update in updates:
+                            f.write(f"- {update.strip()}\n")
+                    res = re.sub(r'\[KNOWLEDGE_UPDATE:\s*.*?\]', '', res).strip()
+                    st.toast("🤖 Auto-learned a new rule from your correction.", icon="🧠")
+
+                st.session_state.llm_response_cache[cache_key] = res
+                return res
             except Exception as e:
                 last_error = f"❌ **{name} Error:** {str(e)}"
                 continue

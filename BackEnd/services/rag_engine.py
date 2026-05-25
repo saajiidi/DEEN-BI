@@ -359,37 +359,55 @@ class RAGAgent:
         If the user explicitly asks for an interactive chart or visualization, you must use the `[TOOL_CALL: GENERATE_PLOTLY]` tool and define the data inline based on the records.
         """
         
+        GLOBAL_TIMEOUT = 15
+        CIRCUIT_BREAKER_COOLDOWN = 60
+        import time
+        if "circuit_breaker" not in st.session_state:
+            st.session_state.circuit_breaker = {}
+            
         def try_gemini(sys_prompt=system_prompt, user_query=prompt):
             import google.generativeai as genai
             import os
-            import streamlit as st
             api_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("llm", {}).get("gemini_key") or os.environ.get("GEMINI_API_KEY")
             if not api_key: return "MISSING_KEY"
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content(f"{sys_prompt}\n\nUser Question: {user_query}")
-            return response.text
+            try:
+                response = model.generate_content(f"{sys_prompt}\n\nUser Question: {user_query}", request_options={"timeout": GLOBAL_TIMEOUT})
+                return response.text
+            except Exception as e:
+                if "timeout" in str(e).lower() or "deadline" in str(e).lower(): return "TIMEOUT"
+                return "LOCAL_ERROR"
             
         def try_groq(sys_prompt=system_prompt, user_query=prompt):
             from groq import Groq
             import os
-            import streamlit as st
             api_key = st.secrets.get("GROQ_API_KEY") or st.secrets.get("llm", {}).get("groq_key") or os.environ.get("GROQ_API_KEY")
             if not api_key: return "MISSING_KEY"
-            client = Groq(api_key=api_key)
-            completion = client.chat.completions.create(
-                model="llama3-70b-8192",
-                messages=[
-                    {"role": "system", "content": sys_prompt},
-                    {"role": "user", "content": user_query}
-                ],
-                temperature=0.2,
-            )
-            return completion.choices[0].message.content
+            try:
+                client = Groq(api_key=api_key, timeout=GLOBAL_TIMEOUT)
+                completion = client.chat.completions.create(
+                    model="llama3-70b-8192",
+                    messages=[
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": user_query}
+                    ],
+                    temperature=0.2,
+                )
+                return completion.choices[0].message.content
+            except Exception as e:
+                if "timeout" in str(e).lower(): return "TIMEOUT"
+                return "LOCAL_ERROR"
             
         def try_local(sys_prompt=system_prompt, user_query=prompt):
             is_ollama = "11434" in self.base_url
             url = f"{self.base_url}/api/generate" if is_ollama else (f"{self.base_url}/v1/chat/completions" if "/v1" not in self.base_url else f"{self.base_url}/chat/completions")
+            
+            # Dynamic Payload Truncation for local models (e.g., Llama 3 8B ~8k limit)
+            max_sys_chars = 15000
+            if len(sys_prompt) > max_sys_chars:
+                sys_prompt = sys_prompt[:max_sys_chars] + "\n...[TRUNCATED FOR CONTEXT LIMIT]"
+                
             payload = {
                 "model": self.model_name,
                 "prompt": f"{sys_prompt}\n\nUser Question: {user_query}",
@@ -403,11 +421,13 @@ class RAGAgent:
                 "temperature": 0.2
             }
             try:
-                response = requests.post(url, json=payload, timeout=30)
+                response = requests.post(url, json=payload, timeout=GLOBAL_TIMEOUT)
                 if response.status_code == 200:
                     res_json = response.json()
                     return res_json.get("response", "No response.") if is_ollama else res_json.get("choices", [{}])[0].get("message", {}).get("content", "No response.")
                 return "LOCAL_ERROR"
+            except requests.exceptions.Timeout:
+                return "TIMEOUT"
             except Exception:
                 return "LOCAL_ERROR"
 
@@ -421,54 +441,51 @@ class RAGAgent:
             
         last_error = "❌ **AI Generation Failed:** No valid models available."
         
-        eval_system_prompt = "You are an objective AI judge. Evaluate the response against the rules. Reply ONLY with 'YES' if it violates the rules, or 'NO' if it complies."
-        
         for name, func in fallback_order:
+            if time.time() - st.session_state.circuit_breaker.get(name, 0) < CIRCUIT_BREAKER_COOLDOWN:
+                last_error = f"❌ **{name} Skipped:** Circuit breaker open due to recent timeout."
+                continue
+
             try:
-                for attempt in range(2): # Max 2 attempts with LLM-as-a-Judge
-                    res = func(system_prompt, prompt)
-                    if res in ["MISSING_KEY", "LOCAL_ERROR"]:
-                        break # Move to next provider
+                res = func(system_prompt, prompt)
+                if res == "TIMEOUT":
+                    st.session_state.circuit_breaker[name] = time.time()
+                    last_error = f"❌ **{name} Error:** Connection timed out."
+                    continue
+                elif res in ["MISSING_KEY", "LOCAL_ERROR"]:
+                    continue # Move to next provider
                         
-                    # LLM-as-a-Judge Validation
-                    eval_user_prompt = f"RULES:\n1. 'Total Orders' ALWAYS refers to a distinct count of unique `order_id` values.\n2. Do NOT use row counts when asked for order counts.\n\nRESPONSE TO EVALUATE:\n{res}\n\nDoes the response violate these rules? (YES/NO)"
-                    eval_res = func(eval_system_prompt, eval_user_prompt)
-                    
-                    if "YES" in str(eval_res).upper() and attempt == 0:
-                        logger.warning(f"[{name}] Validation failed on attempt {attempt+1}. Regenerating...")
-                        continue
+                st.session_state.circuit_breaker[name] = 0
                         
-                    if "[TOOL_CALL: FETCH_MORE_HISTORY]" in res and depth == 0:
-                        import streamlit as st
-                        st.toast("🤖 Data Pilot is fetching deeper history to answer your question...", icon="⏳")
-                        from BackEnd.services.hybrid_data_loader import load_cached_woocommerce_history
-                        deep_history_df = load_cached_woocommerce_history()
-                        if not deep_history_df.empty:
-                            deep_context = deep_history_df.copy()
-                            deep_context["_Data_Context"] = "Global Site Data (Deep History)"
-                            self._ingest_dataframe(deep_context, max_rows=1500)
-                            # Recursive call with depth 1
-                            return self.query(prompt, context_dfs, depth=1)
+                if "[TOOL_CALL: FETCH_MORE_HISTORY]" in res and depth == 0:
+                    st.toast("🤖 Data Pilot is fetching deeper history to answer your question...", icon="⏳")
+                    from BackEnd.services.hybrid_data_loader import load_cached_woocommerce_history
+                    deep_history_df = load_cached_woocommerce_history()
+                    if not deep_history_df.empty:
+                        deep_context = deep_history_df.copy()
+                        deep_context["_Data_Context"] = "Global Site Data (Deep History)"
+                        self._ingest_dataframe(deep_context, max_rows=1500)
+                        # Recursive call with depth 1
+                        return self.query(prompt, context_dfs, depth=1)
                             
-                    if "[TOOL_CALL: REMEMBER_RULE]" in res:
-                        import re
-                        import streamlit as st
-                        match = re.search(r'\[TOOL_CALL: REMEMBER_RULE\]\s*\n([^\n]*)', res)
-                        if match:
-                            new_rule = match.group(1).strip()
-                            if new_rule:
-                                from pathlib import Path
-                                knowledge_file = Path("BackEnd/data/pilot_knowledge.txt")
-                                knowledge_file.parent.mkdir(parents=True, exist_ok=True)
-                                with open(knowledge_file, "a", encoding="utf-8") as f:
-                                    f.write(f"- {new_rule}\n")
-                                if "llm_response_cache" in st.session_state:
-                                    st.session_state.llm_response_cache.clear()
-                                st.toast("🤖 Auto-learned a new rule from your correction.", icon="🧠")
-                        res = re.sub(r'\[TOOL_CALL: REMEMBER_RULE\]\s*\n[^\n]*\n?', '', res).strip()
+                if "[TOOL_CALL: REMEMBER_RULE]" in res:
+                    import re
+                    match = re.search(r'\[TOOL_CALL: REMEMBER_RULE\]\s*\n([^\n]*)', res)
+                    if match:
+                        new_rule = match.group(1).strip()
+                        if new_rule:
+                            from pathlib import Path
+                            knowledge_file = Path("BackEnd/data/pilot_knowledge.txt")
+                            knowledge_file.parent.mkdir(parents=True, exist_ok=True)
+                            with open(knowledge_file, "a", encoding="utf-8") as f:
+                                f.write(f"- {new_rule}\n")
+                            if "llm_response_cache" in st.session_state:
+                                st.session_state.llm_response_cache.clear()
+                            st.toast("🤖 Auto-learned a new rule from your correction.", icon="🧠")
+                    res = re.sub(r'\[TOOL_CALL: REMEMBER_RULE\]\s*\n[^\n]*\n?', '', res).strip()
                             
-                    st.session_state.llm_response_cache[cache_key] = res
-                    return res
+                st.session_state.llm_response_cache[cache_key] = res
+                return res
             except Exception as e:
                 last_error = f"❌ **{name} Error:** {str(e)}"
                 continue

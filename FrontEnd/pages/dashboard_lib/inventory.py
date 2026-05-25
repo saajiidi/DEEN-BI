@@ -106,7 +106,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
     st.divider()
 
     # 2. Inventory Sniper (Structured Search)
-    st.markdown("#### 🎯 Inventory Sniper")
+    st.markdown("**🎯 Inventory Sniper**")
     st.caption("Search across categories and velocity trends to isolate specific SKU health.")
     
     # Initialize active filter variables to None for broader scope usage
@@ -212,7 +212,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
         ), width="stretch", hide_index=True)
         st.divider()
 
-    st.markdown("#### Inventory Strategic Analysis")
+    st.markdown("**Inventory Strategic Analysis**")
     if "Category" in inventory.columns:
         # 1. Advanced Value Calculations
         inventory["Regular Price"] = pd.to_numeric(inventory.get("Regular Price", 0), errors="coerce").fillna(0)
@@ -302,7 +302,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
                 st.plotly_chart(fig_val_bar, width="stretch", key=KeyManager.get_key("inventory", "value_volume_bar"))
                 
             st.divider()
-            st.markdown(f"##### 📋 Detailed {group_label} Ledger")
+            st.markdown(f"**📋 Detailed {group_label} Ledger**")
             display_table = cat_agg.sort_values("Selected_Value", ascending=False).copy()
             st.dataframe(
                 display_table,
@@ -326,7 +326,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
             st.plotly_chart(fig_sku_bar, width="stretch", key=KeyManager.get_key("inventory", "sku_breadth_bar"))
 
         with t3:
-            st.markdown("##### 🚀 Velocity-Based Inventory Planning")
+            st.markdown("**🚀 Velocity-Based Inventory Planning**")
             st.caption("Strategic restock recommendations based on real sales velocity for the selected range.")
             
             # Use real daily_velocity calculated at the top
@@ -352,7 +352,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
                 st.success("All stock levels are stable based on current velocity.")
 
         with t4:
-            st.markdown("##### 📉 Dead Stock & Liquidation Hub")
+            st.markdown("**📉 Dead Stock & Liquidation Hub**")
             st.caption("Items with high inventory levels but near-zero transaction velocity in the selected range.")
             
             # Dead stock based on real velocity zeroing out
@@ -372,7 +372,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
                 st.success("No significant dead stock detected for this period.")
 
         with t5:
-            st.markdown("##### 🤝 Bundle-Aware Inventory Intelligence")
+            st.markdown("**🤝 Bundle-Aware Inventory Intelligence**")
             st.caption("Analyzes frequent product combinations to detect missing components (Orphan Stock).")
             
             if df_sales is None or df_sales.empty or "order_id" not in df_sales.columns or "item_name" not in df_sales.columns:
@@ -445,7 +445,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
                         
                         # Add Orphan Stock Intelligence
                         st.markdown("---")
-                        st.markdown("##### 🚨 Critical Orphaned Stock")
+                        st.markdown("**🚨 Critical Orphaned Stock**")
                         st.caption("Items you have in stock, but their highly correlated paired item is Out of Stock.")
                         from BackEnd.services.inventory_intel import InventoryIntelligence
                         intel = InventoryIntelligence(df_sales, inventory)
@@ -464,7 +464,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
         
     st.markdown("---")
     
-    st.markdown("#### 🤖 Inventory Contextual AI Agent")
+    st.markdown("**🤖 Inventory Contextual AI Agent**")
     st.caption("Ask specific questions about your stock, low inventory, or velocity.")
     from FrontEnd.components.data_display import render_ai_pilot_chat_ui
     returns_data = st.session_state.get("returns_data", pd.DataFrame())
@@ -474,7 +474,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
     # 3. Report Summary & Download
     d1, d2 = st.columns([2, 1])
     with d1:
-        st.markdown("#### Strategic Inventory Snapshot")
+        st.markdown("**Strategic Inventory Snapshot**")
         st.caption("Exports data based on active 'Inventory Sniper' filters and current velocity metrics.")
     with d2:
         # Apply active filters to the exported dataframe
@@ -526,11 +526,11 @@ def _get_global_date_range() -> tuple[date, date]:
 
 def _render_stock_timeline(inventory_df: pd.DataFrame, sales_df: pd.DataFrame, returns_df: pd.DataFrame):
     """Renders a historical stock timeline and availability checker."""
-    st.markdown("#### ⏳ Stock Timeline & Availability")
+    st.markdown("**⏳ Stock Timeline & Availability**")
     st.caption("Analyze historical stock levels and see which products were available on a specific date.")
 
     # Part 1: Recent Stock-In Events (from returns)
-    st.markdown("##### Recent Restocking Events (from Returns)")
+    st.markdown("**Recent Restocking Events (from Returns)**")
     if returns_df.empty or 'returned_items' not in returns_df.columns:
         st.info("No returns data available to track restocking events.")
     else:
@@ -544,6 +544,7 @@ def _render_stock_timeline(inventory_df: pd.DataFrame, sales_df: pd.DataFrame, r
             restocked_items = []
             for _, row in restocked.iterrows():
                 items = row.get('returned_items', [])
+                if hasattr(items, "tolist"): items = items.tolist()
                 if not isinstance(items, list): continue
                 for item in items:
                     if not isinstance(item, dict): continue
@@ -564,7 +565,7 @@ def _render_stock_timeline(inventory_df: pd.DataFrame, sales_df: pd.DataFrame, r
     st.divider()
 
     # Part 2: Historical Availability Snapshot
-    st.markdown("##### Historical Stock Snapshot")
+    st.markdown("**Historical Stock Snapshot**")
     
     start_dt, end_dt = _get_global_date_range()
 
