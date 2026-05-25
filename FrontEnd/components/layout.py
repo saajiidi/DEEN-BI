@@ -10,7 +10,8 @@ def setup_theme():
         """
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
+
+        /* ── Design Tokens (Light Mode) ─────────────────────────────────── */
         :root {
             --primary: #6366F1;
             --primary-rgb: 99, 102, 241;
@@ -23,22 +24,45 @@ def setup_theme():
             --green: #10b981;
             --warning: #f59e0b;
             --red: #ef4444;
+            /* Previously undefined — now declared */
+            --border: #E2E8F0;
+            --border-soft: rgba(226, 232, 240, 0.6);
+            --text-strong: #0F172A;
+            --text-muted: #64748B;
+            --card-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
+            --card-shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.05);
+            --gradient-1: linear-gradient(135deg, #6366F1 0%, #3b82f6 100%);
+            --action-surface: rgba(248, 250, 252, 0.96);
+            --accent: #6366F1;
         }
 
+        /* ── Design Tokens (Dark Mode) ──────────────────────────────────── */
         @media (prefers-color-scheme: dark) {
             :root {
                 --primary: #818CF8;
                 --primary-rgb: 129, 140, 248;
-                --background: #000000;
-                --surface: #0A0A0A;
-                --surface-variant: #111111;
-                --on-surface: #FFFFFF;
-                --on-surface-variant: #A1A1AA;
-                --outline: #27272A;
+                --background: #0F172A;
+                --surface: #1E293B;
+                --surface-variant: #334155;
+                --on-surface: #F1F5F9;
+                --on-surface-variant: #94A3B8;
+                --outline: rgba(148, 163, 184, 0.2);
                 --warning: #f59e0b;
+                --green: #34d399;
+                --red: #f87171;
+                --border: rgba(148, 163, 184, 0.2);
+                --border-soft: rgba(148, 163, 184, 0.12);
+                --text-strong: #F1F5F9;
+                --text-muted: #94A3B8;
+                --card-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+                --card-shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.25);
+                --gradient-1: linear-gradient(135deg, #818CF8 0%, #60a5fa 100%);
+                --action-surface: rgba(30, 41, 59, 0.96);
+                --accent: #818CF8;
             }
         }
 
+        /* ── Base ───────────────────────────────────────────────────────── */
         html, body, [class*="css"] {
             font-family: 'Inter', sans-serif !important;
         }
@@ -48,14 +72,13 @@ def setup_theme():
             color: var(--on-surface) !important;
         }
 
-        /* Premium Metric Styling - Material 3 + Glassmorphism */
+        /* ── Cards & Surfaces ───────────────────────────────────────────── */
         [data-testid="stMetricContainer"], .metric-card, .bi-hero, .hub-card {
             background: var(--surface) !important;
-            border: 1px solid var(--surface-variant) !important;
+            border: 1px solid var(--outline) !important;
             border-radius: 16px !important;
             padding: 1.5rem !important;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important;
-            border: 1px solid rgba(128, 128, 128, 0.1) !important;
+            box-shadow: var(--card-shadow) !important;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
             backdrop-filter: blur(12px) !important;
             box-sizing: border-box !important;
@@ -71,7 +94,17 @@ def setup_theme():
             overflow: hidden !important;
         }
 
+        /* Hover: border + shadow only on non-interactive containers.
+           Transform lift is scoped to clickable metric cards below. */
         .hub-card:hover {
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1) !important;
+            border-color: var(--primary) !important;
+        }
+
+        /* Lift only on metric cards — not commentary/hero blocks */
+        .metric-icon-card:hover,
+        .metric-highlight:hover,
+        .op-card:hover {
             transform: translateY(-4px);
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
             border-color: var(--primary) !important;
@@ -122,7 +155,7 @@ def setup_theme():
             letter-spacing: -0.04em;
             line-height: 1.1;
             margin: 0;
-            white-space: nowrap !important;
+            overflow-wrap: break-word;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
             width: 100%;
@@ -229,8 +262,9 @@ def setup_theme():
             padding-bottom: 5rem !important;
         }
 
-        /* Mobile Responsiveness for 6-pillar metrics */
-        @media (max-width: 1440px) {
+        /* ── Responsive Breakpoints ─────────────────────────────────────── */
+        /* 1024px: wrap 6-col metrics to 3+3 — keeps them visible on 1080p */
+        @media (max-width: 1024px) {
             [data-testid="stHorizontalBlock"] {
                 flex-direction: row !important;
                 flex-wrap: wrap !important;
@@ -260,19 +294,6 @@ def setup_theme():
             }
             .hub-page_footer {
                 padding: 10px 0 20px 0 !important;
-            }
-        }
-
-        @media (max-width: 768px) {
-            [data-testid="stColumn"] {
-                min-width: calc(50% - 0.5rem) !important;
-                flex: 1 1 calc(50% - 0.5rem) !important;
-            }
-        }
-
-        @media (max-width: 480px) {
-            [data-testid="stColumn"] {
-                min-width: 100% !important;
             }
         }
 
@@ -432,7 +453,7 @@ def setup_theme():
             backdrop-filter: blur(8px);
         }
         .bi-commentary {
-            background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(242,248,251,0.92) 100%);
+            background: var(--surface);
             border: 1px solid var(--border-soft);
             border-radius: 18px;
             box-shadow: var(--card-shadow-soft);
@@ -456,8 +477,7 @@ def setup_theme():
             padding-left: 1.2rem;
             color: var(--text-strong);
             font-size: 1rem;
-        }
-        .bi-commentary li {
+        }        .bi-commentary li {
             margin-bottom: 0.6rem;
             line-height: 1.6;
         }
@@ -560,9 +580,9 @@ def setup_theme():
         }
         div[data-testid="stTab"] button[aria-selected="true"] {
             color: var(--primary) !important;
-            background: white !important;
-            border: 1px solid rgba(79, 70, 229, 0.2) !important;
-            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.08) !important;
+            background: var(--surface-variant) !important;
+            border: 1px solid rgba(var(--primary-rgb), 0.2) !important;
+            box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.08) !important;
         }
         
         /* Responsive Design - Mobile First */
@@ -742,31 +762,88 @@ def setup_theme():
             }
         }
         
-        /* Fixed Bottom Footer */
-        .hub-page_footer {
-            margin-top: 40px;
-            width: 100%;
-            position: relative;
-            background: var(--background);
-            opacity: 0.98;
-            backdrop-filter: blur(8px);
-            border-top: 1px solid var(--surface-variant);
-            padding: 20px 0;
-            z-index: 1000;
+        /* ── Sidebar Nav Pills ──────────────────────────────────────────── */
+        /* Hide the default radio dot and style selected item as a filled pill */
+        [data-testid="stSidebar"] [data-testid="stRadio"] label {
+            display: flex !important;
+            align-items: center !important;
+            padding: 7px 12px !important;
+            border-radius: 8px !important;
+            cursor: pointer !important;
+            transition: background 0.15s ease, color 0.15s ease !important;
+            font-size: 0.875rem !important;
+            font-weight: 500 !important;
+            color: var(--on-surface-variant) !important;
+            margin-bottom: 2px !important;
+        }
+        [data-testid="stSidebar"] [data-testid="stRadio"] label:hover {
+            background: rgba(var(--primary-rgb), 0.08) !important;
+            color: var(--primary) !important;
+        }
+        [data-testid="stSidebar"] [data-testid="stRadio"] label[data-checked="true"],
+        [data-testid="stSidebar"] [data-testid="stRadio"] input:checked + div {
+            background: rgba(var(--primary-rgb), 0.12) !important;
+            color: var(--primary) !important;
+            font-weight: 600 !important;
+        }
+        /* Hide the radio circle dot */
+        [data-testid="stSidebar"] [data-testid="stRadio"] [data-testid="stMarkdownContainer"] p::before,
+        [data-testid="stSidebar"] [data-testid="stRadio"] span[data-baseweb="radio"] > div:first-child {
+            display: none !important;
         }
 
-        @media (min-width: 769px) {
-            .hub-page_footer {
-                position: fixed;
-                left: 0;
-                bottom: 0;
-                padding: 12px 0;
+        /* ── Sync button — green to signal data refresh semantics ───────── */
+        [data-testid="stSidebar"] .stButton > button[kind="primary"] {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+            box-shadow: 0 4px 10px rgba(16, 185, 129, 0.25) !important;
+        }
+        [data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+            box-shadow: 0 6px 14px rgba(16, 185, 129, 0.35) !important;
+        }
+
+        /* ── Strategic Intelligence label — correct hierarchy ───────────── */
+        .strategic-intel-label {
+            font-size: 0.7rem !important;
+            letter-spacing: 1px !important;
+            text-transform: uppercase !important;
+            font-weight: 700 !important;
+            color: var(--primary) !important;
+            opacity: 0.85 !important;
+        }
+
+        /* ── Story typewriter — use Inter, not monospace ────────────────── */
+        .orthodox-typewriter {
+            font-family: 'Inter', sans-serif !important;
+            font-size: 0.92rem !important;
+            background: var(--surface) !important;
+            color: var(--on-surface) !important;
+            padding: 16px 20px !important;
+            border-radius: 8px !important;
+            border-left: 4px solid var(--primary) !important;
+            white-space: normal !important;
+            display: block !important;
+            width: 100% !important;
+            margin-bottom: 8px !important;
+            line-height: 1.65 !important;
+        }
+
+        /* ── War Room gauge — taller for readability ────────────────────── */
+        .war-room-gauge .js-plotly-plot {
+            min-height: 240px !important;
+        }
+
+        /* ── Mobile: 2-col then 1-col ───────────────────────────────────── */
+        @media (max-width: 768px) {
+            [data-testid="stColumn"] {
+                min-width: calc(50% - 0.5rem) !important;
+                flex: 1 1 calc(50% - 0.5rem) !important;
             }
         }
-        
-        /* Ensure content doesn't get hidden behind the fixed footer */
-        .main .block-container {
-            padding-bottom: 120px !important;
+        @media (max-width: 480px) {
+            [data-testid="stColumn"] {
+                min-width: 100% !important;
+            }
         }
         </style>
         """,

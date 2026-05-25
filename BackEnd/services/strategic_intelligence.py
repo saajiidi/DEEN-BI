@@ -13,6 +13,9 @@ def detect_business_anomalies(
     if sales_df.empty:
         return anomalies
 
+    # Create a local copy to avoid mutating the cached session state dataframe
+    sales_df = sales_df.copy()
+
     # Ensure datetime types and strip timezone for safe comparison with naive datetime.now()
     if 'order_date' in sales_df.columns:
         sales_df['order_date'] = pd.to_datetime(sales_df['order_date'], errors='coerce').dt.tz_localize(None)

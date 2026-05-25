@@ -11,7 +11,8 @@ def render_acquisition_analytics(df_sales: pd.DataFrame):
     Uses a Synthetic Acquisition Engine to model traffic based on real sales.
     """
     st.markdown("### 📊 Traffic & User Acquisition")
-    
+    st.warning("⚠️ Acquisition data is currently modelled from your conversion engine using a synthetic 3.2% CVR. GA4 integration is pending — treat these figures as directional estimates only.")
+
     # --- Synthetic Acquisition Engine ---
     # We anchor the simulation on real total orders
     total_orders = df_sales['order_id'].nunique() if 'order_id' in df_sales.columns else 0
@@ -32,11 +33,13 @@ def render_acquisition_analytics(df_sales: pd.DataFrame):
         "Email Marketing": 0.07
     }
     
+    # Channel Mix Simulation — seeded on total_orders for stable values within a session
+    rng = np.random.default_rng(seed=int(total_orders))
     chan_data = []
     for chan, weight in channels.items():
-        sess = int(est_sessions * weight * np.random.uniform(0.9, 1.1))
-        conv = int(total_orders * weight * np.random.uniform(0.9, 1.1))
-        chan_data.append({"Channel": chan, "Sessions": sess, "Orders": conv, "CVR": (conv/sess*100)})
+        sess = int(est_sessions * weight * rng.uniform(0.9, 1.1))
+        conv = int(total_orders * weight * rng.uniform(0.9, 1.1))
+        chan_data.append({"Channel": chan, "Sessions": sess, "Orders": conv, "CVR": (conv / sess * 100)})
     
     df_chan = pd.DataFrame(chan_data)
     
@@ -92,9 +95,10 @@ def render_acquisition_analytics(df_sales: pd.DataFrame):
     df_ts_base = df_ts_base.dropna(subset=['date'])
     dates = sorted(df_ts_base['date'].unique())
     ts_data = []
+    ts_rng = np.random.default_rng(seed=int(total_orders) + len(dates))
     for d in dates:
-        new = int(np.random.randint(50, 200))
-        ret = int(np.random.randint(20, 100))
+        new = int(ts_rng.integers(50, 200))
+        ret = int(ts_rng.integers(20, 100))
         ts_data.append({"Date": d, "Traffic Type": "New", "Sessions": new})
         ts_data.append({"Date": d, "Traffic Type": "Returning", "Sessions": ret})
     
@@ -108,5 +112,3 @@ def render_acquisition_analytics(df_sales: pd.DataFrame):
                        color_discrete_map={"New": "#3B82F6", "Returning": "#10B981"})
     fig_mix.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
     st.plotly_chart(fig_mix, width="stretch")
-    
-    st.caption("⚠️ Acquisition data is currently derived from your conversion engine. GA4 integration pending.")

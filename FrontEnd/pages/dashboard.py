@@ -498,48 +498,30 @@ def render_intelligence_hub_page():
             
             if not fin_plot.empty:
                 st.markdown("#### ⚖️ Sales Integrity Gap (Gross vs. Net Settled)")
-                st.caption(f"Visualizing revenue efficiency for the selected period (**{start_date.strftime('%B %d, %Y')}** to **{end_date.strftime('%B %d, %Y')}**). The shaded red area represents revenue lost to returns.")
+                st.caption(f"Visualizing revenue efficiency for the selected period (**{start_date.strftime('%B %d, %Y')}** to **{end_date.strftime('%B %d, %Y')}**). The shaded area represents revenue lost to returns.")
                 fig_gap = go.Figure()
-                
+
                 custom_data = np.stack((fin_plot['gross_sales'], fin_plot['total_loss']), axis=-1)
 
-                # Layer 1: Deep Red flame base
-                fig_gap.add_trace(go.Scatter(
-                    x=fin_plot['date'], y=fin_plot['net_sales'] * 0.3,
-                    fill='tozeroy', mode='lines',
-                    line=dict(color='rgba(220, 20, 60, 0.3)', width=0),
-                    fillcolor='rgba(220, 20, 60, 0.4)',
-                    name='Net Settled Base', stackgroup='one', hoverinfo='skip', showlegend=False
-                ))
-                
-                # Layer 2: Orange-red
-                fig_gap.add_trace(go.Scatter(
-                    x=fin_plot['date'], y=fin_plot['net_sales'] * 0.6,
-                    fill='tonexty', mode='lines',
-                    line=dict(color='rgba(255, 69, 0, 0.4)', width=0),
-                    fillcolor='rgba(255, 69, 0, 0.5)',
-                    name='Net Settled Core', stackgroup='one', hoverinfo='skip', showlegend=False
-                ))
-
-                # Layer 3: Flame Orange (Net Settled)
-                fig_gap.add_trace(go.Scatter(
-                    x=fin_plot['date'], y=fin_plot['net_sales'],
-                    fill='tonexty', mode='lines',
-                    line=dict(color='rgba(255, 140, 0, 1.0)', width=3),
-                    fillcolor='rgba(255, 140, 0, 0.6)',
-                    name='Net Settled', stackgroup='one',
-                    customdata=custom_data,
-                    hovertemplate='<b>Net Settled:</b> ৳%{y:,.0f}<br><b>Loss:</b> ৳%{customdata[1]:,.0f}<extra></extra>'
-                ))
-                
-                # Layer 4: Golden Yellow (Gross Verified)
+                # Gross Revenue — primary indigo fill
                 fig_gap.add_trace(go.Scatter(
                     x=fin_plot['date'], y=fin_plot['gross_sales'],
-                    fill='tonexty', mode='lines',
-                    line=dict(color='rgba(255, 215, 0, 1.0)', width=2),
-                    fillcolor='rgba(255, 215, 0, 0.4)',
-                    name='Gross Verified', stackgroup='one',
-                    hovertemplate='<b>Gross Sales:</b> ৳%{y:,.0f}<extra></extra>'
+                    fill='tozeroy', mode='lines',
+                    line=dict(color='rgba(99, 102, 241, 0.9)', width=2),
+                    fillcolor='rgba(99, 102, 241, 0.12)',
+                    name='Gross Revenue',
+                    hovertemplate='<b>Gross:</b> ৳%{y:,.0f}<extra></extra>'
+                ))
+
+                # Net Settled — green fill on top; gap between the two = loss (shown in red tint)
+                fig_gap.add_trace(go.Scatter(
+                    x=fin_plot['date'], y=fin_plot['net_sales'],
+                    fill='tozeroy', mode='lines',
+                    line=dict(color='rgba(16, 185, 129, 1.0)', width=2.5),
+                    fillcolor='rgba(16, 185, 129, 0.22)',
+                    name='Net Settled',
+                    customdata=custom_data,
+                    hovertemplate='<b>Net Settled:</b> ৳%{y:,.0f}<br><b>Loss:</b> ৳%{customdata[1]:,.0f}<extra></extra>'
                 ))
 
                 fig_gap.update_layout(
@@ -745,7 +727,7 @@ def render_intelligence_hub_page():
 
         render_inventory_health(data["stock"], (data.get("ml") or {}).get("forecast"), data["sales"])
 
-    elif selection == "🚀 Data Pilot":
+    elif selection == "🛡️ Strategic Command":
         render_strategic_command_page(data["sales"], data["stock"], data.get("customers"))
 
 
